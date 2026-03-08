@@ -59,6 +59,21 @@ func NewFilesystemConnector(rootPath string) *FilesystemConnector {
 	return &FilesystemConnector{rootPath: rootPath}
 }
 
+// sourceName derives a human-readable source name from the root path.
+// For ".", it resolves to the directory name. For absolute paths, it uses
+// filepath.Base. Otherwise it returns the path as-is.
+func (c *FilesystemConnector) sourceName() string {
+	p := c.rootPath
+	if p == "." || p == "./" {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "."
+		}
+		return filepath.Base(abs)
+	}
+	return filepath.Base(p)
+}
+
 // Name returns the connector type identifier.
 func (c *FilesystemConnector) Name() string {
 	return "filesystem"
@@ -66,7 +81,8 @@ func (c *FilesystemConnector) Name() string {
 
 // Scan walks the directory tree and returns new/changed documents and deleted paths.
 // The known map holds path -> checksum for previously ingested files.
-func (c *FilesystemConnector) Scan(ctx context.Context, known map[string]string) ([]model.RawDocument, []string, error) {
+func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawDocument, []string, error) {
+	known := opts.Known
 	root, err := filepath.Abs(c.rootPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving root path: %w", err)
@@ -149,12 +165,6 @@ func (c *FilesystemConnector) Scan(ctx context.Context, known map[string]string)
 			lastModified = info.ModTime()
 		}
 
-		// Determine file type from extension.
-		fileType := strings.TrimPrefix(ext, ".")
-		if fileType == "" {
-			fileType = "unknown"
-		}
-
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			absPath = path
@@ -167,7 +177,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, known map[string]string)
 			Author:       author,
 			SourceURI:    "file://" + absPath,
 			SourceType:   "filesystem",
-			FileType:     fileType,
+			SourceName:   c.sourceName(),
 			Checksum:     checksum,
 		})
 

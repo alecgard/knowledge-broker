@@ -3,17 +3,27 @@ package embedding
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
+	"time"
 )
 
 const (
 	defaultOllamaBaseURL   = "http://localhost:11434"
 	defaultOllamaModel     = "nomic-embed-text"
 	defaultOllamaDimension = 768
+	embCacheMaxSize        = 512
 )
+
+// embCacheEntry holds a cached embedding with its creation time for LRU eviction.
+type embCacheEntry struct {
+	vec       []float32
+	createdAt time.Time
+}
 
 // OllamaEmbedder implements Embedder using the Ollama embedding API.
 type OllamaEmbedder struct {
@@ -21,6 +31,9 @@ type OllamaEmbedder struct {
 	model      string
 	dimension  int
 	httpClient *http.Client
+
+	cacheMu sync.RWMutex
+	cache   map[string]embCacheEntry
 }
 
 // NewOllamaEmbedder creates an OllamaEmbedder with sensible defaults.
@@ -49,6 +62,7 @@ func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient ...*http
 		model:      model,
 		dimension:  dimension,
 		httpClient: client,
+		cache:      make(map[string]embCacheEntry, embCacheMaxSize),
 	}
 }
 
@@ -65,8 +79,55 @@ type ollamaEmbedResponse struct {
 	Error      string      `json:"error,omitempty"`
 }
 
+// embCacheKey returns a hex-encoded SHA-256 hash of the text for use as a cache key.
+func embCacheKey(text string) string {
+	h := sha256.Sum256([]byte(text))
+	return fmt.Sprintf("%x", h)
+}
+
+// cacheGet retrieves an embedding from the cache. Returns nil on miss.
+func (o *OllamaEmbedder) cacheGet(key string) []float32 {
+	o.cacheMu.RLock()
+	defer o.cacheMu.RUnlock()
+	if entry, ok := o.cache[key]; ok {
+		return entry.vec
+	}
+	return nil
+}
+
+// cachePut stores an embedding in the cache, evicting the oldest entry if at capacity.
+func (o *OllamaEmbedder) cachePut(key string, vec []float32) {
+	o.cacheMu.Lock()
+	defer o.cacheMu.Unlock()
+
+	if len(o.cache) >= embCacheMaxSize {
+		o.evictOldest()
+	}
+	o.cache[key] = embCacheEntry{vec: vec, createdAt: time.Now()}
+}
+
+// evictOldest removes the oldest cache entry. Must be called with cacheMu held.
+func (o *OllamaEmbedder) evictOldest() {
+	var oldestKey string
+	var oldestTime time.Time
+	for k, e := range o.cache {
+		if oldestKey == "" || e.createdAt.Before(oldestTime) {
+			oldestKey = k
+			oldestTime = e.createdAt
+		}
+	}
+	if oldestKey != "" {
+		delete(o.cache, oldestKey)
+	}
+}
+
 // Embed returns the embedding vector for a single text.
 func (o *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	key := embCacheKey(text)
+	if cached := o.cacheGet(key); cached != nil {
+		return cached, nil
+	}
+
 	vectors, err := o.doEmbed(ctx, text)
 	if err != nil {
 		return nil, fmt.Errorf("ollama embed: %w", err)
@@ -74,22 +135,57 @@ func (o *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if len(vectors) == 0 {
 		return nil, fmt.Errorf("ollama embed: response contained no embeddings")
 	}
+
+	o.cachePut(key, vectors[0])
 	return vectors[0], nil
 }
 
 // EmbedBatch returns embeddings for multiple texts in a single request.
+// Cached embeddings are returned directly; only uncached texts are sent to Ollama.
 func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	vectors, err := o.doEmbed(ctx, texts)
+
+	results := make([][]float32, len(texts))
+	var uncachedTexts []string
+	var uncachedIndices []int
+
+	for i, text := range texts {
+		key := embCacheKey(text)
+		if cached := o.cacheGet(key); cached != nil {
+			results[i] = cached
+		} else {
+			uncachedTexts = append(uncachedTexts, text)
+			uncachedIndices = append(uncachedIndices, i)
+		}
+	}
+
+	// All cached — nothing to fetch.
+	if len(uncachedTexts) == 0 {
+		return results, nil
+	}
+
+	// Fetch uncached embeddings from Ollama.
+	var input any = uncachedTexts
+	if len(uncachedTexts) == 1 {
+		input = uncachedTexts[0]
+	}
+	vectors, err := o.doEmbed(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("ollama embed batch: %w", err)
 	}
-	if len(vectors) != len(texts) {
-		return nil, fmt.Errorf("ollama embed batch: expected %d embeddings, got %d", len(texts), len(vectors))
+	if len(vectors) != len(uncachedTexts) {
+		return nil, fmt.Errorf("ollama embed batch: expected %d embeddings, got %d", len(uncachedTexts), len(vectors))
 	}
-	return vectors, nil
+
+	// Place results and cache them.
+	for j, idx := range uncachedIndices {
+		results[idx] = vectors[j]
+		o.cachePut(embCacheKey(uncachedTexts[j]), vectors[j])
+	}
+
+	return results, nil
 }
 
 // Dimension returns the configured embedding dimension.

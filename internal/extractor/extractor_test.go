@@ -25,7 +25,7 @@ Content of subsection A.
 Content of section two.
 `
 	ext := NewMarkdownExtractor(2000)
-	chunks, err := ext.Extract([]byte(md), "test.md")
+	chunks, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ date: 2024-01-01
 World.
 `
 	ext := NewMarkdownExtractor(2000)
-	chunks, err := ext.Extract([]byte(md), "test.md")
+	chunks, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestMarkdownLargeSectionFallback(t *testing.T) {
 	maxSize := 100
 	largeContent := "## Big Section\n\n" + strings.Repeat("word ", 50) // ~250 chars
 	ext := NewMarkdownExtractor(maxSize)
-	chunks, err := ext.Extract([]byte(largeContent), "test.md")
+	chunks, err := ext.Extract([]byte(largeContent), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +144,7 @@ func World() {
 }
 `
 	ext := NewCodeExtractor(2000)
-	chunks, err := ext.Extract([]byte(goCode), "main.go")
+	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "main.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +187,7 @@ def standalone():
     pass
 `
 	ext := NewCodeExtractor(2000)
-	chunks, err := ext.Extract([]byte(pyCode), "module.py")
+	chunks, err := ext.Extract([]byte(pyCode), ExtractOptions{Path: "module.py"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestCodeLargeFunctionFallback(t *testing.T) {
 	maxSize := 100
 	goCode := "package main\n\nfunc Big() {\n" + strings.Repeat("\tx := 1\n", 30) + "}\n"
 	ext := NewCodeExtractor(maxSize)
-	chunks, err := ext.Extract([]byte(goCode), "big.go")
+	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestCodeNoRecognizableBoundaries(t *testing.T) {
 	// A file with no function/class boundaries.
 	content := strings.Repeat("some random content line\n", 20)
 	ext := NewCodeExtractor(100)
-	chunks, err := ext.Extract([]byte(content), "data.go")
+	chunks, err := ext.Extract([]byte(content), ExtractOptions{Path: "data.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestPlaintextFixedSizeSplitting(t *testing.T) {
 	// Create text longer than maxChunkSize.
 	text := strings.Repeat("Hello world. ", 200) // ~2600 chars
 	ext := NewPlaintextExtractor(500, 50)
-	chunks, err := ext.Extract([]byte(text), "test.txt")
+	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestPlaintextParagraphBoundarySplitting(t *testing.T) {
 	}
 	text := strings.Join(paragraphs, "\n\n")
 	ext := NewPlaintextExtractor(400, 50)
-	chunks, err := ext.Extract([]byte(text), "test.txt")
+	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestPlaintextOverlap(t *testing.T) {
 	// Use a simple text to verify overlap behavior.
 	text := strings.Repeat("abcdefghij ", 100) // ~1100 chars
 	ext := NewPlaintextExtractor(200, 50)
-	chunks, err := ext.Extract([]byte(text), "test.txt")
+	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestPlaintextOverlap(t *testing.T) {
 
 func TestPlaintextEmptyContent(t *testing.T) {
 	ext := NewPlaintextExtractor(1500, 150)
-	chunks, err := ext.Extract([]byte(""), "test.txt")
+	chunks, err := ext.Extract([]byte(""), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

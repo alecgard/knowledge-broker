@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS fragments (
     id            TEXT PRIMARY KEY,
     content       TEXT NOT NULL,
     source_type   TEXT NOT NULL,
+    source_name   TEXT DEFAULT '',
     source_path   TEXT NOT NULL,
     source_uri    TEXT NOT NULL,
     last_modified DATETIME NOT NULL,

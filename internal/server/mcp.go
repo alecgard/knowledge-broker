@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -46,6 +47,9 @@ func NewMCPServer(engine *query.Engine, fb *feedback.Service, logger *slog.Logge
 			mcp.Description("The question to ask"),
 			mcp.Required(),
 		),
+		mcp.WithString("topics",
+			mcp.Description("Optional comma-separated topics to boost relevance (e.g., 'authentication,octroi')"),
+		),
 	), s.handleQuery)
 
 	s.server.AddTool(mcp.NewTool("feedback",
@@ -76,9 +80,20 @@ func (s *MCPServer) ServeStdio() error {
 }
 
 func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	question, ok := request.GetArguments()["question"].(string)
+	args := request.GetArguments()
+	question, ok := args["question"].(string)
 	if !ok || question == "" {
 		return mcp.NewToolResultError("question is required"), nil
+	}
+
+	var topics []string
+	if topicsRaw, ok := args["topics"].(string); ok && topicsRaw != "" {
+		for _, t := range strings.Split(topicsRaw, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				topics = append(topics, t)
+			}
+		}
 	}
 
 	req := model.QueryRequest{
@@ -87,6 +102,7 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		},
 		Limit:   20,
 		Concise: true,
+		Topics:  topics,
 	}
 
 	// For MCP, we don't stream — just collect the full response.

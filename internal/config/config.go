@@ -32,6 +32,9 @@ type Config struct {
 
 	// Query
 	DefaultLimit int
+
+	// GitHub OAuth
+	GitHubClientID string
 }
 
 // Default returns a config with sensible defaults, overridden by .env file
@@ -53,6 +56,7 @@ func Default() Config {
 		ChunkOverlap:    envOrInt("KB_CHUNK_OVERLAP", 150),
 		WorkerCount:     envOrInt("KB_WORKERS", 4),
 		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 20),
+		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
 	}
 }
 

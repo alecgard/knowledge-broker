@@ -94,7 +94,8 @@ var _ connector.Connector = (*MockConnector)(nil)
 
 func (m *MockConnector) Name() string { return m.SourceName }
 
-func (m *MockConnector) Scan(_ context.Context, known map[string]string) ([]model.RawDocument, []string, error) {
+func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]model.RawDocument, []string, error) {
+	known := opts.Known
 	// Build the set of currently-known paths for deletion detection.
 	currentPaths := make(map[string]bool)
 	for _, d := range m.Docs {
@@ -194,7 +195,6 @@ func makeDoc(path, content, checksum string) model.RawDocument {
 		Author:       "test-author",
 		SourceURI:    "file://" + path,
 		SourceType:   "mock",
-		FileType:     filepath.Ext(path),
 		Checksum:     checksum,
 	}
 }

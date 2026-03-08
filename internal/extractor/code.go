@@ -68,9 +68,9 @@ var languagePatterns = map[string][]*regexp.Regexp{
 	},
 }
 
-func (c *CodeExtractor) Extract(content []byte, path string) ([]model.Chunk, error) {
+func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
 	text := string(content)
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(opts.Path))
 
 	patterns, ok := languagePatterns[ext]
 	if !ok {

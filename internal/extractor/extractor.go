@@ -8,6 +8,9 @@ import "github.com/knowledge-broker/knowledge-broker/pkg/extractor"
 // Extractor is the public extractor interface.
 type Extractor = extractor.Extractor
 
+// ExtractOptions is the public ExtractOptions type.
+type ExtractOptions = extractor.ExtractOptions
+
 // Registry maps file extensions to extractors.
 type Registry struct {
 	extractors map[string]Extractor

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
@@ -59,10 +60,30 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		return nil, fmt.Errorf("last message must be from user")
 	}
 
+	// Fast-path: exact match, skip embedding + search + LLM entirely.
+	if cached := e.cache.GetFastPath(lastMsg.Content, req.Concise); cached != nil {
+		if onText != nil {
+			onText(cached.Content)
+		}
+		return cached, nil
+	}
+
 	// Embed the query.
 	queryEmb, err := e.embedder.Embed(ctx, lastMsg.Content)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
+	}
+
+	// When topics are provided, blend the topics embedding into the query
+	// embedding so that the vector search naturally favours topic-relevant
+	// fragments without needing a separate reranking pass.
+	if len(req.Topics) > 0 {
+		topicsText := strings.Join(req.Topics, " ")
+		topicsEmb, err := e.embedder.Embed(ctx, topicsText)
+		if err != nil {
+			return nil, fmt.Errorf("embed topics: %w", err)
+		}
+		queryEmb = combineEmbeddings(queryEmb, topicsEmb, 0.3)
 	}
 
 	// Search for relevant fragments.
@@ -89,6 +110,8 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 
 	// Check cache — exact query match with same underlying fragments.
 	if cached := e.cache.Get(lastMsg.Content, req.Concise, fragments); cached != nil {
+		// Promote to fast-path cache so future identical queries skip embedding.
+		e.cache.PutFastPath(lastMsg.Content, req.Concise, cached)
 		if onText != nil {
 			onText(cached.Content)
 		}
@@ -109,6 +132,7 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 
 	// Cache the result.
 	e.cache.Put(lastMsg.Content, req.Concise, fragments, answer)
+	e.cache.PutFastPath(lastMsg.Content, req.Concise, answer)
 
 	return answer, nil
 }
@@ -152,9 +176,53 @@ func parseResponse(response string, fragments []model.SourceFragment) *model.Ans
 				FragmentID: f.ID,
 				SourceURI:  f.SourceURI,
 				SourcePath: f.SourcePath,
+				SourceName: f.SourceName,
 			})
 		}
 	}
 
 	return answer
+}
+
+// combineEmbeddings blends two embedding vectors: result = normalize(a + b * weight).
+// This allows topic signals to influence vector search without replacing the
+// original query intent.
+func combineEmbeddings(a, b []float32, weight float64) []float32 {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	combined := make([]float32, n)
+	var norm float64
+	for i := 0; i < n; i++ {
+		v := float64(a[i]) + float64(b[i])*weight
+		combined[i] = float32(v)
+		norm += v * v
+	}
+	norm = math.Sqrt(norm)
+	if norm > 0 {
+		for i := range combined {
+			combined[i] = float32(float64(combined[i]) / norm)
+		}
+	}
+	return combined
+}
+
+// cosineSimilarity computes the cosine similarity between two vectors.
+func cosineSimilarity(a, b []float32) float64 {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	var dot, normA, normB float64
+	for i := 0; i < n; i++ {
+		dot += float64(a[i]) * float64(b[i])
+		normA += float64(a[i]) * float64(a[i])
+		normB += float64(b[i]) * float64(b[i])
+	}
+	denom := math.Sqrt(normA) * math.Sqrt(normB)
+	if denom == 0 {
+		return 0
+	}
+	return dot / denom
 }

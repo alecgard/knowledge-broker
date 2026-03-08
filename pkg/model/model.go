@@ -13,8 +13,9 @@ type RawDocument struct {
 	Author       string
 	SourceURI    string
 	SourceType   string
-	FileType     string
+	SourceName   string
 	Checksum     string
+	Chunks       []Chunk // optional pre-chunked content; skips extractor when set
 }
 
 // Chunk is the output of an extractor.
@@ -27,7 +28,8 @@ type Chunk struct {
 type SourceFragment struct {
 	ID            string
 	Content       string
-	SourceType    string // "filesystem", "github"
+	SourceType    string // "filesystem", "git"
+	SourceName    string
 	SourcePath    string
 	SourceURI     string
 	LastModified  time.Time
@@ -49,6 +51,7 @@ type QueryRequest struct {
 	Messages []Message `json:"messages"`
 	Limit    int       `json:"limit,omitempty"`   // max fragments to retrieve, default 20
 	Concise  bool      `json:"concise,omitempty"` // terse, agent-friendly output
+	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "octroi")
 }
 
 // Answer is the response from the query engine.
@@ -72,6 +75,7 @@ type SourceRef struct {
 	FragmentID string  `json:"fragment_id"`
 	SourceURI  string  `json:"source_uri"`
 	SourcePath string  `json:"source_path"`
+	SourceName string  `json:"source_name,omitempty"`
 	Relevance  float64 `json:"relevance,omitempty"`
 }
 

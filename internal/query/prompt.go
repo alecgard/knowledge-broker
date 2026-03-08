@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,8 @@ Emit metadata after your answer:
 
 Confidence: freshness=recency relative to corpus, corroboration=number of independent sources (1=0.3,2-3=0.6,4+=0.9), consistency=agreement between sources, authority=source type fitness (code>docs>config>commits).
 Only include fragments you used in sources. No text after ---KB_META_END---. No code fences around the metadata block.
+
+If fragments come from multiple unrelated projects, answer based on the most relevant project and note which project you're answering about. Do not blend information from unrelated projects into a single answer.
 
 `)
 	} else {
@@ -66,31 +69,72 @@ If there are contradictions, include them with claim, sources, and explanation f
 Do NOT include any text after the ---KB_META_END--- marker.
 Do NOT wrap the metadata block in code fences or backticks.
 
+If fragments come from multiple unrelated projects, answer based on the most relevant project and note which project you're answering about. Do not blend information from unrelated projects into a single answer.
+
 `)
 	}
+
+	// Group fragments by source name for clarity.
+	groups := groupBySource(fragments)
 
 	b.WriteString("## Source fragments\n\n")
 
 	now := time.Now()
-	for _, f := range fragments {
-		age := now.Sub(f.LastModified)
-		ageStr := formatAge(age)
+	for _, g := range groups {
+		if g.name != "" {
+			fmt.Fprintf(&b, "## Source: %s\n\n", g.name)
+		}
 
-		fmt.Fprintf(&b, "### Fragment: %s\n", f.ID)
-		fmt.Fprintf(&b, "- Source: %s\n", f.SourcePath)
-		fmt.Fprintf(&b, "- URI: %s\n", f.SourceURI)
-		fmt.Fprintf(&b, "- Type: %s\n", f.FileType)
-		fmt.Fprintf(&b, "- Last modified: %s (%s ago)\n", f.LastModified.Format("2006-01-02"), ageStr)
-		if f.Author != "" {
-			fmt.Fprintf(&b, "- Author: %s\n", f.Author)
+		for _, f := range g.fragments {
+			age := now.Sub(f.LastModified)
+			ageStr := formatAge(age)
+
+			fmt.Fprintf(&b, "### Fragment: %s\n", f.ID)
+			fmt.Fprintf(&b, "- Path: %s\n", f.SourcePath)
+			fmt.Fprintf(&b, "- URI: %s\n", f.SourceURI)
+			fmt.Fprintf(&b, "- Type: %s\n", f.FileType)
+			fmt.Fprintf(&b, "- Last modified: %s (%s ago)\n", f.LastModified.Format("2006-01-02"), ageStr)
+			if f.Author != "" {
+				fmt.Fprintf(&b, "- Author: %s\n", f.Author)
+			}
+			if f.ConfidenceAdj != 0 {
+				fmt.Fprintf(&b, "- Confidence adjustment: %.2f (from user feedback)\n", f.ConfidenceAdj)
+			}
+			fmt.Fprintf(&b, "\n%s\n\n---\n\n", f.Content)
 		}
-		if f.ConfidenceAdj != 0 {
-			fmt.Fprintf(&b, "- Confidence adjustment: %.2f (from user feedback)\n", f.ConfidenceAdj)
-		}
-		fmt.Fprintf(&b, "\n%s\n\n---\n\n", f.Content)
 	}
 
 	return b.String()
+}
+
+type sourceGroup struct {
+	name      string
+	fragments []model.SourceFragment
+}
+
+// groupBySource groups fragments by SourceName, preserving order within each group.
+func groupBySource(fragments []model.SourceFragment) []sourceGroup {
+	order := make([]string, 0)
+	groups := make(map[string][]model.SourceFragment)
+
+	for _, f := range fragments {
+		name := f.SourceName
+		if _, seen := groups[name]; !seen {
+			order = append(order, name)
+		}
+		groups[name] = append(groups[name], f)
+	}
+
+	// Sort by group size descending — most relevant source first.
+	sort.Slice(order, func(i, j int) bool {
+		return len(groups[order[i]]) > len(groups[order[j]])
+	})
+
+	result := make([]sourceGroup, len(order))
+	for i, name := range order {
+		result[i] = sourceGroup{name: name, fragments: groups[name]}
+	}
+	return result
 }
 
 func formatAge(d time.Duration) string {

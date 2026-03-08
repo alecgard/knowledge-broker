@@ -1,4 +1,8 @@
 .env
 *.db
-kb
+*.db-shm
+*.db-wal
+/kb
 local
+metadata.tsv
+tensors.tsv

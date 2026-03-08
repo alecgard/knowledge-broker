@@ -7,3 +7,6 @@ import "github.com/knowledge-broker/knowledge-broker/pkg/connector"
 
 // Connector is the public connector interface.
 type Connector = connector.Connector
+
+// ScanOptions is the public ScanOptions type.
+type ScanOptions = connector.ScanOptions

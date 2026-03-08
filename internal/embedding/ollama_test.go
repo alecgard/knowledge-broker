@@ -76,6 +76,122 @@ func TestEmbed(t *testing.T) {
 	}
 }
 
+func TestEmbed_CacheHit(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		resp := ollamaEmbedResponse{
+			Model:      "nomic-embed-text",
+			Embeddings: [][]float64{{0.1, 0.2, 0.3}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 3)
+
+	// First call: cache miss, hits server.
+	vec1, err := e.Embed(context.Background(), "hello world")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 server call, got %d", callCount)
+	}
+
+	// Second call: cache hit, should NOT hit server.
+	vec2, err := e.Embed(context.Background(), "hello world")
+	if err != nil {
+		t.Fatalf("Embed() error on cache hit: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected server call count to remain 1, got %d", callCount)
+	}
+
+	// Verify the vectors match.
+	for i := range vec1 {
+		if vec1[i] != vec2[i] {
+			t.Errorf("vec1[%d]=%f != vec2[%d]=%f", i, vec1[i], i, vec2[i])
+		}
+	}
+
+	// Different text: cache miss, hits server.
+	_, err = e.Embed(context.Background(), "different text")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 server calls, got %d", callCount)
+	}
+}
+
+func TestEmbedBatch_CachePartialHit(t *testing.T) {
+	var requestedInputs []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ollamaEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		requestedInputs = append(requestedInputs, req.Input)
+
+		// Return embeddings based on what was requested.
+		var embeddings [][]float64
+		switch v := req.Input.(type) {
+		case string:
+			embeddings = [][]float64{{1.0, 1.0}}
+		case []any:
+			for range v {
+				embeddings = append(embeddings, []float64{1.0, 1.0})
+			}
+		}
+		resp := ollamaEmbedResponse{
+			Model:      "nomic-embed-text",
+			Embeddings: embeddings,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2)
+
+	// Pre-populate cache by embedding "hello".
+	_, err := e.Embed(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if len(requestedInputs) != 1 {
+		t.Fatalf("expected 1 server call, got %d", len(requestedInputs))
+	}
+
+	// Batch with "hello" (cached) and "world" (uncached).
+	vecs, err := e.EmbedBatch(context.Background(), []string{"hello", "world"})
+	if err != nil {
+		t.Fatalf("EmbedBatch() error: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("expected 2 vectors, got %d", len(vecs))
+	}
+	// Should have made exactly one more server call (for "world" only).
+	if len(requestedInputs) != 2 {
+		t.Fatalf("expected 2 total server calls, got %d", len(requestedInputs))
+	}
+
+	// Batch where all are cached.
+	vecs, err = e.EmbedBatch(context.Background(), []string{"hello", "world"})
+	if err != nil {
+		t.Fatalf("EmbedBatch() error: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("expected 2 vectors, got %d", len(vecs))
+	}
+	// No new server calls.
+	if len(requestedInputs) != 2 {
+		t.Fatalf("expected server call count to remain 2, got %d", len(requestedInputs))
+	}
+}
+
 func TestEmbedBatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ollamaEmbedRequest

@@ -18,7 +18,7 @@ func TestScanFindsFiles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "sub"), "data.txt", "some data")
 
 	c := NewFilesystemConnector(dir)
-	docs, deleted, err := c.Scan(context.Background(), nil)
+	docs, deleted, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}
@@ -38,9 +38,6 @@ func TestScanFindsFiles(t *testing.T) {
 			found = true
 			if d.SourceType != "filesystem" {
 				t.Errorf("expected SourceType 'filesystem', got %q", d.SourceType)
-			}
-			if d.FileType != "go" {
-				t.Errorf("expected FileType 'go', got %q", d.FileType)
 			}
 			if d.Checksum == "" {
 				t.Error("expected non-empty checksum")
@@ -69,7 +66,7 @@ func TestScanSkipsHiddenAndNodeModules(t *testing.T) {
 	writeFile(t, dir, ".dotfile", "dotfile content")
 
 	c := NewFilesystemConnector(dir)
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}
@@ -95,7 +92,7 @@ func TestScanSkipsBinaryFiles(t *testing.T) {
 	writeFile(t, dir, "archive.zip", "fake zip data")
 
 	c := NewFilesystemConnector(dir)
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}
@@ -117,7 +114,7 @@ func TestScanIncrementalSkipsUnchanged(t *testing.T) {
 	c := NewFilesystemConnector(dir)
 
 	// First scan: get all documents.
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("first scan failed: %v", err)
 	}
@@ -132,7 +129,7 @@ func TestScanIncrementalSkipsUnchanged(t *testing.T) {
 	}
 
 	// Second scan with known checksums — nothing changed.
-	docs2, deleted, err := c.Scan(context.Background(), known)
+	docs2, deleted, err := c.Scan(context.Background(), ScanOptions{Known: known})
 	if err != nil {
 		t.Fatalf("second scan failed: %v", err)
 	}
@@ -145,7 +142,7 @@ func TestScanIncrementalSkipsUnchanged(t *testing.T) {
 
 	// Modify one file and scan again.
 	writeFile(t, dir, "a.txt", "content a modified")
-	docs3, deleted, err := c.Scan(context.Background(), known)
+	docs3, deleted, err := c.Scan(context.Background(), ScanOptions{Known: known})
 	if err != nil {
 		t.Fatalf("third scan failed: %v", err)
 	}
@@ -169,7 +166,7 @@ func TestScanDetectsDeletedFiles(t *testing.T) {
 	c := NewFilesystemConnector(dir)
 
 	// First scan.
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("first scan failed: %v", err)
 	}
@@ -186,7 +183,7 @@ func TestScanDetectsDeletedFiles(t *testing.T) {
 	}
 
 	// Second scan should report the deleted file.
-	_, deleted, err := c.Scan(context.Background(), known)
+	_, deleted, err := c.Scan(context.Background(), ScanOptions{Known: known})
 	if err != nil {
 		t.Fatalf("second scan failed: %v", err)
 	}
@@ -218,7 +215,7 @@ func TestScanSkipsLargeFiles(t *testing.T) {
 	f.Close()
 
 	c := NewFilesystemConnector(dir)
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}
@@ -235,7 +232,7 @@ func TestScanChecksumCorrectness(t *testing.T) {
 	writeFile(t, dir, "test.txt", content)
 
 	c := NewFilesystemConnector(dir)
-	docs, _, err := c.Scan(context.Background(), nil)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
 	if err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}

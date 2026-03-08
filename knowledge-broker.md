@@ -181,8 +181,7 @@ Resolved decisions for v1:
 - Knowledge units with pre-computed confidence signals
 - Manifest for LLM-driven retrieval decisions
 - Additional connectors (Confluence, Google Drive, Slack)
-- Query scoping (restrict to domain/path/source)
-- Attributed feedback with trust weighting
+- Query scoping (interface ready, implementation pending)
 - Incremental ingestion watch mode
 - Pluggable LLM providers
 - Configurable clustering thresholds

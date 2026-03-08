@@ -32,7 +32,7 @@ func (p *PlaintextExtractor) FileTypes() []string {
 	}
 }
 
-func (p *PlaintextExtractor) Extract(content []byte, path string) ([]model.Chunk, error) {
+func (p *PlaintextExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
 	text := string(content)
 	if strings.TrimSpace(text) == "" {
 		return []model.Chunk{{Content: "", Metadata: map[string]string{"offset": "0"}}}, nil

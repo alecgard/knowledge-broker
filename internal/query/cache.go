@@ -15,6 +15,13 @@ type cacheEntry struct {
 	createdAt    time.Time
 }
 
+// fastCacheEntry is a lightweight cache entry for the fast-path cache.
+// It stores an answer without fragment validation, using a shorter TTL.
+type fastCacheEntry struct {
+	answer    *model.Answer
+	createdAt time.Time
+}
+
 // Cache stores exact-match query results keyed by query text + concise flag.
 // Entries are invalidated when the underlying fragments change.
 type Cache struct {
@@ -22,6 +29,9 @@ type Cache struct {
 	entries map[string]cacheEntry
 	maxAge  time.Duration
 	maxSize int
+
+	fastEntries map[string]fastCacheEntry
+	fastMaxAge  time.Duration
 }
 
 // NewCache creates a query cache. maxAge controls TTL, maxSize caps entries.
@@ -33,9 +43,11 @@ func NewCache(maxAge time.Duration, maxSize int) *Cache {
 		maxSize = 256
 	}
 	return &Cache{
-		entries: make(map[string]cacheEntry, maxSize),
-		maxAge:  maxAge,
-		maxSize: maxSize,
+		entries:     make(map[string]cacheEntry, maxSize),
+		maxAge:      maxAge,
+		maxSize:     maxSize,
+		fastEntries: make(map[string]fastCacheEntry, maxSize),
+		fastMaxAge:  2 * time.Minute,
 	}
 }
 
@@ -98,11 +110,60 @@ func (c *Cache) Put(query string, concise bool, fragments []model.SourceFragment
 	}
 }
 
+// GetFastPath returns a cached answer if one exists for this exact query text
+// and hasn't exceeded the fast-path TTL. This skips fragment validation —
+// use a shorter TTL than the main cache.
+func (c *Cache) GetFastPath(query string, concise bool) *model.Answer {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	key := cacheKey(query, concise)
+	entry, ok := c.fastEntries[key]
+	if !ok {
+		return nil
+	}
+	if time.Since(entry.createdAt) > c.fastMaxAge {
+		return nil
+	}
+	return entry.answer
+}
+
+// PutFastPath stores an answer in the fast-path cache.
+func (c *Cache) PutFastPath(query string, concise bool, answer *model.Answer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.fastEntries) >= c.maxSize {
+		c.evictOldestFast()
+	}
+
+	key := cacheKey(query, concise)
+	c.fastEntries[key] = fastCacheEntry{
+		answer:    answer,
+		createdAt: time.Now(),
+	}
+}
+
+func (c *Cache) evictOldestFast() {
+	var oldestKey string
+	var oldestTime time.Time
+	for k, e := range c.fastEntries {
+		if oldestKey == "" || e.createdAt.Before(oldestTime) {
+			oldestKey = k
+			oldestTime = e.createdAt
+		}
+	}
+	if oldestKey != "" {
+		delete(c.fastEntries, oldestKey)
+	}
+}
+
 // Clear removes all cached entries.
 func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.entries = make(map[string]cacheEntry, c.maxSize)
+	c.fastEntries = make(map[string]fastCacheEntry, c.maxSize)
 }
 
 func (c *Cache) evictOldest() {

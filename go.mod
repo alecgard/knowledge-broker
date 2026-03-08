@@ -5,7 +5,6 @@ go 1.23.0
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
-	github.com/google/go-github/v60 v60.0.0
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/spf13/cobra v1.10.2
@@ -14,7 +13,7 @@ require (
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect

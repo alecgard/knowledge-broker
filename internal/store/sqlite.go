@@ -18,6 +18,9 @@ import (
 //go:embed migrations/001_initial.sql
 var migrationSQL string
 
+//go:embed migrations/002_add_source_name.sql
+var migration002SQL string
+
 // SQLiteStore implements Store using SQLite and sqlite-vec.
 type SQLiteStore struct {
 	db           *sql.DB
@@ -41,6 +44,10 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+
+	// Run migration 002: add source_name column for existing databases.
+	// This will fail harmlessly if the column already exists (new databases).
+	db.Exec(migration002SQL)
 
 	// Create the sqlite-vec virtual table.
 	vtableSQL := fmt.Sprintf(
@@ -107,8 +114,8 @@ func (s *SQLiteStore) UpsertFragments(ctx context.Context, fragments []model.Sou
 
 	fragStmt, err := tx.PrepareContext(ctx, `
 		INSERT OR REPLACE INTO fragments
-			(id, content, source_type, source_path, source_uri, last_modified, author, file_type, checksum, confidence_adj, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			(id, content, source_type, source_name, source_path, source_uri, last_modified, author, file_type, checksum, confidence_adj, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare fragment stmt: %w", err)
@@ -134,7 +141,7 @@ func (s *SQLiteStore) UpsertFragments(ctx context.Context, fragments []model.Sou
 
 	for _, f := range fragments {
 		_, err := fragStmt.ExecContext(ctx,
-			f.ID, f.Content, f.SourceType, f.SourcePath, f.SourceURI,
+			f.ID, f.Content, f.SourceType, f.SourceName, f.SourcePath, f.SourceURI,
 			f.LastModified.UTC().Format(time.RFC3339),
 			f.Author, f.FileType, f.Checksum, f.ConfidenceAdj,
 		)
@@ -160,7 +167,7 @@ func (s *SQLiteStore) UpsertFragments(ctx context.Context, fragments []model.Sou
 // SearchByVector finds the nearest fragments to the given embedding vector.
 func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, limit int) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.content, f.source_type, f.source_path, f.source_uri,
+		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
 		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
 		       fe.distance
 		FROM fragment_embeddings fe
@@ -179,7 +186,7 @@ func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, l
 		var lastMod string
 		var distance float64
 		err := rows.Scan(
-			&f.ID, &f.Content, &f.SourceType, &f.SourcePath, &f.SourceURI,
+			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
 			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
 			&distance,
 		)
@@ -206,7 +213,7 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, content, source_type, source_path, source_uri,
+		SELECT id, content, source_type, source_name, source_path, source_uri,
 		       last_modified, author, file_type, checksum, confidence_adj
 		FROM fragments
 		WHERE id IN (%s)
@@ -223,7 +230,7 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 		var f model.SourceFragment
 		var lastMod string
 		err := rows.Scan(
-			&f.ID, &f.Content, &f.SourceType, &f.SourcePath, &f.SourceURI,
+			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
 			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
 		)
 		if err != nil {
@@ -335,6 +342,40 @@ func (s *SQLiteStore) RecordFeedback(ctx context.Context, fb model.Feedback) err
 	}
 
 	return tx.Commit()
+}
+
+// ExportFragments returns all fragments joined with their embeddings.
+func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragment, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
+		       fe.embedding
+		FROM fragments f
+		INNER JOIN fragment_embeddings fe ON fe.fragment_id = f.id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("export fragments: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.SourceFragment
+	for rows.Next() {
+		var f model.SourceFragment
+		var lastMod string
+		var embBytes []byte
+		err := rows.Scan(
+			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
+			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
+			&embBytes,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan fragment: %w", err)
+		}
+		f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
+		f.Embedding = deserializeEmbedding(embBytes)
+		results = append(results, f)
+	}
+	return results, rows.Err()
 }
 
 // Close releases the database connection.

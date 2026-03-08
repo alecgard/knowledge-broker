@@ -23,6 +23,9 @@ type Store interface {
 	// DeleteByPaths removes fragments matching the given source type and paths.
 	DeleteByPaths(ctx context.Context, sourceType string, paths []string) error
 
+	// ExportFragments returns all fragments with their embeddings.
+	ExportFragments(ctx context.Context) ([]model.SourceFragment, error)
+
 	// RecordFeedback stores feedback for a fragment.
 	RecordFeedback(ctx context.Context, fb model.Feedback) error
 

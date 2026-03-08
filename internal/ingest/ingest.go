@@ -61,7 +61,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 	}
 
 	// Scan for new/changed documents and deleted paths.
-	docs, deleted, err := conn.Scan(ctx, known)
+	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known})
 	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
@@ -143,17 +143,26 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 }
 
 func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) ([]model.SourceFragment, error) {
-	// Extract chunks.
-	ext := filepath.Ext(doc.Path)
-	e := p.extractors.Get(ext)
-	chunks, err := e.Extract(doc.Content, doc.Path)
-	if err != nil {
-		return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
+	// Use pre-provided chunks when available; otherwise run the extractor.
+	var chunks []model.Chunk
+	if len(doc.Chunks) > 0 {
+		chunks = doc.Chunks
+	} else {
+		ext := filepath.Ext(doc.Path)
+		e := p.extractors.Get(ext)
+		var err error
+		chunks, err = e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
+		if err != nil {
+			return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
+		}
 	}
 
 	if len(chunks) == 0 {
 		return nil, nil
 	}
+
+	// Derive file type from path extension.
+	fileType := filepath.Ext(doc.Path)
 
 	// Embed chunks.
 	texts := make([]string, len(chunks))
@@ -176,11 +185,12 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 			ID:           id,
 			Content:      chunk.Content,
 			SourceType:   doc.SourceType,
+			SourceName:   doc.SourceName,
 			SourcePath:   doc.Path,
 			SourceURI:    doc.SourceURI,
 			LastModified: doc.LastModified,
 			Author:       doc.Author,
-			FileType:     doc.FileType,
+			FileType:     fileType,
 			Checksum:     doc.Checksum,
 			Embedding:    embeddings[i],
 		}

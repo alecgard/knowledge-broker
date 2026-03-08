@@ -25,7 +25,7 @@ func (m *MarkdownExtractor) FileTypes() []string {
 	return []string{".md"}
 }
 
-func (m *MarkdownExtractor) Extract(content []byte, path string) ([]model.Chunk, error) {
+func (m *MarkdownExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
 	text := string(content)
 
 	// Strip frontmatter (--- delimited block at the start).

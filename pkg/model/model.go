@@ -3,7 +3,49 @@
 // this package.
 package model
 
-import "time"
+import (
+	"crypto/sha256"
+	"fmt"
+	"time"
+)
+
+// SourceType constants for connector types.
+const (
+	SourceTypeFilesystem = "filesystem"
+	SourceTypeGit        = "git"
+)
+
+// FragmentID generates a deterministic fragment ID from the source type,
+// source path, and chunk index: sha256(sourceType:sourcePath:index)[:16].
+func FragmentID(sourceType, sourcePath string, index int) string {
+	idInput := fmt.Sprintf("%s:%s:%d", sourceType, sourcePath, index)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(idInput)))[:16]
+}
+
+// IngestFragment is a single fragment in an ingest request (without ID or embedding).
+type IngestFragment struct {
+	Content      string    `json:"content"`
+	SourceType   string    `json:"source_type"`
+	SourceName   string    `json:"source_name,omitempty"`
+	SourcePath   string    `json:"source_path"`
+	SourceURI    string    `json:"source_uri"`
+	LastModified time.Time `json:"last_modified"`
+	Author       string    `json:"author"`
+	FileType     string    `json:"file_type"`
+	Checksum     string    `json:"checksum"`
+}
+
+// IngestDeletedPath identifies a source type and path to delete.
+type IngestDeletedPath struct {
+	SourceType string `json:"source_type"`
+	Path       string `json:"path"`
+}
+
+// IngestRequest is the JSON body for POST /v1/ingest.
+type IngestRequest struct {
+	Fragments []IngestFragment  `json:"fragments"`
+	Deleted   []IngestDeletedPath `json:"deleted,omitempty"`
+}
 
 // RawDocument is the output of a connector before extraction.
 type RawDocument struct {

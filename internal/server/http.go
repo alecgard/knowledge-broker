@@ -2,13 +2,11 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
@@ -17,30 +15,10 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
-// IngestFragment is a single fragment in the ingest request (without ID or embedding).
-type IngestFragment struct {
-	Content      string    `json:"content"`
-	SourceType   string    `json:"source_type"`
-	SourceName   string    `json:"source_name,omitempty"`
-	SourcePath   string    `json:"source_path"`
-	SourceURI    string    `json:"source_uri"`
-	LastModified time.Time `json:"last_modified"`
-	Author       string    `json:"author"`
-	FileType     string    `json:"file_type"`
-	Checksum     string    `json:"checksum"`
-}
-
-// IngestRequest is the JSON body for POST /v1/ingest.
-type IngestRequest struct {
-	Fragments []IngestFragment `json:"fragments"`
-	Deleted   []DeletedPath    `json:"deleted,omitempty"`
-}
-
-// DeletedPath identifies a source type and path to delete.
-type DeletedPath struct {
-	SourceType string `json:"source_type"`
-	Path       string `json:"path"`
-}
+// Type aliases for backward compatibility with tests.
+type IngestFragment = model.IngestFragment
+type IngestRequest = model.IngestRequest
+type IngestDeletedPath = model.IngestDeletedPath
 
 // HTTPServer serves the Knowledge Broker HTTP API.
 type HTTPServer struct {
@@ -208,27 +186,32 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect texts for batch embedding.
+	// Collect texts for batch embedding, processing in groups of 50 to
+	// avoid overwhelming the embedding service on large ingests.
+	const embedBatchSize = 50
 	texts := make([]string, len(req.Fragments))
 	for i, f := range req.Fragments {
 		texts[i] = f.Content
 	}
 
-	embeddings, err := s.embedder.EmbedBatch(ctx, texts)
-	if err != nil {
-		s.logger.Error("embedding failed", "error", err)
-		http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
-		return
+	embeddings := make([][]float32, len(texts))
+	for start := 0; start < len(texts); start += embedBatchSize {
+		end := start + embedBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		batch, err := s.embedder.EmbedBatch(ctx, texts[start:end])
+		if err != nil {
+			s.logger.Error("embedding failed", "error", err)
+			http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		copy(embeddings[start:end], batch)
 	}
 
 	// Build SourceFragment objects with generated IDs.
 	fragments := make([]model.SourceFragment, len(req.Fragments))
 	for i, f := range req.Fragments {
-		// Generate ID the same way as the ingest pipeline:
-		// sha256(source_type:source_path:index)[:16]
-		idInput := fmt.Sprintf("%s:%s:%d", f.SourceType, f.SourcePath, i)
-		id := fmt.Sprintf("%x", sha256.Sum256([]byte(idInput)))[:16]
-
 		// Use provided FileType, or derive from path.
 		fileType := f.FileType
 		if fileType == "" {
@@ -236,7 +219,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fragments[i] = model.SourceFragment{
-			ID:           id,
+			ID:           model.FragmentID(f.SourceType, f.SourcePath, i),
 			Content:      f.Content,
 			SourceType:   f.SourceType,
 			SourceName:   f.SourceName,

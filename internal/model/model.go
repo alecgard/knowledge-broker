@@ -8,17 +8,20 @@ import "github.com/knowledge-broker/knowledge-broker/pkg/model"
 // Re-export all public types so internal packages can continue importing
 // "internal/model" without changes.
 type (
-	RawDocument      = model.RawDocument
-	Chunk            = model.Chunk
-	SourceFragment   = model.SourceFragment
-	Message          = model.Message
-	QueryRequest     = model.QueryRequest
-	Answer           = model.Answer
+	RawDocument       = model.RawDocument
+	Chunk             = model.Chunk
+	SourceFragment    = model.SourceFragment
+	Message           = model.Message
+	QueryRequest      = model.QueryRequest
+	Answer            = model.Answer
 	ConfidenceSignals = model.ConfidenceSignals
-	SourceRef        = model.SourceRef
-	Contradiction    = model.Contradiction
-	FeedbackType     = model.FeedbackType
-	Feedback         = model.Feedback
+	SourceRef         = model.SourceRef
+	Contradiction     = model.Contradiction
+	FeedbackType      = model.FeedbackType
+	Feedback          = model.Feedback
+	IngestFragment    = model.IngestFragment
+	IngestDeletedPath = model.IngestDeletedPath
+	IngestRequest     = model.IngestRequest
 )
 
 // Re-export constants.
@@ -26,4 +29,12 @@ const (
 	FeedbackCorrection   = model.FeedbackCorrection
 	FeedbackChallenge    = model.FeedbackChallenge
 	FeedbackConfirmation = model.FeedbackConfirmation
+
+	SourceTypeFilesystem = model.SourceTypeFilesystem
+	SourceTypeGit        = model.SourceTypeGit
 )
+
+// FragmentID re-exports the public FragmentID function.
+func FragmentID(sourceType, sourcePath string, index int) string {
+	return model.FragmentID(sourceType, sourcePath, index)
+}

@@ -76,7 +76,7 @@ func (c *FilesystemConnector) sourceName() string {
 
 // Name returns the connector type identifier.
 func (c *FilesystemConnector) Name() string {
-	return "filesystem"
+	return model.SourceTypeFilesystem
 }
 
 // Scan walks the directory tree and returns new/changed documents and deleted paths.
@@ -176,7 +176,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			LastModified: lastModified,
 			Author:       author,
 			SourceURI:    "file://" + absPath,
-			SourceType:   "filesystem",
+			SourceType:   model.SourceTypeFilesystem,
 			SourceName:   c.sourceName(),
 			Checksum:     checksum,
 		})

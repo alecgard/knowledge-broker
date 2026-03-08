@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -104,6 +103,14 @@ func newExtractorRegistry(cfg config.Config) *extractor.Registry {
 	return reg
 }
 
+// resolveConnector returns the appropriate connector based on the flags.
+func resolveConnector(source, gitURL string, cfg config.Config) connector.Connector {
+	if gitURL != "" {
+		return connector.NewGitConnector(gitURL, "", cfg.GitHubClientID)
+	}
+	return connector.NewFilesystemConnector(source)
+}
+
 func ingestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ingest",
@@ -128,13 +135,7 @@ func ingestCmd() *cobra.Command {
 			// Determine which connector to use.
 			source, _ := cmd.Flags().GetString("source")
 			gitURL, _ := cmd.Flags().GetString("git")
-
-			var conn connector.Connector
-			if gitURL != "" {
-				conn = connector.NewGitConnector(gitURL, "", cfg.GitHubClientID)
-			} else {
-				conn = connector.NewFilesystemConnector(source)
-			}
+			conn := resolveConnector(source, gitURL, cfg)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
@@ -467,60 +468,46 @@ func exportCmd() *cobra.Command {
 	return cmd
 }
 
-// pushIngestRequest matches server.IngestRequest for JSON serialization.
-type pushIngestRequest struct {
-	Fragments []pushFragment  `json:"fragments"`
-	Deleted   []pushDeletedPath `json:"deleted,omitempty"`
-}
-
-type pushFragment struct {
-	Content      string    `json:"content"`
-	SourceType   string    `json:"source_type"`
-	SourceName   string    `json:"source_name,omitempty"`
-	SourcePath   string    `json:"source_path"`
-	SourceURI    string    `json:"source_uri"`
-	LastModified time.Time `json:"last_modified"`
-	Author       string    `json:"author"`
-	FileType     string    `json:"file_type"`
-	Checksum     string    `json:"checksum"`
-}
-
-type pushDeletedPath struct {
-	SourceType string `json:"source_type"`
-	Path       string `json:"path"`
-}
-
 type pushIngestResponse struct {
 	Ingested int `json:"ingested"`
 }
 
-// splitBySize splits fragments into batches that fit within maxBytes when JSON-encoded.
-// Deletions are included only in the first batch. Most repos will produce a single batch.
-func splitBySize(fragments []pushFragment, deleted []pushDeletedPath, maxBytes int) []pushIngestRequest {
+// splitBySize splits fragments into batches that fit within maxBytes when
+// JSON-encoded. Each returned []byte is a pre-marshaled JSON request body
+// ready to POST. Deletions are included only in the first batch. Most repos
+// will produce a single batch.
+func splitBySize(fragments []model.IngestFragment, deleted []model.IngestDeletedPath, maxBytes int) ([][]byte, error) {
 	// Try everything in one request first.
-	all := pushIngestRequest{Fragments: fragments, Deleted: deleted}
+	all := model.IngestRequest{Fragments: fragments, Deleted: deleted}
 	data, err := json.Marshal(all)
-	if err != nil || len(data) <= maxBytes {
-		return []pushIngestRequest{all}
+	if err != nil {
+		return nil, fmt.Errorf("marshal ingest request: %w", err)
+	}
+	if len(data) <= maxBytes {
+		return [][]byte{data}, nil
 	}
 
 	// Estimate per-fragment size and split accordingly.
 	avgSize := len(data) / max(len(fragments), 1)
 	perBatch := max(maxBytes/max(avgSize, 1), 1)
 
-	var batches []pushIngestRequest
+	var batches [][]byte
 	for i := 0; i < len(fragments); i += perBatch {
 		end := i + perBatch
 		if end > len(fragments) {
 			end = len(fragments)
 		}
-		batch := pushIngestRequest{Fragments: fragments[i:end]}
+		batch := model.IngestRequest{Fragments: fragments[i:end]}
 		if i == 0 {
 			batch.Deleted = deleted
 		}
-		batches = append(batches, batch)
+		batchBytes, err := json.Marshal(batch)
+		if err != nil {
+			return nil, fmt.Errorf("marshal ingest batch: %w", err)
+		}
+		batches = append(batches, batchBytes)
 	}
-	return batches
+	return batches, nil
 }
 
 func pushCmd() *cobra.Command {
@@ -552,12 +539,7 @@ func pushCmd() *cobra.Command {
 			reg := newExtractorRegistry(cfg)
 
 			// Determine which connector to use.
-			var conn connector.Connector
-			if gitURL != "" {
-				conn = connector.NewGitConnector(gitURL, "", cfg.GitHubClientID)
-			} else {
-				conn = connector.NewFilesystemConnector(source)
-			}
+			conn := resolveConnector(source, gitURL, cfg)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
@@ -579,29 +561,19 @@ func pushCmd() *cobra.Command {
 
 			// Build fragments from documents using extractors (without embedding).
 			fmt.Fprintf(os.Stderr, "Extracting chunks...\n")
-			var allFragments []pushFragment
+			var allFragments []model.IngestFragment
 			for _, doc := range docs {
-				// Use pre-provided chunks when available; otherwise run the extractor.
-				var chunks []model.Chunk
-				if len(doc.Chunks) > 0 {
-					chunks = doc.Chunks
-				} else {
-					ext := filepath.Ext(doc.Path)
-					e := reg.Get(ext)
-					var err error
-					chunks, err = e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
-					if err != nil {
-						logger.Warn("extract failed", "path", doc.Path, "error", err)
-						continue
-					}
+				chunks, err := ingest.ExtractChunks(doc, reg)
+				if err != nil {
+					logger.Warn("extract failed", "path", doc.Path, "error", err)
+					continue
 				}
 
 				// Derive file type from path extension.
 				fileType := filepath.Ext(doc.Path)
 
-				for i, chunk := range chunks {
-					_ = i // chunk index used for ID generation on server side
-					allFragments = append(allFragments, pushFragment{
+				for _, chunk := range chunks {
+					allFragments = append(allFragments, model.IngestFragment{
 						Content:      chunk.Content,
 						SourceType:   doc.SourceType,
 						SourceName:   doc.SourceName,
@@ -616,9 +588,9 @@ func pushCmd() *cobra.Command {
 			}
 
 			// Build deleted paths.
-			var deletedPaths []pushDeletedPath
+			var deletedPaths []model.IngestDeletedPath
 			for _, p := range deleted {
-				deletedPaths = append(deletedPaths, pushDeletedPath{
+				deletedPaths = append(deletedPaths, model.IngestDeletedPath{
 					SourceType: conn.Name(),
 					Path:       p,
 				})
@@ -630,21 +602,20 @@ func pushCmd() *cobra.Command {
 			httpCl := &http.Client{Timeout: 300 * time.Second}
 
 			// Split into batches only if the payload exceeds 10MB.
+			// Each batch is pre-marshaled JSON ready to POST.
 			const maxPayloadBytes = 10 << 20
-			batches := splitBySize(allFragments, deletedPaths, maxPayloadBytes)
+			batches, err := splitBySize(allFragments, deletedPaths, maxPayloadBytes)
+			if err != nil {
+				return fmt.Errorf("prepare batches: %w", err)
+			}
 
-			for i, batch := range batches {
+			for i, bodyBytes := range batches {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 
-				bodyBytes, err := json.Marshal(batch)
-				if err != nil {
-					return fmt.Errorf("marshal request: %w", err)
-				}
-
 				if len(batches) > 1 {
-					fmt.Fprintf(os.Stderr, "  Sending batch %d/%d (%d fragments)...\n", i+1, len(batches), len(batch.Fragments))
+					fmt.Fprintf(os.Stderr, "  Sending batch %d/%d...\n", i+1, len(batches))
 				}
 
 				req, err := http.NewRequestWithContext(ctx, http.MethodPost, remote+"/v1/ingest", bytes.NewReader(bodyBytes))
@@ -680,12 +651,8 @@ func pushCmd() *cobra.Command {
 			if len(docs) > 0 {
 				var trackFragments []model.SourceFragment
 				for _, doc := range docs {
-					// Generate a tracking fragment ID based on source + path.
-					idInput := fmt.Sprintf("%s:%s:0", doc.SourceType, doc.Path)
-					id := fmt.Sprintf("%x", sha256.Sum256([]byte(idInput)))[:16]
-
 					trackFragments = append(trackFragments, model.SourceFragment{
-						ID:           id,
+						ID:           model.FragmentID(doc.SourceType, doc.Path, 0),
 						Content:      "", // No content needed for tracking
 						SourceType:   doc.SourceType,
 						SourceName:   doc.SourceName,

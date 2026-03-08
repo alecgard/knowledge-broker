@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -143,18 +142,9 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 }
 
 func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) ([]model.SourceFragment, error) {
-	// Use pre-provided chunks when available; otherwise run the extractor.
-	var chunks []model.Chunk
-	if len(doc.Chunks) > 0 {
-		chunks = doc.Chunks
-	} else {
-		ext := filepath.Ext(doc.Path)
-		e := p.extractors.Get(ext)
-		var err error
-		chunks, err = e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
-		if err != nil {
-			return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
-		}
+	chunks, err := ExtractChunks(doc, p.extractors)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(chunks) == 0 {
@@ -177,12 +167,8 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 	// Build fragments.
 	fragments := make([]model.SourceFragment, len(chunks))
 	for i, chunk := range chunks {
-		// Generate a unique ID from source + path + chunk index.
-		idInput := fmt.Sprintf("%s:%s:%d", doc.SourceType, doc.Path, i)
-		id := fmt.Sprintf("%x", sha256.Sum256([]byte(idInput)))[:16]
-
 		fragments[i] = model.SourceFragment{
-			ID:           id,
+			ID:           model.FragmentID(doc.SourceType, doc.Path, i),
 			Content:      chunk.Content,
 			SourceType:   doc.SourceType,
 			SourceName:   doc.SourceName,
@@ -197,6 +183,22 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 	}
 
 	return fragments, nil
+}
+
+// ExtractChunks extracts chunks from a single document using the extractor
+// registry. It handles pre-chunked documents and extractor lookup. Returns
+// nil chunks (not an error) when the document yields no content.
+func ExtractChunks(doc model.RawDocument, reg *extractor.Registry) ([]model.Chunk, error) {
+	if len(doc.Chunks) > 0 {
+		return doc.Chunks, nil
+	}
+	ext := filepath.Ext(doc.Path)
+	e := reg.Get(ext)
+	chunks, err := e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
+	if err != nil {
+		return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
+	}
+	return chunks, nil
 }
 
 func countOverlap(known map[string]string, docs []model.RawDocument) int {

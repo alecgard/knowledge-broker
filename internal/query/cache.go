@@ -70,10 +70,11 @@ func fragmentSig(fragments []model.SourceFragment) string {
 // Get returns a cached answer if one exists for this query and the underlying
 // fragments haven't changed. Returns nil on miss.
 func (c *Cache) Get(query string, concise bool, currentFragments []model.SourceFragment) *model.Answer {
+	key := cacheKey(query, concise)
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := cacheKey(query, concise)
 	entry, ok := c.entries[key]
 	if !ok {
 		return nil
@@ -84,7 +85,7 @@ func (c *Cache) Get(query string, concise bool, currentFragments []model.SourceF
 		return nil
 	}
 
-	// Check that the fragments haven't changed.
+	// Check that the fragments haven't changed (computed lazily, only on key+TTL hit).
 	if entry.fragmentSigs != fragmentSig(currentFragments) {
 		return nil
 	}

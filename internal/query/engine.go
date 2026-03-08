@@ -68,22 +68,21 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		return cached, nil
 	}
 
-	// Embed the query.
-	queryEmb, err := e.embedder.Embed(ctx, lastMsg.Content)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-
-	// When topics are provided, blend the topics embedding into the query
-	// embedding so that the vector search naturally favours topic-relevant
-	// fragments without needing a separate reranking pass.
+	// Embed the query (and topics if present) in a single batch call.
+	var queryEmb []float32
 	if len(req.Topics) > 0 {
 		topicsText := strings.Join(req.Topics, " ")
-		topicsEmb, err := e.embedder.Embed(ctx, topicsText)
+		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
 		if err != nil {
-			return nil, fmt.Errorf("embed topics: %w", err)
+			return nil, fmt.Errorf("embed query+topics: %w", err)
 		}
-		queryEmb = combineEmbeddings(queryEmb, topicsEmb, 0.3)
+		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
+	} else {
+		var err error
+		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
 	}
 
 	// Search for relevant fragments.

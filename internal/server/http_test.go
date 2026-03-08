@@ -184,7 +184,7 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 
 	// Now send a deletion request.
 	deleteReq := IngestRequest{
-		Deleted: []DeletedPath{
+		Deleted: []IngestDeletedPath{
 			{SourceType: "github", Path: "docs/old.md"},
 		},
 	}

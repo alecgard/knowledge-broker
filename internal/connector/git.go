@@ -36,7 +36,7 @@ func NewGitConnector(repoURL, branch, clientID string) *GitConnector {
 
 // Name returns the connector type identifier.
 func (c *GitConnector) Name() string {
-	return "git"
+	return model.SourceTypeGit
 }
 
 // Scan clones the repo to a temp dir and delegates to FilesystemConnector.
@@ -81,7 +81,7 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		// Convert absolute temp path to relative path within repo.
 		relPath, _ := filepath.Rel(tmpDir, docs[i].Path)
 		docs[i].Path = relPath
-		docs[i].SourceType = "git"
+		docs[i].SourceType = model.SourceTypeGit
 		docs[i].SourceName = sourceName
 		docs[i].SourceURI = sourceURI + "/" + relPath
 	}

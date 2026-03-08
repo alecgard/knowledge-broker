@@ -1,0 +1,186 @@
+package embedding
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestNewOllamaEmbedderDefaults(t *testing.T) {
+	e := NewOllamaEmbedder("", "", 0)
+	if e.baseURL != defaultOllamaBaseURL {
+		t.Errorf("baseURL = %q, want %q", e.baseURL, defaultOllamaBaseURL)
+	}
+	if e.model != defaultOllamaModel {
+		t.Errorf("model = %q, want %q", e.model, defaultOllamaModel)
+	}
+	if e.dimension != defaultOllamaDimension {
+		t.Errorf("dimension = %d, want %d", e.dimension, defaultOllamaDimension)
+	}
+}
+
+func TestNewOllamaEmbedderCustom(t *testing.T) {
+	e := NewOllamaEmbedder("http://example.com:1234", "mxbai-embed-large", 1024)
+	if e.baseURL != "http://example.com:1234" {
+		t.Errorf("baseURL = %q, want %q", e.baseURL, "http://example.com:1234")
+	}
+	if e.model != "mxbai-embed-large" {
+		t.Errorf("model = %q, want %q", e.model, "mxbai-embed-large")
+	}
+	if e.Dimension() != 1024 {
+		t.Errorf("Dimension() = %d, want %d", e.Dimension(), 1024)
+	}
+}
+
+func TestEmbed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embed" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+
+		var req ollamaEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.Model != "nomic-embed-text" {
+			t.Errorf("model = %q, want %q", req.Model, "nomic-embed-text")
+		}
+
+		resp := ollamaEmbedResponse{
+			Model:      "nomic-embed-text",
+			Embeddings: [][]float64{{0.1, 0.2, 0.3}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 3)
+	vec, err := e.Embed(context.Background(), "hello world")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if len(vec) != 3 {
+		t.Fatalf("len(vec) = %d, want 3", len(vec))
+	}
+	expected := []float32{0.1, 0.2, 0.3}
+	for i, v := range vec {
+		if v != expected[i] {
+			t.Errorf("vec[%d] = %f, want %f", i, v, expected[i])
+		}
+	}
+}
+
+func TestEmbedBatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ollamaEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		// input should be an array of strings for batch.
+		inputs, ok := req.Input.([]any)
+		if !ok {
+			t.Fatalf("expected input to be []any, got %T", req.Input)
+		}
+		if len(inputs) != 2 {
+			t.Fatalf("expected 2 inputs, got %d", len(inputs))
+		}
+
+		resp := ollamaEmbedResponse{
+			Model: "nomic-embed-text",
+			Embeddings: [][]float64{
+				{1.0, 2.0},
+				{3.0, 4.0},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2)
+	vecs, err := e.EmbedBatch(context.Background(), []string{"hello", "world"})
+	if err != nil {
+		t.Fatalf("EmbedBatch() error: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("len(vecs) = %d, want 2", len(vecs))
+	}
+	if vecs[0][0] != 1.0 || vecs[0][1] != 2.0 {
+		t.Errorf("vecs[0] = %v, want [1.0, 2.0]", vecs[0])
+	}
+	if vecs[1][0] != 3.0 || vecs[1][1] != 4.0 {
+		t.Errorf("vecs[1] = %v, want [3.0, 4.0]", vecs[1])
+	}
+}
+
+func TestEmbedBatchEmpty(t *testing.T) {
+	e := NewOllamaEmbedder("http://localhost:11434", "", 0)
+	vecs, err := e.EmbedBatch(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("EmbedBatch(nil) error: %v", err)
+	}
+	if vecs != nil {
+		t.Errorf("EmbedBatch(nil) = %v, want nil", vecs)
+	}
+}
+
+func TestEmbedServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"model not found"}`))
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 0)
+	_, err := e.Embed(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+func TestEmbedAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ollamaEmbedResponse{
+			Error: "model 'nonexistent' not found",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "nonexistent", 0)
+	_, err := e.Embed(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("expected error for API error response")
+	}
+}
+
+func TestEmbedBadResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not valid json`))
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 0)
+	_, err := e.Embed(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON response")
+	}
+}
+
+func TestEmbedConnectionError(t *testing.T) {
+	// Use a URL that will refuse connections.
+	e := NewOllamaEmbedder("http://127.0.0.1:1", "", 0)
+	_, err := e.Embed(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("expected error for connection refused")
+	}
+}

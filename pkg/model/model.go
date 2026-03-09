@@ -94,6 +94,7 @@ type QueryRequest struct {
 	Limit    int       `json:"limit,omitempty"`   // max fragments to retrieve, default 20
 	Concise  bool      `json:"concise,omitempty"` // terse, agent-friendly output
 	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "octroi")
+	Stream   *bool     `json:"stream,omitempty"`  // stream SSE responses; default false (single JSON response)
 }
 
 // Answer is the response from the query engine.

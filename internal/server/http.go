@@ -59,7 +59,8 @@ func (s *HTTPServer) Handler() http.Handler {
 	return s.mux
 }
 
-// handleQuery streams a query response as SSE.
+// handleQuery handles query requests. Streams SSE by default; set
+// "stream": false in the request body for a single JSON response.
 func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -77,7 +78,15 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set up SSE headers.
+	// Default to non-streaming; stream only when explicitly requested.
+	if req.Stream != nil && *req.Stream {
+		s.handleQueryStream(w, r, req)
+		return
+	}
+	s.handleQuerySync(w, r, req)
+}
+
+func (s *HTTPServer) handleQueryStream(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -105,7 +114,6 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the final answer with metadata.
 	data, _ := json.Marshal(map[string]interface{}{
 		"type":           "done",
 		"confidence":     answer.Confidence,
@@ -114,6 +122,18 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 	})
 	fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
+}
+
+func (s *HTTPServer) handleQuerySync(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {
+	answer, err := s.engine.Query(r.Context(), req, nil)
+	if err != nil {
+		s.logger.Error("query failed", "error", err)
+		http.Error(w, fmt.Sprintf("query failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(answer)
 }
 
 // handleFeedback records feedback on a fragment.

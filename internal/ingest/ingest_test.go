@@ -85,14 +85,16 @@ func (m *MockEmbedder) hashToVector(text string) []float32 {
 // RawDocuments.  Callers can mutate Docs and RemovedPaths between calls to
 // simulate file changes.
 type MockConnector struct {
-	SourceName   string
-	Docs         []model.RawDocument
-	RemovedPaths []string
+	ConnectorName string
+	Docs          []model.RawDocument
+	RemovedPaths  []string
 }
 
 var _ connector.Connector = (*MockConnector)(nil)
 
-func (m *MockConnector) Name() string { return m.SourceName }
+func (m *MockConnector) Name() string             { return m.ConnectorName }
+func (m *MockConnector) SourceName() string       { return m.ConnectorName }
+func (m *MockConnector) Config() map[string]string { return map[string]string{} }
 
 func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]model.RawDocument, []string, error) {
 	known := opts.Known
@@ -195,6 +197,7 @@ func makeDoc(path, content, checksum string) model.RawDocument {
 		Author:       "test-author",
 		SourceURI:    "file://" + path,
 		SourceType:   "mock",
+		SourceName:   "mock",
 		Checksum:     checksum,
 	}
 }
@@ -253,7 +256,7 @@ func RetryWithBackoff(attempts int, fn func() error) error {
 `
 
 	conn := &MockConnector{
-		SourceName: "mock",
+		ConnectorName: "mock",
 		Docs: []model.RawDocument{
 			makeDoc("docs/retry.md", mdContent, checksum(mdContent)),
 			makeDoc("pkg/retry/retry.go", goContent, checksum(goContent)),
@@ -275,7 +278,7 @@ func RetryWithBackoff(attempts int, fn func() error) error {
 		result.Added, result.Deleted, result.Skipped, result.Errors)
 
 	// Verify fragments are stored by checking checksums.
-	checksums, err := s.GetChecksums(ctx, "mock")
+	checksums, err := s.GetChecksums(ctx, "mock", "mock")
 	if err != nil {
 		t.Fatalf("GetChecksums: %v", err)
 	}
@@ -339,7 +342,7 @@ func TestIncrementalIngestion(t *testing.T) {
 	doc := makeDoc("docs/auth.md", originalContent, checksum(originalContent))
 
 	conn := &MockConnector{
-		SourceName: "mock",
+		ConnectorName: "mock",
 		Docs:       []model.RawDocument{doc},
 	}
 
@@ -384,7 +387,7 @@ func TestIncrementalIngestion(t *testing.T) {
 	t.Logf("Third ingestion: added=%d skipped=%d", result3.Added, result3.Skipped)
 
 	// Verify the stored content reflects the update.
-	checksums, err := s.GetChecksums(ctx, "mock")
+	checksums, err := s.GetChecksums(ctx, "mock", "mock")
 	if err != nil {
 		t.Fatalf("GetChecksums: %v", err)
 	}
@@ -406,7 +409,7 @@ func TestDeletedFiles(t *testing.T) {
 	content3 := "# Document Three\n\nThird document about metrics.\n"
 
 	conn := &MockConnector{
-		SourceName: "mock",
+		ConnectorName: "mock",
 		Docs: []model.RawDocument{
 			makeDoc("docs/networking.md", content1, checksum(content1)),
 			makeDoc("docs/logging.md", content2, checksum(content2)),
@@ -425,7 +428,7 @@ func TestDeletedFiles(t *testing.T) {
 	t.Logf("Initial ingestion: added=%d", initialAdded)
 
 	// Verify all three documents are stored.
-	checksums, err := s.GetChecksums(ctx, "mock")
+	checksums, err := s.GetChecksums(ctx, "mock", "mock")
 	if err != nil {
 		t.Fatalf("GetChecksums: %v", err)
 	}
@@ -451,7 +454,7 @@ func TestDeletedFiles(t *testing.T) {
 		result2.Added, result2.Deleted, result2.Skipped)
 
 	// Verify only two documents remain.
-	checksums, err = s.GetChecksums(ctx, "mock")
+	checksums, err = s.GetChecksums(ctx, "mock", "mock")
 	if err != nil {
 		t.Fatalf("GetChecksums after deletion: %v", err)
 	}

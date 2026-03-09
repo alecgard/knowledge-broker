@@ -39,6 +39,15 @@ func (c *GitConnector) Name() string {
 	return model.SourceTypeGit
 }
 
+// Config returns the connector's configuration for source registration.
+func (c *GitConnector) Config() map[string]string {
+	cfg := map[string]string{"url": c.repoURL}
+	if c.branch != "" {
+		cfg["branch"] = c.branch
+	}
+	return cfg
+}
+
 // Scan clones the repo to a temp dir and delegates to FilesystemConnector.
 func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawDocument, []string, error) {
 	cloneURL, err := c.authenticatedURL(ctx)
@@ -76,7 +85,7 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 
 	// Rewrite source metadata to reflect the git remote, not the temp dir.
 	sourceURI := c.baseSourceURI()
-	sourceName := c.sourceName()
+	sourceName := c.SourceName()
 	for i := range docs {
 		// Convert absolute temp path to relative path within repo.
 		relPath, _ := filepath.Rel(tmpDir, docs[i].Path)
@@ -172,10 +181,10 @@ func (c *GitConnector) baseSourceURI() string {
 	return uri
 }
 
-// sourceName derives a human-readable source name from the repo URL.
+// SourceName derives a human-readable source name from the repo URL.
 // For GitHub URLs like "https://github.com/owner/repo", it returns "owner/repo".
 // For other URLs, it returns the repo name (last path segment without .git).
-func (c *GitConnector) sourceName() string {
+func (c *GitConnector) SourceName() string {
 	u := strings.TrimSuffix(c.repoURL, ".git")
 
 	// Try to parse as URL and extract path.

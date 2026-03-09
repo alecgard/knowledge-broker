@@ -193,7 +193,7 @@ func TestGetChecksums(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cs, err := s.GetChecksums(ctx, "filesystem")
+	cs, err := s.GetChecksums(ctx, "filesystem", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestDeleteByPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.DeleteByPaths(ctx, "filesystem", []string{"/a.txt"}); err != nil {
+	if err := s.DeleteByPaths(ctx, "filesystem", "", []string{"/a.txt"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -295,7 +295,7 @@ func TestDeleteByPathsEmpty(t *testing.T) {
 	ctx := context.Background()
 
 	// Should be a no-op, not an error.
-	if err := s.DeleteByPaths(ctx, "filesystem", nil); err != nil {
+	if err := s.DeleteByPaths(ctx, "filesystem", "", nil); err != nil {
 		t.Fatal(err)
 	}
 }

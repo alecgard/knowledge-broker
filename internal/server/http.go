@@ -186,14 +186,16 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	// Handle deletions.
 	if len(req.Deleted) > 0 {
-		// Group deletions by source type.
-		byType := make(map[string][]string)
+		// Group deletions by (source_type, source_name).
+		type sourceKey struct{ typ, name string }
+		bySource := make(map[sourceKey][]string)
 		for _, d := range req.Deleted {
-			byType[d.SourceType] = append(byType[d.SourceType], d.Path)
+			k := sourceKey{d.SourceType, d.SourceName}
+			bySource[k] = append(bySource[k], d.Path)
 		}
-		for sourceType, paths := range byType {
-			if err := s.store.DeleteByPaths(ctx, sourceType, paths); err != nil {
-				s.logger.Error("delete failed", "error", err, "source_type", sourceType)
+		for k, paths := range bySource {
+			if err := s.store.DeleteByPaths(ctx, k.typ, k.name, paths); err != nil {
+				s.logger.Error("delete failed", "error", err, "source_type", k.typ, "source_name", k.name)
 				http.Error(w, fmt.Sprintf("delete failed: %v", err), http.StatusInternalServerError)
 				return
 			}

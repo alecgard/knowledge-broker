@@ -35,9 +35,10 @@ type IngestFragment struct {
 	Checksum     string    `json:"checksum"`
 }
 
-// IngestDeletedPath identifies a source type and path to delete.
+// IngestDeletedPath identifies a source type, source name, and path to delete.
 type IngestDeletedPath struct {
 	SourceType string `json:"source_type"`
+	SourceName string `json:"source_name,omitempty"`
 	Path       string `json:"path"`
 }
 
@@ -45,6 +46,14 @@ type IngestDeletedPath struct {
 type IngestRequest struct {
 	Fragments []IngestFragment  `json:"fragments"`
 	Deleted   []IngestDeletedPath `json:"deleted,omitempty"`
+}
+
+// Source represents a registered ingestion source.
+type Source struct {
+	SourceType string            `json:"source_type"`
+	SourceName string            `json:"source_name"`
+	Config     map[string]string `json:"config"`
+	LastIngest time.Time         `json:"last_ingest"`
 }
 
 // RawDocument is the output of a connector before extraction.

@@ -17,17 +17,23 @@ type Store interface {
 	// GetFragments retrieves fragments by ID.
 	GetFragments(ctx context.Context, ids []string) ([]model.SourceFragment, error)
 
-	// GetChecksums returns path -> checksum for all fragments of a source type.
-	GetChecksums(ctx context.Context, sourceType string) (map[string]string, error)
+	// GetChecksums returns path -> checksum for all fragments of a source type and name.
+	GetChecksums(ctx context.Context, sourceType, sourceName string) (map[string]string, error)
 
-	// DeleteByPaths removes fragments matching the given source type and paths.
-	DeleteByPaths(ctx context.Context, sourceType string, paths []string) error
+	// DeleteByPaths removes fragments matching the given source type, name, and paths.
+	DeleteByPaths(ctx context.Context, sourceType, sourceName string, paths []string) error
 
 	// ExportFragments returns all fragments with their embeddings.
 	ExportFragments(ctx context.Context) ([]model.SourceFragment, error)
 
 	// RecordFeedback stores feedback for a fragment.
 	RecordFeedback(ctx context.Context, fb model.Feedback) error
+
+	// RegisterSource inserts or updates a registered source.
+	RegisterSource(ctx context.Context, src model.Source) error
+
+	// ListSources returns all registered sources.
+	ListSources(ctx context.Context) ([]model.Source, error)
 
 	// Close releases resources.
 	Close() error

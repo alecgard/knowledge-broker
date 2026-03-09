@@ -8,6 +8,7 @@ import "github.com/knowledge-broker/knowledge-broker/pkg/model"
 // Re-export all public types so internal packages can continue importing
 // "internal/model" without changes.
 type (
+	Source            = model.Source
 	RawDocument       = model.RawDocument
 	Chunk             = model.Chunk
 	SourceFragment    = model.SourceFragment

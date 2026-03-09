@@ -59,10 +59,10 @@ func NewFilesystemConnector(rootPath string) *FilesystemConnector {
 	return &FilesystemConnector{rootPath: rootPath}
 }
 
-// sourceName derives a human-readable source name from the root path.
+// SourceName derives a human-readable source name from the root path.
 // For ".", it resolves to the directory name. For absolute paths, it uses
 // filepath.Base. Otherwise it returns the path as-is.
-func (c *FilesystemConnector) sourceName() string {
+func (c *FilesystemConnector) SourceName() string {
 	p := c.rootPath
 	if p == "." || p == "./" {
 		abs, err := filepath.Abs(p)
@@ -77,6 +77,15 @@ func (c *FilesystemConnector) sourceName() string {
 // Name returns the connector type identifier.
 func (c *FilesystemConnector) Name() string {
 	return model.SourceTypeFilesystem
+}
+
+// Config returns the connector's configuration for source registration.
+func (c *FilesystemConnector) Config() map[string]string {
+	absPath, err := filepath.Abs(c.rootPath)
+	if err != nil {
+		absPath = c.rootPath
+	}
+	return map[string]string{"path": absPath}
 }
 
 // Scan walks the directory tree and returns new/changed documents and deleted paths.
@@ -177,7 +186,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			Author:       author,
 			SourceURI:    "file://" + absPath,
 			SourceType:   model.SourceTypeFilesystem,
-			SourceName:   c.sourceName(),
+			SourceName:   c.SourceName(),
 			Checksum:     checksum,
 		})
 

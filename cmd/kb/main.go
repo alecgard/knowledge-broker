@@ -53,7 +53,7 @@ func main() {
 	root.AddCommand(mcpCmd())
 	root.AddCommand(feedbackCmd())
 	root.AddCommand(exportCmd())
-	root.AddCommand(pushCmd())
+	root.AddCommand(sourcesCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -103,24 +103,22 @@ func newExtractorRegistry(cfg config.Config) *extractor.Registry {
 	return reg
 }
 
-// resolveConnector returns the appropriate connector based on the flags.
-func resolveConnector(source, gitURL string, cfg config.Config) connector.Connector {
-	if gitURL != "" {
-		return connector.NewGitConnector(gitURL, "", cfg.GitHubClientID)
-	}
-	return connector.NewFilesystemConnector(source)
-}
-
 func ingestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ingest",
-		Short: "Ingest documents from a source",
+		Short: "Ingest documents from one or more sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
+			remote, _ := cmd.Flags().GetString("remote")
+			all, _ := cmd.Flags().GetBool("all")
+
+			if all && remote != "" {
+				return fmt.Errorf("--all and --remote cannot be combined")
+			}
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -128,32 +126,255 @@ func ingestCmd() *cobra.Command {
 			}
 			defer s.Close()
 
-			emb := newEmbedder(cfg, client)
 			reg := newExtractorRegistry(cfg)
-			pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-
-			// Determine which connector to use.
-			source, _ := cmd.Flags().GetString("source")
-			gitURL, _ := cmd.Flags().GetString("git")
-			conn := resolveConnector(source, gitURL, cfg)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			result, err := pipeline.Run(ctx, conn)
-			if err != nil {
-				return err
+			// --all: re-ingest all registered local sources.
+			if all {
+				emb := newEmbedder(cfg, client)
+				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+
+				sources, err := s.ListSources(ctx)
+				if err != nil {
+					return fmt.Errorf("list sources: %w", err)
+				}
+				var localSources []model.Source
+				for _, src := range sources {
+					if src.Config["mode"] == "local" {
+						localSources = append(localSources, src)
+					}
+				}
+				if len(localSources) == 0 {
+					return fmt.Errorf("no local sources registered; use --source or --git to ingest first")
+				}
+				for _, src := range localSources {
+					conn := connectorFromSource(src, cfg)
+					fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
+					result, err := pipeline.Run(ctx, conn)
+					if err != nil {
+						return fmt.Errorf("ingest %s/%s: %w", src.SourceType, src.SourceName, err)
+					}
+					src.LastIngest = time.Now()
+					if regErr := s.RegisterSource(ctx, src); regErr != nil {
+						logger.Warn("failed to update source timestamp", "error", regErr)
+					}
+					fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
+						src.SourceType, src.SourceName, result.Added, result.Deleted, result.Skipped, result.Errors)
+				}
+				return nil
 			}
 
-			fmt.Fprintf(os.Stderr, "Ingestion complete: %d added, %d deleted, %d skipped, %d errors\n",
-				result.Added, result.Deleted, result.Skipped, result.Errors)
+			// Build list of sources from flags.
+			gitURLs, _ := cmd.Flags().GetStringArray("git")
+			sourcePaths, _ := cmd.Flags().GetStringArray("source")
+
+			var connectors []connector.Connector
+
+			for _, u := range gitURLs {
+				connectors = append(connectors, connector.NewGitConnector(u, "", cfg.GitHubClientID))
+			}
+			for _, p := range sourcePaths {
+				connectors = append(connectors, connector.NewFilesystemConnector(p))
+			}
+
+			// Default: ingest current directory if no explicit flags.
+			if len(connectors) == 0 {
+				connectors = append(connectors, connector.NewFilesystemConnector("."))
+			}
+
+			remote = strings.TrimRight(remote, "/")
+
+			for _, conn := range connectors {
+				name := conn.SourceName()
+				fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+
+				var srcConfig map[string]string
+				if remote != "" {
+					if err := remoteIngest(ctx, conn, remote, s, reg, logger); err != nil {
+						return fmt.Errorf("ingest %s: %w", name, err)
+					}
+					srcConfig = map[string]string{"mode": "push"}
+				} else {
+					// Local ingest: store connector config for re-ingestion.
+					srcConfig = conn.Config()
+					emb := newEmbedder(cfg, client)
+					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+					result, err := pipeline.Run(ctx, conn)
+					if err != nil {
+						return fmt.Errorf("ingest %s: %w", name, err)
+					}
+					srcConfig["mode"] = "local"
+					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
+						name, result.Added, result.Deleted, result.Skipped, result.Errors)
+				}
+
+				if regErr := s.RegisterSource(ctx, model.Source{
+					SourceType: conn.Name(),
+					SourceName: name,
+					Config:     srcConfig,
+					LastIngest: time.Now(),
+				}); regErr != nil {
+					logger.Warn("failed to register source", "error", regErr)
+				}
+			}
 			return nil
 		},
 	}
-	cmd.Flags().String("source", ".", "Local directory to ingest")
-	cmd.Flags().String("git", "", "Git repo URL to ingest (any remote)")
+	cmd.Flags().StringArray("source", nil, "Local directory to ingest (repeatable)")
+	cmd.Flags().StringArray("git", nil, "Git repo URL to ingest (repeatable)")
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
+	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
 	return cmd
+}
+
+// remoteIngest pushes extracted fragments to a remote KB server and tracks
+// checksums locally for incremental behavior.
+func remoteIngest(ctx context.Context, conn connector.Connector, remote string, s *store.SQLiteStore, reg *extractor.Registry, logger *slog.Logger) error {
+	// Get known checksums for incremental ingestion.
+	known, err := s.GetChecksums(ctx, conn.Name(), conn.SourceName())
+	if err != nil {
+		return fmt.Errorf("get checksums: %w", err)
+	}
+
+	// Scan for new/changed documents and deleted paths.
+	fmt.Fprintf(os.Stderr, "Scanning %s...\n", conn.Name())
+	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known})
+	if err != nil {
+		return fmt.Errorf("scan: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Found %d new/changed files, %d deleted\n", len(docs), len(deleted))
+
+	// Build fragments from documents using extractors (without embedding).
+	fmt.Fprintf(os.Stderr, "Extracting chunks...\n")
+	var allFragments []model.IngestFragment
+	for _, doc := range docs {
+		chunks, err := ingest.ExtractChunks(doc, reg)
+		if err != nil {
+			logger.Warn("extract failed", "path", doc.Path, "error", err)
+			continue
+		}
+
+		fileType := filepath.Ext(doc.Path)
+
+		for _, chunk := range chunks {
+			allFragments = append(allFragments, model.IngestFragment{
+				Content:      chunk.Content,
+				SourceType:   doc.SourceType,
+				SourceName:   doc.SourceName,
+				SourcePath:   doc.Path,
+				SourceURI:    doc.SourceURI,
+				LastModified: doc.LastModified,
+				Author:       doc.Author,
+				FileType:     fileType,
+				Checksum:     doc.Checksum,
+			})
+		}
+	}
+
+	// Build deleted paths.
+	var deletedPaths []model.IngestDeletedPath
+	for _, p := range deleted {
+		deletedPaths = append(deletedPaths, model.IngestDeletedPath{
+			SourceType: conn.Name(),
+			SourceName: conn.SourceName(),
+			Path:       p,
+		})
+	}
+
+	fmt.Fprintf(os.Stderr, "Pushing %d fragments to %s...\n", len(allFragments), remote)
+
+	totalIngested := 0
+	httpCl := &http.Client{Timeout: 300 * time.Second}
+
+	const maxPayloadBytes = 10 << 20
+	batches, err := splitBySize(allFragments, deletedPaths, maxPayloadBytes)
+	if err != nil {
+		return fmt.Errorf("prepare batches: %w", err)
+	}
+
+	for i, bodyBytes := range batches {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if len(batches) > 1 {
+			fmt.Fprintf(os.Stderr, "  Sending batch %d/%d...\n", i+1, len(batches))
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, remote+"/v1/ingest", bytes.NewReader(bodyBytes))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := httpCl.Do(req)
+		if err != nil {
+			return fmt.Errorf("push to remote: %w", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("remote returned %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result pushIngestResponse
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return fmt.Errorf("parse response: %w", err)
+		}
+		totalIngested += result.Ingested
+	}
+
+	// Track the ingested checksums locally so next ingest is incremental.
+	if len(docs) > 0 {
+		var trackFragments []model.SourceFragment
+		for _, doc := range docs {
+			trackFragments = append(trackFragments, model.SourceFragment{
+				ID:           model.FragmentID(doc.SourceType, doc.Path, 0),
+				Content:      "",
+				SourceType:   doc.SourceType,
+				SourceName:   doc.SourceName,
+				SourcePath:   doc.Path,
+				SourceURI:    doc.SourceURI,
+				LastModified: doc.LastModified,
+				Author:       doc.Author,
+				FileType:     filepath.Ext(doc.Path),
+				Checksum:     doc.Checksum,
+			})
+		}
+		if err := s.UpsertFragments(ctx, trackFragments); err != nil {
+			return fmt.Errorf("track checksums: %w", err)
+		}
+	}
+
+	// Handle local deletions tracking.
+	if len(deleted) > 0 {
+		if err := s.DeleteByPaths(ctx, conn.Name(), conn.SourceName(), deleted); err != nil {
+			return fmt.Errorf("track deletions: %w", err)
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "Push complete: %d fragments ingested, %d paths deleted\n",
+		totalIngested, len(deleted))
+	return nil
+}
+
+// connectorFromSource reconstructs a Connector from a registered Source.
+func connectorFromSource(src model.Source, cfg config.Config) connector.Connector {
+	switch src.SourceType {
+	case model.SourceTypeGit:
+		return connector.NewGitConnector(src.Config["url"], src.Config["branch"], cfg.GitHubClientID)
+	default:
+		return connector.NewFilesystemConnector(src.Config["path"])
+	}
 }
 
 func queryCmd() *cobra.Command {
@@ -510,181 +731,43 @@ func splitBySize(fragments []model.IngestFragment, deleted []model.IngestDeleted
 	return batches, nil
 }
 
-func pushCmd() *cobra.Command {
+func sourcesCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "push",
-		Short: "Push documents to a remote KB server",
+		Use:   "sources",
+		Short: "Manage registered sources",
+	}
+	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
+	cmd.AddCommand(sourcesListCmd())
+	return cmd
+}
+
+func sourcesListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List registered sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
-			dbPath, _ := cmd.Flags().GetString("db")
-			cfg.DBPath = dbPath
-			remote, _ := cmd.Flags().GetString("remote")
-			source, _ := cmd.Flags().GetString("source")
-			gitURL, _ := cmd.Flags().GetString("git")
-			debugMode := isDebug(cmd)
-			logger := newLogger(debugMode)
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
-			if remote == "" {
-				return fmt.Errorf("--remote is required")
-			}
-			remote = strings.TrimRight(remote, "/")
-
-			// Open a local store for tracking checksums (incremental ingestion).
 			s, err := openStore(cfg)
 			if err != nil {
 				return fmt.Errorf("open store: %w", err)
 			}
 			defer s.Close()
 
-			reg := newExtractorRegistry(cfg)
-
-			// Determine which connector to use.
-			conn := resolveConnector(source, gitURL, cfg)
-
-			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-			defer cancel()
-
-			// Get known checksums for incremental ingestion.
-			known, err := s.GetChecksums(ctx, conn.Name())
+			sources, err := s.ListSources(context.Background())
 			if err != nil {
-				return fmt.Errorf("get checksums: %w", err)
+				return fmt.Errorf("list sources: %w", err)
 			}
 
-			// Scan for new/changed documents and deleted paths.
-			fmt.Fprintf(os.Stderr, "Scanning %s...\n", conn.Name())
-			docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known})
-			if err != nil {
-				return fmt.Errorf("scan: %w", err)
+			if len(sources) == 0 {
+				fmt.Fprintln(os.Stderr, "No sources registered.")
+				return nil
 			}
 
-			fmt.Fprintf(os.Stderr, "Found %d new/changed files, %d deleted\n", len(docs), len(deleted))
-
-			// Build fragments from documents using extractors (without embedding).
-			fmt.Fprintf(os.Stderr, "Extracting chunks...\n")
-			var allFragments []model.IngestFragment
-			for _, doc := range docs {
-				chunks, err := ingest.ExtractChunks(doc, reg)
-				if err != nil {
-					logger.Warn("extract failed", "path", doc.Path, "error", err)
-					continue
-				}
-
-				// Derive file type from path extension.
-				fileType := filepath.Ext(doc.Path)
-
-				for _, chunk := range chunks {
-					allFragments = append(allFragments, model.IngestFragment{
-						Content:      chunk.Content,
-						SourceType:   doc.SourceType,
-						SourceName:   doc.SourceName,
-						SourcePath:   doc.Path,
-						SourceURI:    doc.SourceURI,
-						LastModified: doc.LastModified,
-						Author:       doc.Author,
-						FileType:     fileType,
-						Checksum:     doc.Checksum,
-					})
-				}
-			}
-
-			// Build deleted paths.
-			var deletedPaths []model.IngestDeletedPath
-			for _, p := range deleted {
-				deletedPaths = append(deletedPaths, model.IngestDeletedPath{
-					SourceType: conn.Name(),
-					Path:       p,
-				})
-			}
-
-			fmt.Fprintf(os.Stderr, "Pushing %d fragments to %s...\n", len(allFragments), remote)
-
-			totalIngested := 0
-			httpCl := &http.Client{Timeout: 300 * time.Second}
-
-			// Split into batches only if the payload exceeds 10MB.
-			// Each batch is pre-marshaled JSON ready to POST.
-			const maxPayloadBytes = 10 << 20
-			batches, err := splitBySize(allFragments, deletedPaths, maxPayloadBytes)
-			if err != nil {
-				return fmt.Errorf("prepare batches: %w", err)
-			}
-
-			for i, bodyBytes := range batches {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-
-				if len(batches) > 1 {
-					fmt.Fprintf(os.Stderr, "  Sending batch %d/%d...\n", i+1, len(batches))
-				}
-
-				req, err := http.NewRequestWithContext(ctx, http.MethodPost, remote+"/v1/ingest", bytes.NewReader(bodyBytes))
-				if err != nil {
-					return fmt.Errorf("create request: %w", err)
-				}
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := httpCl.Do(req)
-				if err != nil {
-					return fmt.Errorf("push to remote: %w", err)
-				}
-
-				respBody, err := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err != nil {
-					return fmt.Errorf("read response: %w", err)
-				}
-
-				if resp.StatusCode != http.StatusOK {
-					return fmt.Errorf("remote returned %d: %s", resp.StatusCode, string(respBody))
-				}
-
-				var result pushIngestResponse
-				if err := json.Unmarshal(respBody, &result); err != nil {
-					return fmt.Errorf("parse response: %w", err)
-				}
-				totalIngested += result.Ingested
-			}
-
-			// Track the ingested checksums locally so next push is incremental.
-			// We store minimal fragments (just source_path and checksum) to track state.
-			if len(docs) > 0 {
-				var trackFragments []model.SourceFragment
-				for _, doc := range docs {
-					trackFragments = append(trackFragments, model.SourceFragment{
-						ID:           model.FragmentID(doc.SourceType, doc.Path, 0),
-						Content:      "", // No content needed for tracking
-						SourceType:   doc.SourceType,
-						SourceName:   doc.SourceName,
-						SourcePath:   doc.Path,
-						SourceURI:    doc.SourceURI,
-						LastModified: doc.LastModified,
-						Author:       doc.Author,
-						FileType:     filepath.Ext(doc.Path),
-						Checksum:     doc.Checksum,
-					})
-				}
-				if err := s.UpsertFragments(ctx, trackFragments); err != nil {
-					return fmt.Errorf("track checksums: %w", err)
-				}
-			}
-
-			// Handle local deletions tracking.
-			if len(deleted) > 0 {
-				if err := s.DeleteByPaths(ctx, conn.Name(), deleted); err != nil {
-					return fmt.Errorf("track deletions: %w", err)
-				}
-			}
-
-			fmt.Fprintf(os.Stderr, "Push complete: %d fragments ingested, %d paths deleted\n",
-				totalIngested, len(deleted))
+			out, _ := json.MarshalIndent(sources, "", "  ")
+			fmt.Println(string(out))
 			return nil
 		},
 	}
-	cmd.Flags().String("remote", "", "URL of the central KB server")
-	cmd.Flags().String("source", ".", "Local directory to ingest")
-	cmd.Flags().String("git", "", "Git repo URL to ingest (any remote)")
-	cmd.Flags().String("db", "kb.db", "Local DB path for tracking checksums")
-	_ = cmd.MarkFlagRequired("remote")
-	return cmd
 }

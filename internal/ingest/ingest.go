@@ -54,7 +54,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 	result := &Result{}
 
 	// Get known checksums for incremental ingestion.
-	known, err := p.store.GetChecksums(ctx, conn.Name())
+	known, err := p.store.GetChecksums(ctx, conn.Name(), conn.SourceName())
 	if err != nil {
 		return nil, fmt.Errorf("get checksums: %w", err)
 	}
@@ -67,7 +67,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 
 	// Delete removed documents.
 	if len(deleted) > 0 {
-		if err := p.store.DeleteByPaths(ctx, conn.Name(), deleted); err != nil {
+		if err := p.store.DeleteByPaths(ctx, conn.Name(), conn.SourceName(), deleted); err != nil {
 			return nil, fmt.Errorf("delete: %w", err)
 		}
 		result.Deleted = len(deleted)

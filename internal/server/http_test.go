@@ -127,7 +127,7 @@ func TestHandleIngest(t *testing.T) {
 	}
 
 	// Verify fragments are stored by checking checksums.
-	checksums, err := st.GetChecksums(context.Background(), "filesystem")
+	checksums, err := st.GetChecksums(context.Background(), "filesystem", "")
 	if err != nil {
 		t.Fatalf("GetChecksums: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 	}
 
 	// Verify fragment exists.
-	checksums, _ := st.GetChecksums(context.Background(), "github")
+	checksums, _ := st.GetChecksums(context.Background(), "github", "")
 	if len(checksums) != 1 {
 		t.Fatalf("expected 1 checksum, got %d", len(checksums))
 	}
@@ -199,7 +199,7 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 	}
 
 	// Verify fragment is gone.
-	checksums, _ = st.GetChecksums(context.Background(), "github")
+	checksums, _ = st.GetChecksums(context.Background(), "github", "")
 	if len(checksums) != 0 {
 		t.Fatalf("expected 0 checksums after deletion, got %d", len(checksums))
 	}

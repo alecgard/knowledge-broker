@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -20,6 +21,9 @@ var migrationSQL string
 
 //go:embed migrations/002_add_source_name.sql
 var migration002SQL string
+
+//go:embed migrations/003_add_sources.sql
+var migration003SQL string
 
 // SQLiteStore implements Store using SQLite and sqlite-vec.
 type SQLiteStore struct {
@@ -48,6 +52,12 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 	// Run migration 002: add source_name column for existing databases.
 	// This will fail harmlessly if the column already exists (new databases).
 	db.Exec(migration002SQL)
+
+	// Run migration 003: add sources table.
+	if _, err := db.Exec(migration003SQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("run migration 003: %w", err)
+	}
 
 	// Create the sqlite-vec virtual table.
 	vtableSQL := fmt.Sprintf(
@@ -242,10 +252,15 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 	return results, rows.Err()
 }
 
-// GetChecksums returns a map of source_path -> checksum for all fragments of the given source type.
-func (s *SQLiteStore) GetChecksums(ctx context.Context, sourceType string) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		"SELECT source_path, checksum FROM fragments WHERE source_type = ?", sourceType)
+// GetChecksums returns a map of source_path -> checksum for all fragments of the given source type and name.
+func (s *SQLiteStore) GetChecksums(ctx context.Context, sourceType, sourceName string) (map[string]string, error) {
+	q := "SELECT source_path, checksum FROM fragments WHERE source_type = ?"
+	args := []interface{}{sourceType}
+	if sourceName != "" {
+		q += " AND source_name = ?"
+		args = append(args, sourceName)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get checksums: %w", err)
 	}
@@ -262,8 +277,8 @@ func (s *SQLiteStore) GetChecksums(ctx context.Context, sourceType string) (map[
 	return result, rows.Err()
 }
 
-// DeleteByPaths removes fragments matching the given source type and paths.
-func (s *SQLiteStore) DeleteByPaths(ctx context.Context, sourceType string, paths []string) error {
+// DeleteByPaths removes fragments matching the given source type, name, and paths.
+func (s *SQLiteStore) DeleteByPaths(ctx context.Context, sourceType, sourceName string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
@@ -275,29 +290,37 @@ func (s *SQLiteStore) DeleteByPaths(ctx context.Context, sourceType string, path
 	defer tx.Rollback()
 
 	placeholders := make([]string, len(paths))
-	args := make([]interface{}, 0, len(paths)+1)
+	args := make([]interface{}, 0, len(paths)+2)
 	args = append(args, sourceType)
+	if sourceName != "" {
+		args = append(args, sourceName)
+	}
 	for i, p := range paths {
 		placeholders[i] = "?"
 		args = append(args, p)
 	}
 	inClause := strings.Join(placeholders, ",")
 
+	nameFilter := ""
+	if sourceName != "" {
+		nameFilter = " AND source_name = ?"
+	}
+
 	// Delete from fragment_embeddings first (referencing fragment IDs).
 	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
 		DELETE FROM fragment_embeddings
 		WHERE fragment_id IN (
-			SELECT id FROM fragments WHERE source_type = ? AND source_path IN (%s)
+			SELECT id FROM fragments WHERE source_type = ?%s AND source_path IN (%s)
 		)
-	`, inClause), args...)
+	`, nameFilter, inClause), args...)
 	if err != nil {
 		return fmt.Errorf("delete embeddings: %w", err)
 	}
 
 	// Delete from fragments.
 	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
-		DELETE FROM fragments WHERE source_type = ? AND source_path IN (%s)
-	`, inClause), args...)
+		DELETE FROM fragments WHERE source_type = ?%s AND source_path IN (%s)
+	`, nameFilter, inClause), args...)
 	if err != nil {
 		return fmt.Errorf("delete fragments: %w", err)
 	}
@@ -376,6 +399,50 @@ func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragme
 		results = append(results, f)
 	}
 	return results, rows.Err()
+}
+
+// RegisterSource inserts or updates a registered source.
+func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) error {
+	configJSON, err := json.Marshal(src.Config)
+	if err != nil {
+		return fmt.Errorf("marshal source config: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO sources (source_type, source_name, config, last_ingest)
+		VALUES (?, ?, ?, ?)
+	`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("register source: %w", err)
+	}
+	return nil
+}
+
+// ListSources returns all registered sources.
+func (s *SQLiteStore) ListSources(ctx context.Context) ([]model.Source, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT source_type, source_name, config, last_ingest FROM sources ORDER BY source_type, source_name")
+	if err != nil {
+		return nil, fmt.Errorf("list sources: %w", err)
+	}
+	defer rows.Close()
+
+	var sources []model.Source
+	for rows.Next() {
+		var src model.Source
+		var configJSON string
+		var lastIngest sql.NullString
+		if err := rows.Scan(&src.SourceType, &src.SourceName, &configJSON, &lastIngest); err != nil {
+			return nil, fmt.Errorf("scan source: %w", err)
+		}
+		if err := json.Unmarshal([]byte(configJSON), &src.Config); err != nil {
+			return nil, fmt.Errorf("unmarshal source config: %w", err)
+		}
+		if lastIngest.Valid {
+			src.LastIngest, _ = time.Parse(time.RFC3339, lastIngest.String)
+		}
+		sources = append(sources, src)
+	}
+	return sources, rows.Err()
 }
 
 // Close releases the database connection.

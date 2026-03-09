@@ -142,7 +142,7 @@ func ingestCmd() *cobra.Command {
 				}
 				var localSources []model.Source
 				for _, src := range sources {
-					if src.Config["mode"] == "local" {
+					if src.Config["mode"] == model.SourceModeLocal {
 						localSources = append(localSources, src)
 					}
 				}
@@ -150,7 +150,10 @@ func ingestCmd() *cobra.Command {
 					return fmt.Errorf("no local sources registered; use --source or --git to ingest first")
 				}
 				for _, src := range localSources {
-					conn := connectorFromSource(src, cfg)
+					conn, err := connector.FromSource(src, cfg.GitHubClientID)
+					if err != nil {
+						return fmt.Errorf("reconstruct %s/%s: %w", src.SourceType, src.SourceName, err)
+					}
 					fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
 					result, err := pipeline.Run(ctx, conn)
 					if err != nil {
@@ -186,26 +189,30 @@ func ingestCmd() *cobra.Command {
 
 			remote = strings.TrimRight(remote, "/")
 
+			// Create embedder and pipeline once for local ingests.
+			var pipeline *ingest.Pipeline
+			if remote == "" {
+				emb := newEmbedder(cfg, client)
+				pipeline = ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+			}
+
 			for _, conn := range connectors {
 				name := conn.SourceName()
 				fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
 
 				var srcConfig map[string]string
 				if remote != "" {
-					if err := remoteIngest(ctx, conn, remote, s, reg, logger); err != nil {
+					if err := remoteIngest(ctx, conn, remote, s, reg, logger, client); err != nil {
 						return fmt.Errorf("ingest %s: %w", name, err)
 					}
-					srcConfig = map[string]string{"mode": "push"}
+					srcConfig = map[string]string{"mode": model.SourceModePush}
 				} else {
-					// Local ingest: store connector config for re-ingestion.
 					srcConfig = conn.Config()
-					emb := newEmbedder(cfg, client)
-					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					result, err := pipeline.Run(ctx, conn)
 					if err != nil {
 						return fmt.Errorf("ingest %s: %w", name, err)
 					}
-					srcConfig["mode"] = "local"
+					srcConfig["mode"] = model.SourceModeLocal
 					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
 						name, result.Added, result.Deleted, result.Skipped, result.Errors)
 				}
@@ -232,7 +239,7 @@ func ingestCmd() *cobra.Command {
 
 // remoteIngest pushes extracted fragments to a remote KB server and tracks
 // checksums locally for incremental behavior.
-func remoteIngest(ctx context.Context, conn connector.Connector, remote string, s *store.SQLiteStore, reg *extractor.Registry, logger *slog.Logger) error {
+func remoteIngest(ctx context.Context, conn connector.Connector, remote string, s *store.SQLiteStore, reg *extractor.Registry, logger *slog.Logger, client *http.Client) error {
 	// Get known checksums for incremental ingestion.
 	known, err := s.GetChecksums(ctx, conn.Name(), conn.SourceName())
 	if err != nil {
@@ -288,7 +295,6 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 	fmt.Fprintf(os.Stderr, "Pushing %d fragments to %s...\n", len(allFragments), remote)
 
 	totalIngested := 0
-	httpCl := &http.Client{Timeout: 300 * time.Second}
 
 	const maxPayloadBytes = 10 << 20
 	batches, err := splitBySize(allFragments, deletedPaths, maxPayloadBytes)
@@ -311,7 +317,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := httpCl.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("push to remote: %w", err)
 		}
@@ -367,15 +373,6 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 	return nil
 }
 
-// connectorFromSource reconstructs a Connector from a registered Source.
-func connectorFromSource(src model.Source, cfg config.Config) connector.Connector {
-	switch src.SourceType {
-	case model.SourceTypeGit:
-		return connector.NewGitConnector(src.Config["url"], src.Config["branch"], cfg.GitHubClientID)
-	default:
-		return connector.NewFilesystemConnector(src.Config["path"])
-	}
-}
 
 func queryCmd() *cobra.Command {
 	cmd := &cobra.Command{

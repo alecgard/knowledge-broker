@@ -48,6 +48,12 @@ type IngestRequest struct {
 	Deleted   []IngestDeletedPath `json:"deleted,omitempty"`
 }
 
+// SourceMode indicates how a source was ingested.
+const (
+	SourceModeLocal = "local" // ingested locally, re-runnable via --all
+	SourceModePush  = "push"  // pushed to a remote server
+)
+
 // Source represents a registered ingestion source.
 type Source struct {
 	SourceType string            `json:"source_type"`

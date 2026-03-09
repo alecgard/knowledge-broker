@@ -33,6 +33,9 @@ const (
 
 	SourceTypeFilesystem = model.SourceTypeFilesystem
 	SourceTypeGit        = model.SourceTypeGit
+
+	SourceModeLocal = model.SourceModeLocal
+	SourceModePush  = model.SourceModePush
 )
 
 // FragmentID re-exports the public FragmentID function.

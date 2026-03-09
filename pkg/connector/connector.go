@@ -25,8 +25,9 @@ type Connector interface {
 	SourceName() string
 
 	// Config returns the connector's configuration for source registration.
-	// Keys are connector-specific (e.g., "url", "branch" for git; "path" for filesystem).
-	Config() map[string]string
+	// The mode indicates how the source is being ingested (local or push).
+	// Connectors may omit local-only details (e.g., file paths) for push mode.
+	Config(mode string) map[string]string
 
 	// Scan returns documents from the source. Pass known checksums via opts
 	// for incremental ingestion — the connector may skip unchanged files.

@@ -80,7 +80,11 @@ func (c *FilesystemConnector) Name() string {
 }
 
 // Config returns the connector's configuration for source registration.
-func (c *FilesystemConnector) Config() map[string]string {
+// For push mode, the local path is omitted as it's meaningless on the server.
+func (c *FilesystemConnector) Config(mode string) map[string]string {
+	if mode == model.SourceModePush {
+		return map[string]string{}
+	}
 	absPath, err := filepath.Abs(c.rootPath)
 	if err != nil {
 		absPath = c.rootPath

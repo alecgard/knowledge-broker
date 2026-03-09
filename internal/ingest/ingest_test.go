@@ -94,7 +94,7 @@ var _ connector.Connector = (*MockConnector)(nil)
 
 func (m *MockConnector) Name() string             { return m.ConnectorName }
 func (m *MockConnector) SourceName() string       { return m.ConnectorName }
-func (m *MockConnector) Config() map[string]string { return map[string]string{} }
+func (m *MockConnector) Config(mode string) map[string]string { return map[string]string{} }
 
 func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]model.RawDocument, []string, error) {
 	known := opts.Known

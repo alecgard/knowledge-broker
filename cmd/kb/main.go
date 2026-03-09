@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -189,33 +190,66 @@ func ingestCmd() *cobra.Command {
 
 			remote = strings.TrimRight(remote, "/")
 
-			// Create embedder and pipeline once for local ingests.
-			var pipeline *ingest.Pipeline
-			if remote == "" {
-				emb := newEmbedder(cfg, client)
-				pipeline = ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+			if remote != "" {
+				// Remote ingests run in parallel — each scans independently and POSTs to the server.
+				var wg sync.WaitGroup
+				errCh := make(chan error, len(connectors))
+
+				for _, conn := range connectors {
+					wg.Add(1)
+					go func(conn connector.Connector) {
+						defer wg.Done()
+						name := conn.SourceName()
+						fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+
+						if err := remoteIngest(ctx, conn, remote, s, reg, logger, client); err != nil {
+							errCh <- fmt.Errorf("ingest %s: %w", name, err)
+							return
+						}
+
+						srcConfig := conn.Config(model.SourceModePush)
+						srcConfig["mode"] = model.SourceModePush
+						if regErr := s.RegisterSource(ctx, model.Source{
+							SourceType: conn.Name(),
+							SourceName: name,
+							Config:     srcConfig,
+							LastIngest: time.Now(),
+						}); regErr != nil {
+							logger.Warn("failed to register source", "error", regErr)
+						}
+					}(conn)
+				}
+
+				wg.Wait()
+				close(errCh)
+
+				var errs []string
+				for err := range errCh {
+					errs = append(errs, err.Error())
+				}
+				if len(errs) > 0 {
+					return fmt.Errorf("%s", strings.Join(errs, "; "))
+				}
+				return nil
 			}
+
+			// Local ingests run sequentially (shared SQLite writer).
+			emb := newEmbedder(cfg, client)
+			pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
 			for _, conn := range connectors {
 				name := conn.SourceName()
 				fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
 
-				var srcConfig map[string]string
-				if remote != "" {
-					if err := remoteIngest(ctx, conn, remote, s, reg, logger, client); err != nil {
-						return fmt.Errorf("ingest %s: %w", name, err)
-					}
-					srcConfig = map[string]string{"mode": model.SourceModePush}
-				} else {
-					srcConfig = conn.Config()
-					result, err := pipeline.Run(ctx, conn)
-					if err != nil {
-						return fmt.Errorf("ingest %s: %w", name, err)
-					}
-					srcConfig["mode"] = model.SourceModeLocal
-					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
-						name, result.Added, result.Deleted, result.Skipped, result.Errors)
+				result, err := pipeline.Run(ctx, conn)
+				if err != nil {
+					return fmt.Errorf("ingest %s: %w", name, err)
 				}
+
+				srcConfig := conn.Config(model.SourceModeLocal)
+				srcConfig["mode"] = model.SourceModeLocal
+				fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
+					name, result.Added, result.Deleted, result.Skipped, result.Errors)
 
 				if regErr := s.RegisterSource(ctx, model.Source{
 					SourceType: conn.Name(),

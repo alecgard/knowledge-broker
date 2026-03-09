@@ -40,7 +40,7 @@ func (c *GitConnector) Name() string {
 }
 
 // Config returns the connector's configuration for source registration.
-func (c *GitConnector) Config() map[string]string {
+func (c *GitConnector) Config(mode string) map[string]string {
 	cfg := map[string]string{"url": c.repoURL}
 	if c.branch != "" {
 		cfg["branch"] = c.branch

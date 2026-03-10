@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -412,6 +413,186 @@ func TestDeleteSource(t *testing.T) {
 	sources, _ = s.ListSources(ctx)
 	if len(sources) != 0 {
 		t.Errorf("expected 0 sources, got %d", len(sources))
+	}
+}
+
+func TestConcurrentUpserts(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "concurrent.db")
+
+	const numWorkers = 8
+	const fragsPerWorker = 10
+
+	now := time.Now().UTC().Truncate(time.Second)
+	errs := make(chan error, numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			s, err := NewSQLiteStore(dbPath, 4)
+			if err != nil {
+				errs <- fmt.Errorf("worker %d open: %w", workerID, err)
+				return
+			}
+			defer s.Close()
+
+			var frags []model.SourceFragment
+			for i := 0; i < fragsPerWorker; i++ {
+				id := fmt.Sprintf("w%d-f%d", workerID, i)
+				frags = append(frags, model.SourceFragment{
+					ID: id, Content: fmt.Sprintf("content-%s", id),
+					SourceType: "test", SourcePath: fmt.Sprintf("/w%d/%d.txt", workerID, i),
+					SourceURI: "test://", LastModified: now,
+					FileType: "txt", Checksum: fmt.Sprintf("ck-%s", id),
+					Embedding: []float32{float32(workerID), float32(i), 0, 0},
+				})
+			}
+			errs <- s.UpsertFragments(context.Background(), frags)
+		}(w)
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent upsert error: %v", err)
+		}
+	}
+
+	// Verify all fragments were stored.
+	s, err := NewSQLiteStore(dbPath, 4)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s.Close()
+
+	counts, err := s.CountFragmentsBySource(context.Background())
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	total := 0
+	for _, c := range counts {
+		total += c
+	}
+	want := numWorkers * fragsPerWorker
+	if total != want {
+		t.Errorf("expected %d total fragments, got %d", want, total)
+	}
+}
+
+func TestConcurrentUpsertSameID(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "dedup.db")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	const numWorkers = 8
+	errs := make(chan error, numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			s, err := NewSQLiteStore(dbPath, 4)
+			if err != nil {
+				errs <- fmt.Errorf("worker %d open: %w", workerID, err)
+				return
+			}
+			defer s.Close()
+
+			frag := model.SourceFragment{
+				ID: "shared-id", Content: fmt.Sprintf("version-%d", workerID),
+				SourceType: "test", SourcePath: "/shared.txt",
+				SourceURI: "test://", LastModified: now,
+				FileType: "txt", Checksum: fmt.Sprintf("v%d", workerID),
+				Embedding: []float32{1, 0, 0, 0},
+			}
+			errs <- s.UpsertFragments(context.Background(), []model.SourceFragment{frag})
+		}(w)
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent upsert same ID error: %v", err)
+		}
+	}
+
+	// Verify exactly one fragment exists with that ID.
+	s, err := NewSQLiteStore(dbPath, 4)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s.Close()
+
+	got, err := s.GetFragments(context.Background(), []string{"shared-id"})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 fragment, got %d", len(got))
+	}
+}
+
+func TestConcurrentReadsAndWrites(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "rw.db")
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Seed some initial data.
+	s, err := NewSQLiteStore(dbPath, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("seed-%d", i)
+		err := s.UpsertFragments(context.Background(), []model.SourceFragment{{
+			ID: id, Content: "seed", SourceType: "test", SourcePath: fmt.Sprintf("/%d.txt", i),
+			SourceURI: "test://", LastModified: now, FileType: "txt", Checksum: "s",
+			Embedding: []float32{1, 0, 0, 0},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+
+	const numWorkers = 8
+	errs := make(chan error, numWorkers*2)
+
+	// Writers.
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			ws, err := NewSQLiteStore(dbPath, 4)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer ws.Close()
+
+			id := fmt.Sprintf("new-%d", workerID)
+			errs <- ws.UpsertFragments(context.Background(), []model.SourceFragment{{
+				ID: id, Content: "new", SourceType: "test",
+				SourcePath: fmt.Sprintf("/new/%d.txt", workerID),
+				SourceURI: "test://", LastModified: now, FileType: "txt", Checksum: "n",
+				Embedding: []float32{0, 1, 0, 0},
+			}})
+		}(w)
+	}
+
+	// Readers.
+	for r := 0; r < numWorkers; r++ {
+		go func() {
+			rs, err := NewSQLiteStore(dbPath, 4)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer rs.Close()
+
+			_, err = rs.SearchByVector(context.Background(), []float32{1, 0, 0, 0}, 5)
+			errs <- err
+		}()
+	}
+
+	for i := 0; i < numWorkers*2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent read/write error: %v", err)
+		}
 	}
 }
 

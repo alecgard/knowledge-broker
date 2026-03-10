@@ -2,11 +2,11 @@ services:
   kb:
     build: .
     ports:
-      - "8080:8080"
+      - "${KB_PORT:-8080}:8080"
     volumes:
       - kb-data:/data
     environment:
-      - OLLAMA_HOST=http://ollama:11434
+      - KB_OLLAMA_URL=http://ollama:11434
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
       - ollama

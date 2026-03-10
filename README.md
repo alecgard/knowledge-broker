@@ -6,32 +6,37 @@ Connect it to your repos, docs, and knowledge bases and then ask it questions. R
 
 ## Quick start
 
-### Prerequisites
-
-- Go 1.21+
-- [Ollama](https://ollama.com) running locally with an embedding model
-
-That's it for raw retrieval mode. For LLM-synthesised answers, you'll also need an [Anthropic API key](https://console.anthropic.com/).
-
-### Install
+### Docker (recommended)
 
 ```bash
-# From source
+docker compose up -d
+
+# Pull the embedding model (first time only)
+docker compose exec ollama ollama pull nomic-embed-text
+
+# Ingest a local directory into the server
+kb ingest --source ./my-repo --remote http://localhost:8080
+
+# Query via HTTP API
+curl -s -X POST localhost:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
+```
+
+For LLM-synthesised answers, set your API key before starting:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up -d
+```
+
+### From source
+
+**Prerequisites:** Go 1.24+, [Ollama](https://ollama.com) running locally
+
+```bash
 make build
-
-# Or install to GOPATH/bin
-make install
-```
-
-### Set up Ollama
-
-```bash
 ollama pull nomic-embed-text
-```
 
-### Ingest and query
-
-```bash
 # Ingest a local directory
 kb ingest --source ./my-repo
 
@@ -140,7 +145,7 @@ Endpoints:
 - `POST /v1/query` — query with optional SSE streaming (`{"messages": [{"role": "user", "content": "..."}]}`)
 - `POST /v1/query` with `"mode": "raw"` — raw retrieval, returns ranked fragments without LLM synthesis
 - `POST /v1/ingest` — receive fragments from remote ingestion (`kb ingest --remote`)
-- `GET /v1/health` — health check
+- `GET /v1/health` — health check (verifies Ollama connectivity, returns 503 if unreachable)
 
 ### `kb mcp`
 

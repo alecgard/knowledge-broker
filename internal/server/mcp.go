@@ -42,7 +42,7 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 	)
 
 	s.server.AddTool(mcp.NewTool("query",
-		mcp.WithDescription("Ask a question and get an answer from the knowledge base. By default uses raw mode (no LLM) returning relevant fragments with confidence signals. Set raw=false for LLM-synthesised answers."),
+		mcp.WithDescription("Ask a question and get an answer from the knowledge base. By default uses synthesis mode (LLM-synthesised answers with confidence signals). Set raw=true for raw fragment retrieval without LLM."),
 		mcp.WithString("question",
 			mcp.Description("The question to ask"),
 			mcp.Required(),
@@ -54,7 +54,7 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 			mcp.Description("Maximum number of fragments to retrieve (default 20)"),
 		),
 		mcp.WithBoolean("raw",
-			mcp.Description("If true (default), return raw fragments without LLM synthesis. If false, use LLM to synthesise an answer."),
+			mcp.Description("If true, return raw fragments without LLM synthesis. Defaults to false (synthesis mode)."),
 		),
 		mcp.WithString("sources",
 			mcp.Description("Optional comma-separated source names to filter results (e.g., 'owner/repo,other/repo')"),
@@ -106,10 +106,15 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		}
 	}
 
-	// Default to raw mode (true) unless explicitly set to false.
-	rawMode := true
+	// Default to synthesis mode (rawMode=false) unless explicitly set to true.
+	rawMode := false
 	if rawVal, ok := args["raw"].(bool); ok {
 		rawMode = rawVal
+	}
+
+	// If synthesis is requested but no LLM is configured, return a clear error.
+	if !rawMode && !s.engine.HasLLM() {
+		return mcp.NewToolResultError("Synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use raw=true for retrieval without LLM."), nil
 	}
 
 	req := model.QueryRequest{

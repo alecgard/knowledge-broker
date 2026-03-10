@@ -75,6 +75,13 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Synthesis is the default. If no LLM is configured, return a clear error
+	// instead of silently falling back to raw mode.
+	if !s.engine.HasLLM() {
+		http.Error(w, "Synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use \"mode\":\"raw\" for retrieval without LLM.", http.StatusBadRequest)
+		return
+	}
+
 	// Default to non-streaming; stream only when explicitly requested.
 	if req.Stream != nil && *req.Stream {
 		s.handleQueryStream(w, r, req)

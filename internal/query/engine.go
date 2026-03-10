@@ -42,6 +42,11 @@ func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int) *
 	}
 }
 
+// HasLLM reports whether an LLM client is configured for synthesis.
+func (e *Engine) HasLLM() bool {
+	return e.llm != nil
+}
+
 // embedAndSearch validates the request, embeds the query, and searches for fragments.
 func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (model.Message, []model.SourceFragment, error) {
 	if len(req.Messages) == 0 {

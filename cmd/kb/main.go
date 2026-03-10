@@ -520,6 +520,9 @@ func queryCmd() *cobra.Command {
 			var llmClient query.LLM
 			if !rawMode {
 				llmClient = newLLMClient(cfg, llmFlag, client)
+				if llmClient == nil {
+					return fmt.Errorf("synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use --raw for retrieval without LLM")
+				}
 			}
 
 			limit, _ := cmd.Flags().GetInt("limit")
@@ -693,7 +696,7 @@ func mcpCmd() *cobra.Command {
 				return err
 			}
 
-			// LLM is optional for MCP — raw mode works without it.
+			// LLM client — synthesis is the default; raw mode is opt-in via raw=true parameter.
 			llmClient := newLLMClient(cfg, "", client)
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
 

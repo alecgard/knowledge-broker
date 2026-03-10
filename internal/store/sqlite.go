@@ -41,14 +41,26 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
+	// Run all idempotent initialization (migrations, virtual tables,
+	// metadata) with retry so that concurrent openers don't fail with
+	// "database is locked" during startup.
+	if err := withRetry(5, func() error { return initSchema(db, embeddingDim) }); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return &SQLiteStore{db: db, embeddingDim: embeddingDim}, nil
+}
+
+// initSchema runs migrations, creates virtual tables, and validates metadata.
+// All operations are idempotent so safe to retry.
+func initSchema(db *sql.DB, embeddingDim int) error {
 	// Run schema migrations.
 	if _, err := db.Exec(migrationSQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("run migrations: %w", err)
+		return fmt.Errorf("run migrations: %w", err)
 	}
 	if _, err := db.Exec(migration002SQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("run migration 002: %w", err)
+		return fmt.Errorf("run migration 002: %w", err)
 	}
 
 	// Create the sqlite-vec virtual table.
@@ -58,8 +70,7 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 			embedding float[%d]
 		);`, embeddingDim)
 	if _, err := db.Exec(vtableSQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create vec0 virtual table: %w", err)
+		return fmt.Errorf("create vec0 virtual table: %w", err)
 	}
 
 	// Create the sqlite-vec virtual table for knowledge unit centroids.
@@ -69,27 +80,28 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 			embedding float[%d]
 		);`, embeddingDim)
 	if _, err := db.Exec(unitVtableSQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create unit vec0 virtual table: %w", err)
+		return fmt.Errorf("create unit vec0 virtual table: %w", err)
 	}
 
 	// Validate or store embedding dimension in metadata.
 	if err := validateOrSetMeta(db, "embedding_dim", fmt.Sprintf("%d", embeddingDim)); err != nil {
-		db.Close()
-		return nil, err
+		return err
 	}
 
-	return &SQLiteStore{db: db, embeddingDim: embeddingDim}, nil
+	return nil
 }
 
 func validateOrSetMeta(db *sql.DB, key, expected string) error {
-	var existing string
-	err := db.QueryRow("SELECT value FROM metadata WHERE key = ?", key).Scan(&existing)
-	if err == sql.ErrNoRows {
-		_, err = db.Exec("INSERT INTO metadata (key, value) VALUES (?, ?)", key, expected)
-		return err
-	}
+	// Use INSERT OR IGNORE to handle concurrent writers racing to set the
+	// same key.  If the row already exists the INSERT is a no-op; we then
+	// read back whatever value is stored and validate it.
+	_, err := db.Exec("INSERT OR IGNORE INTO metadata (key, value) VALUES (?, ?)", key, expected)
 	if err != nil {
+		return fmt.Errorf("set metadata %s: %w", key, err)
+	}
+
+	var existing string
+	if err := db.QueryRow("SELECT value FROM metadata WHERE key = ?", key).Scan(&existing); err != nil {
 		return fmt.Errorf("read metadata %s: %w", key, err)
 	}
 	if existing != expected {

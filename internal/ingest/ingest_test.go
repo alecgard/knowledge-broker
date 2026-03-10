@@ -51,6 +51,10 @@ func (m *MockEmbedder) Dimension() int {
 	return m.dim
 }
 
+func (m *MockEmbedder) CheckHealth(_ context.Context) error {
+	return nil
+}
+
 // hashToVector produces a deterministic float32 vector of length m.dim from
 // the SHA-256 of text.  Each component is in [0, 1) and the result is
 // L2-normalised so that cosine distance is meaningful.

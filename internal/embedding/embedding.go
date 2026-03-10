@@ -12,4 +12,7 @@ type Embedder interface {
 
 	// Dimension returns the embedding vector dimension.
 	Dimension() int
+
+	// CheckHealth verifies that the embedding backend is reachable.
+	CheckHealth(ctx context.Context) error
 }

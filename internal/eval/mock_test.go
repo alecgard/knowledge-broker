@@ -140,3 +140,7 @@ func (m *mockEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]floa
 func (m *mockEmbedder) Dimension() int {
 	return m.dim
 }
+
+func (m *mockEmbedder) CheckHealth(_ context.Context) error {
+	return nil
+}

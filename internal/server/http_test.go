@@ -40,6 +40,10 @@ func (m *mockEmbedder) Dimension() int {
 	return m.dim
 }
 
+func (m *mockEmbedder) CheckHealth(_ context.Context) error {
+	return nil
+}
+
 func (m *mockEmbedder) hashToVector(text string) []float32 {
 	h := sha256.Sum256([]byte(text))
 	vec := make([]float32, m.dim)
@@ -272,7 +276,7 @@ func TestHandleIngestMultipleFragmentsSamePath(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	srv := NewHTTPServer(nil, nil, nil, nil)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)

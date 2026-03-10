@@ -145,9 +145,14 @@ func (s *HTTPServer) handleQuerySync(w http.ResponseWriter, r *http.Request, req
 	json.NewEncoder(w).Encode(answer)
 }
 
-// handleHealth returns health status.
+// handleHealth returns health status including embedder connectivity.
 func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if err := s.embedder.CheckHealth(r.Context()); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "error": err.Error()})
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 

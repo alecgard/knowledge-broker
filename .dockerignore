@@ -1,0 +1,11 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+/kb
+tmp/
+docs/
+.git/
+.claude/
+metadata.tsv
+tensors.tsv

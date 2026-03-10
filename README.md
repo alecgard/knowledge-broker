@@ -2,7 +2,7 @@
 
 A knowledge engine that ingests documents from multiple sources, embeds them for semantic retrieval, and answers questions with confidence signals.
 
-Connect it to your repos, docs, and knowledge bases — then ask it questions. It tells you not just the answer, but how much to trust it.
+Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
 
 ## Quick start
 

@@ -81,6 +81,16 @@ Common causes:
 - Missing required env var `WIDGET_DB_PASSWORD`
 - Migration version mismatch (run migrations first)
 
+## Resource Requirements
+
+The service should be provisioned with at least 1 CPU core and 1GB of memory per
+instance. Under typical load (1,000-2,000 requests/second per instance), memory
+usage stays around 400-600MB. We recommend setting the memory limit to 1GB to
+allow headroom for traffic spikes and garbage collection overhead.
+
+For the database connection pool, use the `WIDGET_DB_MAX_CONNS` environment
+variable (default: 25 connections).
+
 ## Alerting Thresholds
 
 | Metric                              | Warning    | Critical   |

@@ -152,5 +152,61 @@
     "expected_sources": [],
     "reference_answer": "There is no information about CI/CD pipelines in the documentation.",
     "category": "unanswerable"
+  },
+  {
+    "id": "q23",
+    "question": "What breaking changes were introduced across versions of the Widget Service?",
+    "expected_sources": ["CHANGELOG.md", "architecture.md"],
+    "reference_answer": "Breaking changes include: v2.0 renamed the 'type' field to 'status' and changed the API prefix to /api/v1; v2.1 replaced the token bucket rate limiter with a sliding window algorithm; v2.4 limited metadata values to 1024 characters; v2.5 removed the WIDGET_DB_URL environment variable in favor of individual connection parameters. The architecture doc also notes the rate limiting algorithm change.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q24",
+    "question": "How do I set up the development environment and run all the tests?",
+    "expected_sources": ["README.md", "CONTRIBUTING.md"],
+    "reference_answer": "Clone the repository, run 'go mod download' for dependencies, start PostgreSQL and Redis via Docker Compose, run database migrations with 'make migrate-up', and copy .env.example to .env. Unit tests run with 'go test ./...', integration tests with 'go test -tags=integration ./...', and end-to-end tests with 'make test-e2e'. All tests should be run with '-race' flag, and golangci-lint must report zero issues.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q25",
+    "question": "What are the resource requirements for deploying the Widget Service in production?",
+    "expected_sources": ["deploy/kubernetes.yaml", "runbook.md"],
+    "reference_answer": "The Kubernetes deployment specifies resource requests of 250m CPU and 256Mi memory, with limits of 1 CPU and 512Mi memory. The runbook recommends at least 1 CPU core and 1GB memory per instance. The deployment runs 3 replicas by default with an HPA scaling up to 10 replicas based on CPU (70%) and memory (80%) utilization.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q26",
+    "question": "What environment variables are used across all configuration sources?",
+    "expected_sources": ["config.go", "deploy/kubernetes.yaml", "runbook.md"],
+    "reference_answer": "Environment variables include: WIDGET_PORT (8080), WIDGET_DB_HOST, WIDGET_DB_PORT (5432), WIDGET_DB_USER, WIDGET_DB_PASSWORD, WIDGET_DB_NAME, WIDGET_DB_SSLMODE (disable in dev, require in prod), WIDGET_DB_MAX_CONNS (default 25 in config/runbook, 50 in Kubernetes), WIDGET_REDIS_URL, WIDGET_RATE_LIMIT (200), WIDGET_LOG_LEVEL (info), WIDGET_CACHE_TTL (10m in Kubernetes), and GOMAXPROCS (2 in Kubernetes).",
+    "category": "cross-file"
+  },
+  {
+    "id": "q27",
+    "question": "What is the recommended memory limit for the Widget Service?",
+    "expected_sources": ["runbook.md", "deploy/kubernetes.yaml"],
+    "reference_answer": "There is a contradiction: the runbook recommends setting the memory limit to 1GB to allow headroom for traffic spikes, while the Kubernetes deployment manifest sets the memory limit to 512Mi. The Kubernetes resource request is 256Mi with a limit of 512Mi.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q28",
+    "question": "What version of Go is required to work on the Widget Service?",
+    "expected_sources": ["CONTRIBUTING.md", "CHANGELOG.md"],
+    "reference_answer": "There is a contradiction: the CONTRIBUTING.md states Go 1.21 or later is required, but the CHANGELOG.md for v2.5.0 notes the minimum Go version was bumped from 1.21 to 1.22. The contributing guide has not been updated to reflect the newer requirement.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q29",
+    "question": "Does the Widget Service support gRPC endpoints?",
+    "expected_sources": [],
+    "reference_answer": "There is no mention of gRPC support anywhere in the documentation. The service only provides a RESTful HTTP API and a WebSocket/SSE event stream.",
+    "category": "unanswerable"
+  },
+  {
+    "id": "q30",
+    "question": "What is the disaster recovery plan and RTO/RPO for the Widget Service?",
+    "expected_sources": [],
+    "reference_answer": "There is no documented disaster recovery plan. The runbook covers backups (daily pg_dump to S3 with 30-day retention) and basic restore procedures, but does not define Recovery Time Objective (RTO), Recovery Point Objective (RPO), or a formal DR plan.",
+    "category": "unanswerable"
   }
 ]

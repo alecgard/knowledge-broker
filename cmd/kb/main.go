@@ -40,7 +40,7 @@ var version = "0.1.0"
 func main() {
 	root := &cobra.Command{
 		Use:   "kb",
-		Short: "Knowledge Broker — ingest documents, ask questions, get answers with confidence signals",
+		Short: "Knowledge Broker — ingest documents, query for answers with confidence signals",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
@@ -495,8 +495,8 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 
 func queryCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "query [question]",
-		Short: "Ask a question",
+		Use:   "query [text]",
+		Short: "Query the knowledge base",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
@@ -932,7 +932,7 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	cmd.Flags().String("testset", "eval/testset.json", "Path to test set JSON file")
 	cmd.Flags().String("corpus", "eval/corpus", "Path to eval corpus directory")
-	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per question")
+	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per query")
 	cmd.Flags().Bool("ingest", false, "Ingest the eval corpus before running evaluation")
 	cmd.Flags().Bool("json", false, "Output results as JSON")
 	return cmd

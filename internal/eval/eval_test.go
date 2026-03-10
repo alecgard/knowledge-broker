@@ -225,14 +225,14 @@ func TestLoadTestSet(t *testing.T) {
 	cases := []TestCase{
 		{
 			ID:              "q01",
-			Question:        "What database is used?",
+			Query:        "What database is used?",
 			ExpectedSources: []string{"config.go"},
 			ReferenceAnswer: "PostgreSQL",
 			Category:        "factual",
 		},
 		{
 			ID:              "q02",
-			Question:        "Does it support GraphQL?",
+			Query:        "Does it support GraphQL?",
 			ExpectedSources: []string{},
 			ReferenceAnswer: "No information available.",
 			Category:        "unanswerable",
@@ -331,7 +331,7 @@ func TestFormatSummaryTable(t *testing.T) {
 	summary := &Summary{
 		Results: []Result{
 			{
-				ID: "q01", Question: "Test question?", Category: "factual",
+				ID: "q01", Query: "Test question?", Category: "factual",
 				RecallAt5: 1.0, RecallAt10: 1.0, RecallAt20: 1.0,
 				PrecisionAt5: 0.5, PrecisionAt10: 0.3, PrecisionAt20: 0.2,
 				MRR: 1.0,
@@ -405,7 +405,7 @@ func TestRunnerWithMockStore(t *testing.T) {
 	cases := []TestCase{
 		{
 			ID:              "q01",
-			Question:        "What database?",
+			Query:        "What database?",
 			ExpectedSources: []string{"config.go"},
 			Category:        "factual",
 		},

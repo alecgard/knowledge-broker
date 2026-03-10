@@ -44,8 +44,8 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 
 	s.server.AddTool(mcp.NewTool("query",
 		mcp.WithDescription("Ask a question and get an answer from the knowledge base. By default uses synthesis mode (LLM-synthesised answers with confidence signals). Set raw=true for raw fragment retrieval without LLM."),
-		mcp.WithString("question",
-			mcp.Description("The question to ask"),
+		mcp.WithString("query",
+			mcp.Description("The query to search for"),
 			mcp.Required(),
 		),
 		mcp.WithString("topics",
@@ -133,9 +133,9 @@ func (s *MCPServer) Serve(ctx context.Context, sseAddr string) error {
 
 func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
-	question, ok := args["question"].(string)
+	question, ok := args["query"].(string)
 	if !ok || question == "" {
-		return mcp.NewToolResultError("question is required"), nil
+		return mcp.NewToolResultError("query is required"), nil
 	}
 
 	var topics []string

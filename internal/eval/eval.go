@@ -1,7 +1,7 @@
 // Package eval implements a retrieval evaluation framework for Knowledge Broker.
 //
-// It loads a test set of questions with expected source files, runs each
-// question through embedding + vector search (no LLM), and computes
+// It loads a test set of queries with expected source files, runs each
+// query through embedding + vector search (no LLM), and computes
 // retrieval quality metrics: Recall@K, Precision@K, and MRR.
 package eval
 
@@ -18,10 +18,10 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
-// TestCase represents a single evaluation question from the test set JSON.
+// TestCase represents a single evaluation query from the test set JSON.
 type TestCase struct {
 	ID              string   `json:"id"`
-	Question        string   `json:"question"`
+	Query           string   `json:"query"`
 	ExpectedSources []string `json:"expected_sources"`
 	ReferenceAnswer string   `json:"reference_answer"`
 	Category        string   `json:"category"` // factual, cross-file, contradiction, unanswerable
@@ -30,7 +30,7 @@ type TestCase struct {
 // Result holds the evaluation outcome for a single test case.
 type Result struct {
 	ID              string   `json:"id"`
-	Question        string   `json:"question"`
+	Query           string   `json:"query"`
 	Category        string   `json:"category"`
 	ExpectedSources []string `json:"expected_sources"`
 	RetrievedPaths  []string `json:"retrieved_paths"`  // source_path of top-K fragments
@@ -105,7 +105,7 @@ func LoadTestSet(path string) ([]TestCase, error) {
 }
 
 // Run executes the evaluation for all test cases and returns a summary.
-// The limit parameter controls how many fragments to retrieve per question (max K).
+// The limit parameter controls how many fragments to retrieve per query (max K).
 func (r *Runner) Run(ctx context.Context, cases []TestCase, limit int) (*Summary, error) {
 	if limit <= 0 {
 		limit = 20
@@ -130,10 +130,10 @@ func (r *Runner) Run(ctx context.Context, cases []TestCase, limit int) (*Summary
 }
 
 func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, error) {
-	// Embed the question.
-	queryEmb, err := r.embedder.Embed(ctx, tc.Question)
+	// Embed the query.
+	queryEmb, err := r.embedder.Embed(ctx, tc.Query)
 	if err != nil {
-		return nil, fmt.Errorf("embed question: %w", err)
+		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
 	// Search for relevant fragments.
@@ -150,7 +150,7 @@ func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, 
 
 	result := &Result{
 		ID:              tc.ID,
-		Question:        tc.Question,
+		Query:           tc.Query,
 		Category:        tc.Category,
 		ExpectedSources: tc.ExpectedSources,
 		RetrievedPaths:  retrievedPaths,
@@ -407,11 +407,11 @@ func FormatSummaryTable(summary *Summary) string {
 
 	// Per-question table.
 	sb.WriteString(fmt.Sprintf("%-5s %-14s %-50s  R@5   R@10  R@20  P@5   P@10  P@20  MRR\n",
-		"ID", "Category", "Question"))
+		"ID", "Category", "Query"))
 	sb.WriteString(strings.Repeat("-", 140) + "\n")
 
 	for _, r := range summary.Results {
-		q := r.Question
+		q := r.Query
 		if len(q) > 48 {
 			q = q[:48] + ".."
 		}
@@ -425,7 +425,7 @@ func FormatSummaryTable(summary *Summary) string {
 	// Overall metrics.
 	sb.WriteString(strings.Repeat("-", 140) + "\n")
 	sb.WriteString(fmt.Sprintf("%-5s %-14s %-50s  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f\n",
-		"", "OVERALL", fmt.Sprintf("(%d questions)", len(summary.Results)),
+		"", "OVERALL", fmt.Sprintf("(%d queries)", len(summary.Results)),
 		summary.RecallAt5, summary.RecallAt10, summary.RecallAt20,
 		summary.PrecisionAt5, summary.PrecisionAt10, summary.PrecisionAt20,
 		summary.MRR))

@@ -35,6 +35,9 @@ type Store interface {
 	// ListSources returns all registered sources.
 	ListSources(ctx context.Context) ([]model.Source, error)
 
+	// CountFragmentsBySource returns a map of "source_type/source_name" to fragment count.
+	CountFragmentsBySource(ctx context.Context) (map[string]int, error)
+
 	// Close releases resources.
 	Close() error
 }

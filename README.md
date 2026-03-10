@@ -10,7 +10,7 @@ Connect it to your repos, docs, and knowledge bases — then ask it questions. I
 
 - Go 1.21+
 - [Ollama](https://ollama.com) running locally with an embedding model
-- An [Anthropic API key](https://console.anthropic.com/) for query synthesis
+- An [Anthropic API key](https://console.anthropic.com/) for query synthesis (optional — raw mode works without it)
 
 ### Install
 
@@ -94,15 +94,20 @@ Ingestion is incremental — unchanged files are skipped based on checksums.
 
 ### `kb query`
 
-Ask a question and get a synthesised answer with confidence signals.
+Ask a question and get an answer with confidence signals.
 
 ```bash
+# Synthesised answer (requires ANTHROPIC_API_KEY)
 kb query "what is the billing retry policy?"
-kb query --limit 30 "how does auth work?"
-kb query --db myproject.db "explain the deployment process"
+kb query --human "how does auth work?"    # streamed, human-readable
+
+# Raw retrieval — returns ranked fragments, no LLM needed
+kb query --raw "how does auth work?"
+kb query --raw --json "explain the deployment process"
+kb query --raw --limit 10 --topics "billing,payments" "retry policy"
 ```
 
-Answers are streamed as they generate. Confidence signals and sources are printed after the answer.
+Raw mode (`--raw`) returns fragments with per-fragment confidence signals, source metadata, and content previews. Add `--json` for structured output. This is the primary mode for MCP consumers and tool integrations — no Anthropic API key required.
 
 ### `kb serve`
 
@@ -113,8 +118,10 @@ kb serve --addr :8080 --db kb.db
 ```
 
 Endpoints:
-- `POST /v1/query` — query with SSE streaming (`{"messages": [{"role": "user", "content": "..."}]}`)
+- `POST /v1/query` — query with optional SSE streaming (`{"messages": [{"role": "user", "content": "..."}]}`)
+- `POST /v1/query` with `"mode": "raw"` — raw retrieval, returns ranked fragments without LLM synthesis
 - `POST /v1/feedback` — submit feedback (`{"fragment_id": "...", "type": "correction", "content": "..."}`)
+- `POST /v1/ingest` — receive fragments from remote ingestion (`kb ingest --remote`)
 - `GET /v1/health` — health check
 
 ### `kb mcp`
@@ -125,7 +132,7 @@ Start an MCP (Model Context Protocol) server on stdio, for integration with AI t
 kb mcp --db kb.db
 ```
 
-Exposes tools: `query`, `feedback`.
+Exposes tools: `query`, `feedback`, `list-sources`. Defaults to raw retrieval mode (no API key needed). See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 
 ### `kb feedback`
 
@@ -142,6 +149,18 @@ Feedback types:
 - **challenge** — "I don't think that's right" (degrades confidence)
 - **confirmation** — "that's correct" (boosts confidence)
 
+### `kb eval`
+
+Run the evaluation framework to measure retrieval quality.
+
+```bash
+make eval                                    # one-command eval
+kb eval --db eval.db --testset eval/testset.json  # manual
+kb eval --db eval.db --ingest --json         # ingest corpus + JSON output
+```
+
+Reports recall@K, precision@K, MRR, and chunking statistics. See [docs/eval.md](docs/eval.md) for details.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and configure. Environment variables and `.env` are both supported — env vars take precedence.
@@ -152,7 +171,7 @@ Copy `.env.example` to `.env` and configure. Environment variables and `.env` ar
 | `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
 | `KB_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key (required for queries) |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (required for synthesis, not needed for raw mode) |
 | `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
 | `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
 | `KB_WORKERS` | `4` | Parallel ingestion workers |

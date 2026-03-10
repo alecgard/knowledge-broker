@@ -2,7 +2,7 @@ BINARY := kb
 VERSION := 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean test lint run-ingest run-serve run-mcp
+.PHONY: build install clean test lint run-ingest run-serve run-mcp eval
 
 ## Build
 
@@ -40,6 +40,15 @@ run-serve: build
 run-mcp: build
 	./$(BINARY) mcp --db kb.db
 
+## Eval
+
+eval:
+	@echo "Ingesting eval corpus..."
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb ingest --source eval/corpus --db eval.db
+	@echo "Running evaluation..."
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json
+	@rm -f eval.db eval.db-shm eval.db-wal
+
 ## Dependencies
 
 deps:
@@ -60,3 +69,4 @@ help:
 	@echo "  make run-ingest   Build and ingest current directory"
 	@echo "  make run-serve    Build and start HTTP server"
 	@echo "  make run-mcp      Build and start MCP server"
+	@echo "  make eval         Ingest eval corpus and run evaluation"

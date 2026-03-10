@@ -13,18 +13,20 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
 	"github.com/knowledge-broker/knowledge-broker/internal/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
+	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
 // MCPServer serves Knowledge Broker as an MCP tool provider.
 type MCPServer struct {
 	engine   *query.Engine
 	feedback *feedback.Service
+	store    store.Store
 	logger   *slog.Logger
 	server   *server.MCPServer
 }
 
 // NewMCPServer creates a new MCP server.
-func NewMCPServer(engine *query.Engine, fb *feedback.Service, logger *slog.Logger) *MCPServer {
+func NewMCPServer(engine *query.Engine, fb *feedback.Service, st store.Store, logger *slog.Logger) *MCPServer {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -32,6 +34,7 @@ func NewMCPServer(engine *query.Engine, fb *feedback.Service, logger *slog.Logge
 	s := &MCPServer{
 		engine:   engine,
 		feedback: fb,
+		store:    st,
 		logger:   logger,
 	}
 
@@ -42,13 +45,19 @@ func NewMCPServer(engine *query.Engine, fb *feedback.Service, logger *slog.Logge
 	)
 
 	s.server.AddTool(mcp.NewTool("query",
-		mcp.WithDescription("Ask a question and get an answer synthesised from the knowledge base, with confidence signals and source citations."),
+		mcp.WithDescription("Ask a question and get an answer from the knowledge base. By default uses raw mode (no LLM) returning relevant fragments with confidence signals. Set raw=false for LLM-synthesised answers."),
 		mcp.WithString("question",
 			mcp.Description("The question to ask"),
 			mcp.Required(),
 		),
 		mcp.WithString("topics",
 			mcp.Description("Optional comma-separated topics to boost relevance (e.g., 'authentication,octroi')"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum number of fragments to retrieve (default 20)"),
+		),
+		mcp.WithBoolean("raw",
+			mcp.Description("If true (default), return raw fragments without LLM synthesis. If false, use LLM to synthesise an answer."),
 		),
 	), s.handleQuery)
 
@@ -69,6 +78,10 @@ func NewMCPServer(engine *query.Engine, fb *feedback.Service, logger *slog.Logge
 			mcp.Description("Optional supporting evidence"),
 		),
 	), s.handleFeedback)
+
+	s.server.AddTool(mcp.NewTool("list-sources",
+		mcp.WithDescription("List all registered knowledge sources with their fragment counts and last ingestion time."),
+	), s.handleListSources)
 
 	return s
 }
@@ -96,16 +109,39 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		}
 	}
 
+	limit := 20
+	if limitRaw, ok := args["limit"].(float64); ok && limitRaw > 0 {
+		limit = int(limitRaw)
+	}
+
+	// Default to raw mode (true) unless explicitly set to false.
+	rawMode := true
+	if rawVal, ok := args["raw"].(bool); ok {
+		rawMode = rawVal
+	}
+
 	req := model.QueryRequest{
 		Messages: []model.Message{
 			{Role: "user", Content: question},
 		},
-		Limit:   20,
+		Limit:   limit,
 		Concise: true,
 		Topics:  topics,
 	}
 
-	// For MCP, we don't stream — just collect the full response.
+	if rawMode {
+		result, err := s.engine.QueryRaw(ctx, req)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("query failed: %v", err)), nil
+		}
+		jsonBytes, err := json.Marshal(result)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("marshal response: %v", err)), nil
+		}
+		return mcp.NewToolResultText(string(jsonBytes)), nil
+	}
+
+	// LLM synthesis mode — collect full response without streaming.
 	var fullText string
 	answer, err := s.engine.Query(ctx, req, func(text string) {
 		fullText += text
@@ -142,4 +178,44 @@ func (s *MCPServer) handleFeedback(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	return mcp.NewToolResultText("Feedback recorded successfully."), nil
+}
+
+func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sources, err := s.store.ListSources(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("list sources failed: %v", err)), nil
+	}
+
+	counts, err := s.store.CountFragmentsBySource(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("count fragments failed: %v", err)), nil
+	}
+
+	type sourceInfo struct {
+		SourceType    string `json:"source_type"`
+		SourceName    string `json:"source_name"`
+		FragmentCount int    `json:"fragment_count"`
+		LastIngest    string `json:"last_ingest,omitempty"`
+	}
+
+	result := make([]sourceInfo, 0, len(sources))
+	for _, src := range sources {
+		key := src.SourceType + "/" + src.SourceName
+		info := sourceInfo{
+			SourceType:    src.SourceType,
+			SourceName:    src.SourceName,
+			FragmentCount: counts[key],
+		}
+		if !src.LastIngest.IsZero() {
+			info.LastIngest = src.LastIngest.Format("2006-01-02T15:04:05Z")
+		}
+		result = append(result, info)
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("marshal response: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(string(jsonBytes)), nil
 }

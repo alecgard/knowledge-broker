@@ -24,6 +24,7 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/debug"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
+	"github.com/knowledge-broker/knowledge-broker/internal/eval"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
 	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
@@ -55,6 +56,7 @@ func main() {
 	root.AddCommand(feedbackCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())
+	root.AddCommand(evalCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -418,6 +420,8 @@ func queryCmd() *cobra.Command {
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			human, _ := cmd.Flags().GetBool("human")
+			rawMode, _ := cmd.Flags().GetBool("raw")
+			jsonOutput, _ := cmd.Flags().GetBool("json")
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
 
@@ -428,10 +432,15 @@ func queryCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
-			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+
+			// When --raw is set, LLM is not needed.
+			var llmClient query.LLM
+			if !rawMode {
+				llmClient = llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+			}
 
 			limit, _ := cmd.Flags().GetInt("limit")
-			engine := query.NewEngine(s, emb, claude, limit)
+			engine := query.NewEngine(s, emb, llmClient, limit)
 
 			topicsRaw, _ := cmd.Flags().GetString("topics")
 			var topics []string
@@ -457,6 +466,9 @@ func queryCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
+			if rawMode {
+				return queryRaw(ctx, engine, req, jsonOutput)
+			}
 			if human {
 				return queryHuman(ctx, engine, req)
 			}
@@ -466,6 +478,8 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve")
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
+	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments without LLM synthesis (no API key needed)")
+	cmd.Flags().Bool("json", false, "Output raw results as indented JSON (use with --raw)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
 	return cmd
 }
@@ -513,6 +527,49 @@ func queryHuman(ctx context.Context, engine *query.Engine, req model.QueryReques
 		for _, c := range answer.Contradictions {
 			fmt.Fprintf(os.Stderr, "  %s: %s\n", c.Claim, c.Explanation)
 		}
+	}
+
+	return nil
+}
+
+// queryRaw outputs raw retrieval results without LLM synthesis.
+func queryRaw(ctx context.Context, engine *query.Engine, req model.QueryRequest, jsonOutput bool) error {
+	result, err := engine.QueryRaw(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	// Human-readable terminal output.
+	for i, f := range result.Fragments {
+		if i > 0 {
+			fmt.Println()
+		}
+		fmt.Printf("[%d] %s\n", i+1, f.SourcePath)
+		fmt.Printf("    Source: %s  Type: %s  Modified: %s\n",
+			f.SourceName, f.FileType, f.LastModified.Format("2006-01-02"))
+		fmt.Printf("    Confidence: fresh=%.2f corr=%.2f cons=%.2f auth=%.2f\n",
+			f.Confidence.Freshness, f.Confidence.Corroboration,
+			f.Confidence.Consistency, f.Confidence.Authority)
+		fmt.Printf("    ID: %s\n", f.FragmentID)
+
+		// Truncate content to ~200 chars for preview.
+		content := f.Content
+		if len(content) > 200 {
+			content = content[:200] + "..."
+		}
+		// Replace newlines for compact display.
+		content = strings.ReplaceAll(content, "\n", " ")
+		fmt.Printf("    %s\n", content)
+	}
+
+	if len(result.Fragments) == 0 {
+		fmt.Println("No matching fragments found.")
 	}
 
 	return nil
@@ -571,11 +628,16 @@ func mcpCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
-			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
-			engine := query.NewEngine(s, emb, claude, cfg.DefaultLimit)
+
+			// LLM is optional for MCP — raw mode works without it.
+			var llmClient query.LLM
+			if cfg.AnthropicAPIKey != "" {
+				llmClient = llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+			}
+			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
 			fbService := feedback.NewService(s)
 
-			mcpServer := server.NewMCPServer(engine, fbService, logger)
+			mcpServer := server.NewMCPServer(engine, fbService, s, logger)
 			return mcpServer.ServeStdio()
 		},
 	}
@@ -760,6 +822,96 @@ func splitBySize(fragments []model.IngestFragment, deleted []model.IngestDeleted
 		batches = append(batches, batchBytes)
 	}
 	return batches, nil
+}
+
+func evalCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "eval",
+		Short: "Run retrieval evaluation against a test set",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dbPath, _ := cmd.Flags().GetString("db")
+			testsetPath, _ := cmd.Flags().GetString("testset")
+			corpusPath, _ := cmd.Flags().GetString("corpus")
+			limit, _ := cmd.Flags().GetInt("limit")
+			doIngest, _ := cmd.Flags().GetBool("ingest")
+			jsonOutput, _ := cmd.Flags().GetBool("json")
+			debugMode := isDebug(cmd)
+			logger := newLogger(debugMode)
+			client := httpClient(logger, debugMode)
+
+			cfg := config.Default()
+			cfg.DBPath = dbPath
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			emb := newEmbedder(cfg, client)
+
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			// Optionally ingest the eval corpus first.
+			if doIngest {
+				absCorpus, err := filepath.Abs(corpusPath)
+				if err != nil {
+					return fmt.Errorf("resolve corpus path: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "Ingesting eval corpus from %s...\n", absCorpus)
+
+				reg := newExtractorRegistry(cfg)
+				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+				conn := connector.NewFilesystemConnector(absCorpus)
+
+				result, err := pipeline.Run(ctx, conn)
+				if err != nil {
+					return fmt.Errorf("ingest eval corpus: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "Ingested: %d added, %d deleted, %d skipped, %d errors\n",
+					result.Added, result.Deleted, result.Skipped, result.Errors)
+			}
+
+			// Load test set.
+			cases, err := eval.LoadTestSet(testsetPath)
+			if err != nil {
+				return fmt.Errorf("load test set: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Loaded %d test cases from %s\n", len(cases), testsetPath)
+
+			// Run evaluation.
+			runner := eval.NewRunner(s, emb)
+			summary, err := runner.Run(ctx, cases, limit)
+			if err != nil {
+				return fmt.Errorf("run eval: %w", err)
+			}
+
+			// Compute chunking stats.
+			chunkStats, err := eval.ComputeChunkingStats(ctx, s)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not compute chunking stats: %v\n", err)
+			} else {
+				summary.Chunking = chunkStats
+			}
+
+			if jsonOutput {
+				out, _ := json.MarshalIndent(summary, "", "  ")
+				fmt.Println(string(out))
+			} else {
+				fmt.Print(eval.FormatSummaryTable(summary))
+			}
+
+			return nil
+		},
+	}
+	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("testset", "eval/testset.json", "Path to test set JSON file")
+	cmd.Flags().String("corpus", "eval/corpus", "Path to eval corpus directory")
+	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per question")
+	cmd.Flags().Bool("ingest", false, "Ingest the eval corpus before running evaluation")
+	cmd.Flags().Bool("json", false, "Output results as JSON")
+	return cmd
 }
 
 func sourcesCmd() *cobra.Command {

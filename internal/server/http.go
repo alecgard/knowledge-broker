@@ -78,12 +78,30 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Raw retrieval mode: no LLM needed.
+	if req.Mode == "raw" {
+		s.handleQueryRaw(w, r, req)
+		return
+	}
+
 	// Default to non-streaming; stream only when explicitly requested.
 	if req.Stream != nil && *req.Stream {
 		s.handleQueryStream(w, r, req)
 		return
 	}
 	s.handleQuerySync(w, r, req)
+}
+
+func (s *HTTPServer) handleQueryRaw(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {
+	result, err := s.engine.QueryRaw(r.Context(), req)
+	if err != nil {
+		s.logger.Error("raw query failed", "error", err)
+		http.Error(w, fmt.Sprintf("query failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 func (s *HTTPServer) handleQueryStream(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {

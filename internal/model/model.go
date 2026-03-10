@@ -23,6 +23,8 @@ type (
 	IngestFragment    = model.IngestFragment
 	IngestDeletedPath = model.IngestDeletedPath
 	IngestRequest     = model.IngestRequest
+	RawFragment       = model.RawFragment
+	RawResult         = model.RawResult
 )
 
 // Re-export constants.

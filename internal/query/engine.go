@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/internal/model"
@@ -45,6 +47,9 @@ func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int) *
 // Returns the complete Answer after streaming finishes.
 // If req.Concise is true, the LLM produces terse, agent-friendly output.
 func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	if e.llm == nil {
+		return nil, fmt.Errorf("LLM client not configured")
+	}
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("no messages in query request")
 	}
@@ -205,6 +210,161 @@ func combineEmbeddings(a, b []float32, weight float64) []float32 {
 		}
 	}
 	return combined
+}
+
+// QueryRaw performs raw retrieval: embed, search, compute local confidence signals,
+// and return fragments directly without LLM synthesis.
+func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("no messages in query request")
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = e.limit
+	}
+
+	lastMsg := req.Messages[len(req.Messages)-1]
+	if lastMsg.Role != "user" {
+		return nil, fmt.Errorf("last message must be from user")
+	}
+
+	// Embed the query (and topics if present).
+	var queryEmb []float32
+	if len(req.Topics) > 0 {
+		topicsText := strings.Join(req.Topics, " ")
+		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
+		if err != nil {
+			return nil, fmt.Errorf("embed query+topics: %w", err)
+		}
+		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
+	} else {
+		var err error
+		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+	}
+
+	// Search for relevant fragments.
+	fragments, err := e.store.SearchByVector(ctx, queryEmb, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	// Count distinct source names for corroboration.
+	sourceNames := make(map[string]struct{})
+	for _, f := range fragments {
+		sourceNames[f.SourceName] = struct{}{}
+	}
+	corroboration := computeCorroboration(len(sourceNames))
+
+	// Build raw fragments with per-fragment confidence signals.
+	rawFragments := make([]model.RawFragment, len(fragments))
+	for i, f := range fragments {
+		rawFragments[i] = model.RawFragment{
+			FragmentID:   f.ID,
+			Content:      f.Content,
+			SourcePath:   f.SourcePath,
+			SourceURI:    f.SourceURI,
+			SourceName:   f.SourceName,
+			SourceType:   f.SourceType,
+			FileType:     f.FileType,
+			LastModified: f.LastModified,
+			Author:       f.Author,
+			Confidence: model.ConfidenceSignals{
+				Freshness:     computeFreshness(f.LastModified),
+				Corroboration: corroboration,
+				Consistency:   computeConsistency(f.ConfidenceAdj),
+				Authority:     computeAuthority(f.FileType),
+			},
+		}
+	}
+
+	return &model.RawResult{
+		Fragments: rawFragments,
+	}, nil
+}
+
+// computeFreshness returns a score from 0 to 1 based on how recent the document is.
+// 1.0 for today, decaying over months.
+func computeFreshness(lastModified time.Time) float64 {
+	if lastModified.IsZero() {
+		return 0.3 // unknown date gets a low default
+	}
+	days := time.Since(lastModified).Hours() / 24
+	if days <= 0 {
+		return 1.0
+	}
+	// Exponential decay: half-life of ~90 days
+	score := math.Exp(-days / 130.0)
+	if score < 0.1 {
+		score = 0.1
+	}
+	return math.Round(score*100) / 100
+}
+
+// computeCorroboration returns a score based on how many distinct sources appear.
+func computeCorroboration(numSources int) float64 {
+	if numSources <= 0 {
+		return 0.0
+	}
+	if numSources == 1 {
+		return 0.3
+	}
+	if numSources == 2 {
+		return 0.6
+	}
+	if numSources >= 5 {
+		return 1.0
+	}
+	// 3-4 sources
+	return 0.8
+}
+
+// computeConsistency maps a confidence adjustment to a 0-1 range.
+// Baseline is 0.5, adjustment is added and clamped.
+func computeConsistency(confidenceAdj float64) float64 {
+	score := 0.5 + confidenceAdj
+	if score < 0 {
+		score = 0
+	}
+	if score > 1 {
+		score = 1
+	}
+	return math.Round(score*100) / 100
+}
+
+// computeAuthority returns a heuristic authority score based on file type.
+func computeAuthority(fileType string) float64 {
+	ext := strings.ToLower(fileType)
+	if ext == "" {
+		return 0.5
+	}
+	// Normalize: ensure leading dot
+	if ext[0] != '.' {
+		ext = "." + ext
+	}
+	// Also try without the leading dot for matching
+	ext = filepath.Ext("file" + ext)
+	if ext == "" {
+		return 0.5
+	}
+
+	switch ext {
+	case ".md", ".markdown", ".rst":
+		return 0.8
+	case ".go", ".py", ".js", ".ts", ".java", ".rs", ".c", ".cpp", ".rb":
+		return 0.7
+	case ".yaml", ".yml", ".toml", ".json":
+		return 0.65
+	case ".txt":
+		return 0.6
+	case ".html", ".htm", ".xml":
+		return 0.55
+	default:
+		return 0.5
+	}
 }
 
 // cosineSimilarity computes the cosine similarity between two vectors.

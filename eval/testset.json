@@ -1,0 +1,156 @@
+[
+  {
+    "id": "q01",
+    "question": "What database does the Acme Widget Service use?",
+    "expected_sources": ["README.md", "config.go"],
+    "reference_answer": "The Acme Widget Service uses PostgreSQL for persistent storage.",
+    "category": "factual"
+  },
+  {
+    "id": "q02",
+    "question": "What is the default port for the Widget Service?",
+    "expected_sources": ["config.go"],
+    "reference_answer": "The default port is 8080, configured via the WIDGET_PORT environment variable.",
+    "category": "factual"
+  },
+  {
+    "id": "q03",
+    "question": "What format does the API use for error responses?",
+    "expected_sources": ["api.go"],
+    "reference_answer": "The API uses RFC 7807 Problem Details format for error responses.",
+    "category": "factual"
+  },
+  {
+    "id": "q04",
+    "question": "What is the maximum length for a widget name?",
+    "expected_sources": ["api.go"],
+    "reference_answer": "The maximum widget name length is 255 characters.",
+    "category": "factual"
+  },
+  {
+    "id": "q05",
+    "question": "What is the health check endpoint URL?",
+    "expected_sources": ["runbook.md"],
+    "reference_answer": "The health check endpoint is GET /healthz.",
+    "category": "factual"
+  },
+  {
+    "id": "q06",
+    "question": "What is the graceful shutdown timeout for the service?",
+    "expected_sources": ["runbook.md"],
+    "reference_answer": "The service has a 30-second graceful shutdown timeout.",
+    "category": "factual"
+  },
+  {
+    "id": "q07",
+    "question": "What database migration tool does the project use?",
+    "expected_sources": ["runbook.md"],
+    "reference_answer": "The project uses golang-migrate for database migrations.",
+    "category": "factual"
+  },
+  {
+    "id": "q08",
+    "question": "What is the database SSL mode default?",
+    "expected_sources": ["config.go"],
+    "reference_answer": "The default SSL mode is 'disable', set via WIDGET_DB_SSLMODE.",
+    "category": "factual"
+  },
+  {
+    "id": "q09",
+    "question": "How does authentication work and where are API keys stored?",
+    "expected_sources": ["architecture.md", "README.md"],
+    "reference_answer": "API keys are validated via the X-API-Key header. Keys are stored as bcrypt hashes in the api_keys table and compared using bcrypt hash comparison.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q10",
+    "question": "What happens when you delete a widget?",
+    "expected_sources": ["api.go", "README.md"],
+    "reference_answer": "Deletion is a soft delete: the widget status is set to 'deleted'. It is excluded from list results but can be retrieved by ID for 30 days before permanent deletion by a cleanup job.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q11",
+    "question": "What monitoring metrics are available and what are their alert thresholds?",
+    "expected_sources": ["architecture.md", "runbook.md"],
+    "reference_answer": "Prometheus metrics include widget_requests_total, widget_request_duration_seconds, widget_cache_hits_total, and widget_db_connections_active. Alert thresholds include p99 latency warning at 500ms/critical at 2s, error rate warning at 1%/critical at 5%.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q12",
+    "question": "How do I troubleshoot high latency in the widget service?",
+    "expected_sources": ["runbook.md", "architecture.md"],
+    "reference_answer": "Check the Prometheus p99 latency dashboard, verify Redis connectivity, check PostgreSQL active connections, and verify cache miss rates via redis-cli info memory.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q13",
+    "question": "What is the full deployment architecture from client to database?",
+    "expected_sources": ["architecture.md", "README.md"],
+    "reference_answer": "Clients connect through NGINX (TLS termination) to the Widget Service Go binary, which connects to PostgreSQL for storage and Redis for caching and rate limiting.",
+    "category": "cross-file"
+  },
+  {
+    "id": "q14",
+    "question": "How do I configure the database connection and what are all the related settings?",
+    "expected_sources": ["config.go", "README.md"],
+    "reference_answer": "Database is configured via environment variables: WIDGET_DB_HOST (localhost), WIDGET_DB_PORT (5432), WIDGET_DB_USER (widget), WIDGET_DB_PASSWORD (required), WIDGET_DB_NAME (widgets), WIDGET_DB_SSLMODE (disable).",
+    "category": "cross-file"
+  },
+  {
+    "id": "q15",
+    "question": "What rate limiting algorithm does the service use and what is the limit?",
+    "expected_sources": ["README.md", "architecture.md"],
+    "reference_answer": "The README says token bucket at 100 requests/minute, but the architecture doc says the algorithm was changed to sliding window in v2.1 and the limit was increased to 200 requests/minute in v2.3.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q16",
+    "question": "What is the cache TTL for the Widget Service?",
+    "expected_sources": ["README.md", "architecture.md"],
+    "reference_answer": "The README states 5-minute TTL, but the architecture doc says it was recently increased to 10 minutes to reduce database load during peak traffic.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q17",
+    "question": "How does the API key validation work? Is it a simple header check or something more complex?",
+    "expected_sources": ["README.md", "architecture.md"],
+    "reference_answer": "The README implies simple API key header validation, but the architecture doc clarifies that the service performs bcrypt hash comparison against stored keys in the database.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q18",
+    "question": "What rate limiting mechanism is used: token bucket or sliding window?",
+    "expected_sources": ["README.md", "architecture.md"],
+    "reference_answer": "The README mentions token bucket, but the architecture doc says the token bucket was replaced with a sliding window algorithm in v2.1.",
+    "category": "contradiction"
+  },
+  {
+    "id": "q19",
+    "question": "Does the Acme Widget Service support GraphQL?",
+    "expected_sources": [],
+    "reference_answer": "There is no information about GraphQL support in the documentation. The service only documents a RESTful API.",
+    "category": "unanswerable"
+  },
+  {
+    "id": "q20",
+    "question": "What message queue does the Widget Service use for async processing?",
+    "expected_sources": [],
+    "reference_answer": "There is no mention of a message queue in the documentation. The service uses PostgreSQL and Redis but no dedicated message queue is documented.",
+    "category": "unanswerable"
+  },
+  {
+    "id": "q21",
+    "question": "What is the password policy for user accounts in the Widget Service?",
+    "expected_sources": [],
+    "reference_answer": "The documentation does not mention user accounts or password policies. Authentication is done via API keys, not user accounts.",
+    "category": "unanswerable"
+  },
+  {
+    "id": "q22",
+    "question": "What CI/CD pipeline does the Acme Widget Service use?",
+    "expected_sources": [],
+    "reference_answer": "There is no information about CI/CD pipelines in the documentation.",
+    "category": "unanswerable"
+  }
+]

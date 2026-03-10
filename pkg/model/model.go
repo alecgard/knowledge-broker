@@ -110,6 +110,7 @@ type QueryRequest struct {
 	Concise  bool      `json:"concise,omitempty"` // terse, agent-friendly output
 	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "octroi")
 	Stream   *bool     `json:"stream,omitempty"`  // stream SSE responses; default false (single JSON response)
+	Mode     string    `json:"mode,omitempty"`    // "raw" for raw retrieval without LLM synthesis
 }
 
 // Answer is the response from the query engine.
@@ -142,6 +143,26 @@ type Contradiction struct {
 	Claim       string      `json:"claim"`
 	Sources     []SourceRef `json:"sources"`
 	Explanation string      `json:"explanation"`
+}
+
+// RawFragment is a single fragment returned by raw retrieval mode.
+type RawFragment struct {
+	FragmentID   string           `json:"fragment_id"`
+	Content      string           `json:"content"`
+	SourcePath   string           `json:"source_path"`
+	SourceURI    string           `json:"source_uri"`
+	SourceName   string           `json:"source_name,omitempty"`
+	SourceType   string           `json:"source_type"`
+	FileType     string           `json:"file_type"`
+	LastModified time.Time        `json:"last_modified"`
+	Author       string           `json:"author"`
+	Confidence   ConfidenceSignals `json:"confidence"`
+}
+
+// RawResult is the response from raw retrieval mode (no LLM synthesis).
+type RawResult struct {
+	Fragments      []RawFragment  `json:"fragments"`
+	Contradictions []Contradiction `json:"contradictions,omitempty"`
 }
 
 // FeedbackType categorises feedback.

@@ -445,6 +445,27 @@ func (s *SQLiteStore) ListSources(ctx context.Context) ([]model.Source, error) {
 	return sources, rows.Err()
 }
 
+// CountFragmentsBySource returns a map of "source_type/source_name" to fragment count.
+func (s *SQLiteStore) CountFragmentsBySource(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT source_type || '/' || source_name AS key, COUNT(*) FROM fragments GROUP BY source_type, source_name`)
+	if err != nil {
+		return nil, fmt.Errorf("count fragments by source: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			return nil, fmt.Errorf("scan count: %w", err)
+		}
+		result[key] = count
+	}
+	return result, rows.Err()
+}
+
 // Close releases the database connection.
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()

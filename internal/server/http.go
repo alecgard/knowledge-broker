@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
-	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
 	"github.com/knowledge-broker/knowledge-broker/internal/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
@@ -23,7 +22,6 @@ type IngestDeletedPath = model.IngestDeletedPath
 // HTTPServer serves the Knowledge Broker HTTP API.
 type HTTPServer struct {
 	engine   *query.Engine
-	feedback *feedback.Service
 	embedder embedding.Embedder
 	store    store.Store
 	logger   *slog.Logger
@@ -31,13 +29,12 @@ type HTTPServer struct {
 }
 
 // NewHTTPServer creates a new HTTP server.
-func NewHTTPServer(engine *query.Engine, fb *feedback.Service, emb embedding.Embedder, st store.Store, logger *slog.Logger) *HTTPServer {
+func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store, logger *slog.Logger) *HTTPServer {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	s := &HTTPServer{
 		engine:   engine,
-		feedback: fb,
 		embedder: emb,
 		store:    st,
 		logger:   logger,
@@ -49,7 +46,6 @@ func NewHTTPServer(engine *query.Engine, fb *feedback.Service, emb embedding.Emb
 
 func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/query", s.handleQuery)
-	s.mux.HandleFunc("/v1/feedback", s.handleFeedback)
 	s.mux.HandleFunc("/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/v1/ingest", s.handleIngest)
 }
@@ -152,28 +148,6 @@ func (s *HTTPServer) handleQuerySync(w http.ResponseWriter, r *http.Request, req
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(answer)
-}
-
-// handleFeedback records feedback on a fragment.
-func (s *HTTPServer) handleFeedback(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var fb model.Feedback
-	if err := json.NewDecoder(r.Body).Decode(&fb); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if err := s.feedback.Submit(r.Context(), fb); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // handleHealth returns health status.

@@ -1,6 +1,6 @@
 # MCP Server
 
-Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query, give feedback on, and explore the knowledge base.
+Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base.
 
 ## Setup
 
@@ -52,17 +52,6 @@ Retrieve relevant knowledge fragments, optionally with LLM synthesis.
 
 **Synthesis mode (raw=false):** Requires `ANTHROPIC_API_KEY`. Returns a synthesised answer with confidence signals and source citations.
 
-### feedback
-
-Adjust fragment confidence based on human knowledge.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `fragment_id` | string | yes | The fragment ID (from query results) |
-| `type` | string | yes | `correction`, `challenge`, or `confirmation` |
-| `content` | string | for corrections | The corrected information |
-| `evidence` | string | no | Supporting evidence |
-
 ### list-sources
 
 List all ingested sources with fragment counts and last sync time. Takes no parameters.
@@ -83,5 +72,4 @@ Returns an array of sources with `source_type`, `source_name`, `fragment_count`,
 1. Ingest content: `kb ingest --source /path/to/project`
 2. Configure your MCP client to run `kb mcp`
 3. Query the knowledge base — raw mode returns fragments for the client to reason over
-4. Submit feedback to improve confidence scores over time
-5. Use `list-sources` to see what's been ingested
+4. Use `list-sources` to see what's been ingested

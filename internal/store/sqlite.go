@@ -328,45 +328,6 @@ func (s *SQLiteStore) DeleteByPaths(ctx context.Context, sourceType, sourceName 
 	return tx.Commit()
 }
 
-// RecordFeedback stores feedback and adjusts the fragment's confidence.
-func (s *SQLiteStore) RecordFeedback(ctx context.Context, fb model.Feedback) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	_, err = tx.ExecContext(ctx,
-		"INSERT INTO feedback (fragment_id, type, content, evidence) VALUES (?, ?, ?, ?)",
-		fb.FragmentID, string(fb.Type), fb.Content, fb.Evidence,
-	)
-	if err != nil {
-		return fmt.Errorf("insert feedback: %w", err)
-	}
-
-	var adj float64
-	switch fb.Type {
-	case model.FeedbackCorrection:
-		adj = -0.2
-	case model.FeedbackChallenge:
-		adj = -0.1
-	case model.FeedbackConfirmation:
-		adj = 0.05
-	default:
-		return fmt.Errorf("unknown feedback type: %s", fb.Type)
-	}
-
-	_, err = tx.ExecContext(ctx,
-		"UPDATE fragments SET confidence_adj = confidence_adj + ? WHERE id = ?",
-		adj, fb.FragmentID,
-	)
-	if err != nil {
-		return fmt.Errorf("update confidence_adj: %w", err)
-	}
-
-	return tx.Commit()
-}
-
 // ExportFragments returns all fragments joined with their embeddings.
 func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `

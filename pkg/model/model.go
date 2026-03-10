@@ -165,19 +165,3 @@ type RawResult struct {
 	Contradictions []Contradiction `json:"contradictions,omitempty"`
 }
 
-// FeedbackType categorises feedback.
-type FeedbackType string
-
-const (
-	FeedbackCorrection   FeedbackType = "correction"
-	FeedbackChallenge    FeedbackType = "challenge"
-	FeedbackConfirmation FeedbackType = "confirmation"
-)
-
-// Feedback records user feedback on a fragment.
-type Feedback struct {
-	FragmentID string       `json:"fragment_id"`
-	Type       FeedbackType `json:"type"`
-	Content    string       `json:"content,omitempty"`
-	Evidence   string       `json:"evidence,omitempty"`
-}

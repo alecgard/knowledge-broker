@@ -64,10 +64,6 @@ func (m *mockStore) ExportFragments(ctx context.Context) ([]model.SourceFragment
 	return results, nil
 }
 
-func (m *mockStore) RecordFeedback(ctx context.Context, fb model.Feedback) error {
-	return nil
-}
-
 func (m *mockStore) RegisterSource(ctx context.Context, src model.Source) error {
 	return nil
 }

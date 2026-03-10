@@ -26,7 +26,6 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/internal/eval"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
-	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/internal/llm"
 	"github.com/knowledge-broker/knowledge-broker/internal/model"
@@ -53,7 +52,6 @@ func main() {
 	root.AddCommand(queryCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(mcpCmd())
-	root.AddCommand(feedbackCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
@@ -596,12 +594,11 @@ func serveCmd() *cobra.Command {
 			emb := newEmbedder(cfg, client)
 			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
 			engine := query.NewEngine(s, emb, claude, cfg.DefaultLimit)
-			fbService := feedback.NewService(s)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			httpServer := server.NewHTTPServer(engine, fbService, emb, s, logger)
+			httpServer := server.NewHTTPServer(engine, emb, s, logger)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
 		},
 	}
@@ -635,56 +632,11 @@ func mcpCmd() *cobra.Command {
 				llmClient = llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
 			}
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
-			fbService := feedback.NewService(s)
 
-			mcpServer := server.NewMCPServer(engine, fbService, s, logger)
+			mcpServer := server.NewMCPServer(engine, s, logger)
 			return mcpServer.ServeStdio()
 		},
 	}
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
-	return cmd
-}
-
-func feedbackCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "feedback",
-		Short: "Submit feedback on a fragment",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
-
-			s, err := openStore(cfg)
-			if err != nil {
-				return fmt.Errorf("open store: %w", err)
-			}
-			defer s.Close()
-
-			fragmentID, _ := cmd.Flags().GetString("fragment-id")
-			fbType, _ := cmd.Flags().GetString("type")
-			content, _ := cmd.Flags().GetString("content")
-			evidence, _ := cmd.Flags().GetString("evidence")
-
-			fb := model.Feedback{
-				FragmentID: fragmentID,
-				Type:       model.FeedbackType(fbType),
-				Content:    content,
-				Evidence:   evidence,
-			}
-
-			fbService := feedback.NewService(s)
-			if err := fbService.Submit(context.Background(), fb); err != nil {
-				return err
-			}
-
-			result, _ := json.Marshal(map[string]string{"status": "ok", "fragment_id": fragmentID})
-			fmt.Println(string(result))
-			return nil
-		},
-	}
-	cmd.Flags().String("fragment-id", "", "Fragment ID to give feedback on")
-	cmd.Flags().String("type", "", "Feedback type: correction, challenge, confirmation")
-	cmd.Flags().String("content", "", "Feedback content (for corrections)")
-	cmd.Flags().String("evidence", "", "Supporting evidence")
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	return cmd
 }

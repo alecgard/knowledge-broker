@@ -10,7 +10,8 @@ Connect it to your repos, docs, and knowledge bases — then ask it questions. I
 
 - Go 1.21+
 - [Ollama](https://ollama.com) running locally with an embedding model
-- An [Anthropic API key](https://console.anthropic.com/) for query synthesis (optional — raw mode works without it)
+
+That's it for raw retrieval mode. For LLM-synthesised answers, you'll also need an [Anthropic API key](https://console.anthropic.com/).
 
 ### Install
 
@@ -28,46 +29,53 @@ make install
 ollama pull nomic-embed-text
 ```
 
-### Configure
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your API keys:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-GITHUB_TOKEN=ghp_...          # optional, for GitHub connector
-```
-
-See `.env.example` for all available options.
-
 ### Ingest and query
 
 ```bash
 # Ingest a local directory
 kb ingest --source ./my-repo
 
-# Ingest a GitHub repo
-kb ingest --github owner/repo
+# Ingest a Git repo by URL
+kb ingest --git https://github.com/owner/repo
 
-# Ask a question
-kb query "how does retry logic work?"
+# Raw retrieval — ranked fragments, no API key needed
+kb query --raw "how does retry logic work?"
+
+# Synthesised answer (requires ANTHROPIC_API_KEY)
+ANTHROPIC_API_KEY=sk-ant-... kb query "how does retry logic work?"
 ```
+
+### Running without an API key
+
+Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. This is the default mode for MCP consumers and is sufficient for most tool integrations where the calling LLM handles synthesis.
+
+```bash
+# CLI
+kb query --raw "how does auth work?"
+kb query --raw --json "how does auth work?"   # structured output
+
+# MCP server (raw by default)
+kb mcp --db kb.db
+
+# HTTP API
+curl -X POST localhost:8080/v1/query \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
+```
+
+Set `ANTHROPIC_API_KEY` only when you want KB to synthesise answers via Claude.
 
 ## How it works
 
-1. **Connectors** pull content from sources (local filesystem, GitHub)
+1. **Connectors** pull content from sources (local filesystem, Git repos)
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** (via Ollama) convert chunks to vectors for semantic search
 4. **Storage** (SQLite + sqlite-vec) persists fragments and enables vector similarity search
-5. **Query engine** embeds your question, finds relevant fragments, and synthesises an answer via Claude
-6. **Confidence signals** assess how much to trust the answer across four dimensions
+5. **Query engine** embeds your question, finds relevant fragments, and either returns them directly (raw mode) or synthesises an answer via Claude
+6. **Confidence signals** assess how much to trust each fragment across four dimensions
 
 ## Confidence signals
 
-Every answer includes four independent confidence scores (0.0–1.0):
+Every result includes four independent confidence scores (0.0–1.0):
 
 | Signal | What it measures |
 |--------|-----------------|
@@ -76,7 +84,7 @@ Every answer includes four independent confidence scores (0.0–1.0):
 | **Consistency** | Do the sources agree, or are there contradictions |
 | **Authority** | How authoritative are the source types for this kind of question |
 
-Contradictions between sources are flagged rather than hidden.
+In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are flagged rather than hidden.
 
 ## Commands
 
@@ -85,29 +93,41 @@ Contradictions between sources are flagged rather than hidden.
 Ingest documents from a source into the knowledge base.
 
 ```bash
-kb ingest --source ./path/to/dir    # Local directory
-kb ingest --github owner/repo       # GitHub repository
-kb ingest --db myproject.db         # Custom database path
+kb ingest --source ./path/to/dir              # local directory
+kb ingest --git https://github.com/owner/repo  # Git repo by URL
+kb ingest --source ./repo-a --source ./repo-b  # multiple sources
+kb ingest --all                                # re-ingest all registered local sources
+kb ingest --db myproject.db                    # custom database path
 ```
 
 Ingestion is incremental — unchanged files are skipped based on checksums.
+
+#### Remote ingestion
+
+Push fragments to a shared KB server instead of embedding locally:
+
+```bash
+kb ingest --source ./my-repo --remote http://server:8080
+```
+
+The client extracts and chunks locally, then POSTs fragments to the server which handles embedding and storage. Checksums are tracked locally for incremental re-ingestion.
 
 ### `kb query`
 
 Ask a question and get an answer with confidence signals.
 
 ```bash
-# Synthesised answer (requires ANTHROPIC_API_KEY)
-kb query "what is the billing retry policy?"
-kb query --human "how does auth work?"    # streamed, human-readable
-
 # Raw retrieval — returns ranked fragments, no LLM needed
 kb query --raw "how does auth work?"
 kb query --raw --json "explain the deployment process"
 kb query --raw --limit 10 --topics "billing,payments" "retry policy"
+
+# Synthesised answer (requires ANTHROPIC_API_KEY)
+kb query "what is the billing retry policy?"
+kb query --human "how does auth work?"    # streamed, human-readable
 ```
 
-Raw mode (`--raw`) returns fragments with per-fragment confidence signals, source metadata, and content previews. Add `--json` for structured output. This is the primary mode for MCP consumers and tool integrations — no Anthropic API key required.
+Raw mode (`--raw`) returns fragments with per-fragment confidence signals, source metadata, and content previews. Add `--json` for structured output.
 
 ### `kb serve`
 
@@ -120,50 +140,55 @@ kb serve --addr :8080 --db kb.db
 Endpoints:
 - `POST /v1/query` — query with optional SSE streaming (`{"messages": [{"role": "user", "content": "..."}]}`)
 - `POST /v1/query` with `"mode": "raw"` — raw retrieval, returns ranked fragments without LLM synthesis
-- `POST /v1/feedback` — submit feedback (`{"fragment_id": "...", "type": "correction", "content": "..."}`)
 - `POST /v1/ingest` — receive fragments from remote ingestion (`kb ingest --remote`)
 - `GET /v1/health` — health check
 
 ### `kb mcp`
 
-Start an MCP (Model Context Protocol) server on stdio, for integration with AI tools like Claude Code.
+Start an MCP (Model Context Protocol) server on stdio.
 
 ```bash
 kb mcp --db kb.db
 ```
 
-Exposes tools: `query`, `feedback`, `list-sources`. Defaults to raw retrieval mode (no API key needed). See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
+Exposes tools: `query`, `list-sources`. Defaults to raw retrieval mode (no API key needed). See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 
-### `kb feedback`
+### `kb sources list`
 
-Submit feedback on a fragment to improve knowledge quality over time.
+List all registered ingestion sources.
 
 ```bash
-kb feedback --fragment-id abc123 --type correction --content "It actually retries 5 times"
-kb feedback --fragment-id abc123 --type challenge
-kb feedback --fragment-id abc123 --type confirmation
+kb sources list --db kb.db
 ```
 
-Feedback types:
-- **correction** — "that's wrong, it's actually X" (degrades confidence, stores correction)
-- **challenge** — "I don't think that's right" (degrades confidence)
-- **confirmation** — "that's correct" (boosts confidence)
+Returns JSON with source type, name, config, and last ingest time for each registered source.
+
+### `kb export`
+
+Export fragment embeddings for visualization with TensorBoard Embedding Projector.
+
+```bash
+kb export --db kb.db --out ./export/
+```
+
+Produces `tensors.tsv` and `metadata.tsv` files.
 
 ### `kb eval`
 
 Run the evaluation framework to measure retrieval quality.
 
 ```bash
-make eval                                    # one-command eval
-kb eval --db eval.db --testset eval/testset.json  # manual
-kb eval --db eval.db --ingest --json         # ingest corpus + JSON output
+make eval                                          # one-command eval
+kb eval --db eval.db --testset eval/testset.json   # manual
+kb eval --db eval.db --corpus eval/corpus --ingest  # ingest corpus first
+kb eval --db eval.db --json                        # structured output
 ```
 
 Reports recall@K, precision@K, MRR, and chunking statistics. See [docs/eval.md](docs/eval.md) for details.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure. Environment variables and `.env` are both supported — env vars take precedence.
+Environment variables and `.env` are both supported — env vars take precedence.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -171,22 +196,30 @@ Copy `.env.example` to `.env` and configure. Environment variables and `.env` ar
 | `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
 | `KB_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key (required for synthesis, not needed for raw mode) |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (only needed for synthesis mode) |
 | `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
 | `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
+| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
 | `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
-| `GITHUB_TOKEN` | — | GitHub token (for GitHub connector) |
+| `KB_GITHUB_CLIENT_ID` | — | GitHub OAuth client ID (for Git connector) |
 
 ## Architecture
 
 ```
-Connectors (filesystem, GitHub)
+Connectors (filesystem, Git)
   → Extractors (markdown, code, plaintext)
   → Embed via Ollama
   → Store in SQLite + sqlite-vec
 
-Query
+Query (raw mode)
+  → Embed question via Ollama
+  → Vector search (sqlite-vec)
+  → Compute per-fragment confidence signals
+  → Return ranked fragments
+
+Query (synthesis mode)
   → Embed question via Ollama
   → Vector search (sqlite-vec)
   → Synthesise via Claude

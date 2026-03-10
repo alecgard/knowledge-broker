@@ -234,49 +234,6 @@ func TestDeleteByPaths(t *testing.T) {
 	}
 }
 
-func TestRecordFeedback(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	now := time.Now().UTC().Truncate(time.Second)
-	frag := model.SourceFragment{
-		ID: "f1", Content: "a", SourceType: "fs",
-		SourcePath: "/a", SourceURI: "f:///a", LastModified: now,
-		FileType: "txt", Checksum: "x",
-	}
-	if err := s.UpsertFragments(ctx, []model.SourceFragment{frag}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Correction: -0.2
-	if err := s.RecordFeedback(ctx, model.Feedback{
-		FragmentID: "f1", Type: model.FeedbackCorrection, Content: "wrong",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, _ := s.GetFragments(ctx, []string{"f1"})
-	if len(got) != 1 {
-		t.Fatal("fragment not found")
-	}
-	if got[0].ConfidenceAdj != -0.2 {
-		t.Errorf("expected -0.2, got %f", got[0].ConfidenceAdj)
-	}
-
-	// Confirmation: +0.05
-	if err := s.RecordFeedback(ctx, model.Feedback{
-		FragmentID: "f1", Type: model.FeedbackConfirmation,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, _ = s.GetFragments(ctx, []string{"f1"})
-	expected := -0.15
-	if got[0].ConfidenceAdj < expected-0.001 || got[0].ConfidenceAdj > expected+0.001 {
-		t.Errorf("expected ~%f, got %f", expected, got[0].ConfidenceAdj)
-	}
-}
-
 func TestGetFragmentsEmpty(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

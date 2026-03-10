@@ -75,7 +75,7 @@ func TestHandleIngest(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 
-	srv := NewHTTPServer(nil, nil, emb, st, nil)
+	srv := NewHTTPServer(nil, emb, st, nil)
 
 	reqBody := IngestRequest{
 		Fragments: []IngestFragment{
@@ -149,7 +149,7 @@ func TestHandleIngest(t *testing.T) {
 func TestHandleIngestWithDeletions(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
-	srv := NewHTTPServer(nil, nil, emb, st, nil)
+	srv := NewHTTPServer(nil, emb, st, nil)
 
 	// First, ingest a fragment.
 	reqBody := IngestRequest{
@@ -206,7 +206,7 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 }
 
 func TestHandleIngestMethodNotAllowed(t *testing.T) {
-	srv := NewHTTPServer(nil, nil, &mockEmbedder{dim: testEmbeddingDim}, newTestStore(t), nil)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, newTestStore(t), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/ingest", nil)
 	rec := httptest.NewRecorder()
@@ -218,7 +218,7 @@ func TestHandleIngestMethodNotAllowed(t *testing.T) {
 }
 
 func TestHandleIngestEmptyBody(t *testing.T) {
-	srv := NewHTTPServer(nil, nil, &mockEmbedder{dim: testEmbeddingDim}, newTestStore(t), nil)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, newTestStore(t), nil)
 
 	body, _ := json.Marshal(IngestRequest{})
 	req := httptest.NewRequest(http.MethodPost, "/v1/ingest", bytes.NewReader(body))
@@ -234,7 +234,7 @@ func TestHandleIngestEmptyBody(t *testing.T) {
 func TestHandleIngestMultipleFragmentsSamePath(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
-	srv := NewHTTPServer(nil, nil, emb, st, nil)
+	srv := NewHTTPServer(nil, emb, st, nil)
 
 	// Simulate multiple chunks from the same file (different chunk indices).
 	reqBody := IngestRequest{
@@ -271,7 +271,7 @@ func TestHandleIngestMultipleFragmentsSamePath(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	srv := NewHTTPServer(nil, nil, nil, nil, nil)
+	srv := NewHTTPServer(nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -291,7 +291,7 @@ func TestHandleHealth(t *testing.T) {
 func TestIngestFragmentIDConsistency(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
-	srv := NewHTTPServer(nil, nil, emb, st, nil)
+	srv := NewHTTPServer(nil, emb, st, nil)
 
 	reqBody := IngestRequest{
 		Fragments: []IngestFragment{

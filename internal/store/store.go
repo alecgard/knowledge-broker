@@ -26,9 +26,6 @@ type Store interface {
 	// ExportFragments returns all fragments with their embeddings.
 	ExportFragments(ctx context.Context) ([]model.SourceFragment, error)
 
-	// RecordFeedback stores feedback for a fragment.
-	RecordFeedback(ctx context.Context, fb model.Feedback) error
-
 	// RegisterSource inserts or updates a registered source.
 	RegisterSource(ctx context.Context, src model.Source) error
 

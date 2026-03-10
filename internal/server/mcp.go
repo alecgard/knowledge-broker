@@ -10,7 +10,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/feedback"
 	"github.com/knowledge-broker/knowledge-broker/internal/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
@@ -18,24 +17,22 @@ import (
 
 // MCPServer serves Knowledge Broker as an MCP tool provider.
 type MCPServer struct {
-	engine   *query.Engine
-	feedback *feedback.Service
-	store    store.Store
-	logger   *slog.Logger
-	server   *server.MCPServer
+	engine *query.Engine
+	store  store.Store
+	logger *slog.Logger
+	server *server.MCPServer
 }
 
 // NewMCPServer creates a new MCP server.
-func NewMCPServer(engine *query.Engine, fb *feedback.Service, st store.Store, logger *slog.Logger) *MCPServer {
+func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MCPServer {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	s := &MCPServer{
-		engine:   engine,
-		feedback: fb,
-		store:    st,
-		logger:   logger,
+		engine: engine,
+		store:  st,
+		logger: logger,
 	}
 
 	s.server = server.NewMCPServer(
@@ -60,24 +57,6 @@ func NewMCPServer(engine *query.Engine, fb *feedback.Service, st store.Store, lo
 			mcp.Description("If true (default), return raw fragments without LLM synthesis. If false, use LLM to synthesise an answer."),
 		),
 	), s.handleQuery)
-
-	s.server.AddTool(mcp.NewTool("feedback",
-		mcp.WithDescription("Submit feedback on a knowledge fragment. Use 'correction' to fix wrong info, 'challenge' to flag uncertainty, or 'confirmation' to validate accuracy."),
-		mcp.WithString("fragment_id",
-			mcp.Description("The ID of the fragment to give feedback on"),
-			mcp.Required(),
-		),
-		mcp.WithString("type",
-			mcp.Description("Feedback type: correction, challenge, or confirmation"),
-			mcp.Required(),
-		),
-		mcp.WithString("content",
-			mcp.Description("The correction content (required for corrections)"),
-		),
-		mcp.WithString("evidence",
-			mcp.Description("Optional supporting evidence"),
-		),
-	), s.handleFeedback)
 
 	s.server.AddTool(mcp.NewTool("list-sources",
 		mcp.WithDescription("List all registered knowledge sources with their fragment counts and last ingestion time."),
@@ -156,28 +135,6 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	return mcp.NewToolResultText(string(jsonBytes)), nil
-}
-
-func (s *MCPServer) handleFeedback(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.GetArguments()
-
-	fragmentID, _ := args["fragment_id"].(string)
-	fbType, _ := args["type"].(string)
-	content, _ := args["content"].(string)
-	evidence, _ := args["evidence"].(string)
-
-	fb := model.Feedback{
-		FragmentID: fragmentID,
-		Type:       model.FeedbackType(fbType),
-		Content:    content,
-		Evidence:   evidence,
-	}
-
-	if err := s.feedback.Submit(ctx, fb); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText("Feedback recorded successfully."), nil
 }
 
 func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

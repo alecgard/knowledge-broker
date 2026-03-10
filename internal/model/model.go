@@ -18,8 +18,6 @@ type (
 	ConfidenceSignals = model.ConfidenceSignals
 	SourceRef         = model.SourceRef
 	Contradiction     = model.Contradiction
-	FeedbackType      = model.FeedbackType
-	Feedback          = model.Feedback
 	IngestFragment    = model.IngestFragment
 	IngestDeletedPath = model.IngestDeletedPath
 	IngestRequest     = model.IngestRequest
@@ -29,10 +27,6 @@ type (
 
 // Re-export constants.
 const (
-	FeedbackCorrection   = model.FeedbackCorrection
-	FeedbackChallenge    = model.FeedbackChallenge
-	FeedbackConfirmation = model.FeedbackConfirmation
-
 	SourceTypeFilesystem = model.SourceTypeFilesystem
 	SourceTypeGit        = model.SourceTypeGit
 

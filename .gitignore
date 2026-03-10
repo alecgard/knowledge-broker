@@ -6,4 +6,4 @@
 local
 metadata.tsv
 tensors.tsv
-tmp
+tmp.claude/worktrees/

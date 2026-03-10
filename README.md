@@ -5,8 +5,6 @@ A knowledge engine that ingests documents from multiple sources, embeds them for
 Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
 
 ```jsonc
-// POST /v1/query  {"messages": [{"role": "user", "content": "..."}]}
-
 $ kb query "What database does the inventory service use and what port does it run on?"
 {
   "answer": "The inventory service (inventory-service) runs on port 8081 and uses PostgreSQL as its primary database, along with Kafka and Redis. The PostgreSQL instance is version 16 on RDS with Multi-AZ deployment (r6g.2xlarge). Each service has a separate database instance.",
@@ -45,10 +43,12 @@ curl -s -X POST localhost:8080/v1/query \
   -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
 ```
 
-For LLM-synthesised answers, set your API key before starting:
+For LLM-synthesised answers, add your API key to `.env` before starting:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... docker compose up -d
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY
+docker compose up -d
 ```
 
 ### From source
@@ -65,30 +65,25 @@ kb ingest --source ./my-repo
 # Ingest a Git repo by URL
 kb ingest --git https://github.com/owner/repo
 
+# Synthesised answer (set ANTHROPIC_API_KEY in .env)
+kb query "how does retry logic work?"
+
 # Raw retrieval — ranked fragments, no API key needed
 kb query --raw "how does retry logic work?"
-
-# Synthesised answer (requires ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=sk-ant-... kb query "how does retry logic work?"
 ```
 
 ### Running without an API key
 
-Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. This is the default mode for MCP consumers and is sufficient for most tool integrations where the calling LLM handles synthesis.
+Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. Useful when the calling LLM handles its own synthesis.
 
 ```bash
-# CLI — returns JSON
+# CLI — returns ranked fragments as JSON
 kb query --raw "how does auth work?"
-
-# MCP server (raw by default)
-kb mcp --db kb.db
 
 # HTTP API
 curl -X POST localhost:8080/v1/query \
   -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
 ```
-
-Set `ANTHROPIC_API_KEY` only when you want KB to synthesise answers via Claude.
 
 ## How it works
 
@@ -178,7 +173,7 @@ Start an MCP (Model Context Protocol) server on stdio.
 kb mcp --db kb.db
 ```
 
-Exposes tools: `query`, `list-sources`. Defaults to raw retrieval mode (no API key needed). See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
+Exposes tools: `query`, `list-sources`. Uses synthesis mode when `ANTHROPIC_API_KEY` is set, falls back to raw mode otherwise. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 
 ### `kb sources list`
 
@@ -215,7 +210,7 @@ Reports recall@K, precision@K, MRR, and chunking statistics. See [docs/eval.md](
 
 ## Configuration
 
-Environment variables and `.env` are both supported — env vars take precedence.
+Copy `.env.example` to `.env` and fill in your values. Environment variables also work and take precedence over `.env`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

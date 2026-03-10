@@ -4,6 +4,39 @@ A knowledge engine that ingests documents from multiple sources, embeds them for
 
 Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
 
+```
+$ kb query --human "What should I check if the Nexus API is slow?"
+
+The Nexus API high latency runbook (RB-001) outlines the following diagnostic steps:
+
+1. Check the Grafana dashboard "Nexus API Overview" for latency breakdown by endpoint
+2. If /inventory/positions is slow — likely PostgreSQL. Check pg_stat_statements
+   for long-running queries on the inventory-service DB
+3. If /shipments/track is slow — likely carrier API latency. Check the
+   "Carrier API Latency" dashboard and the carrier's status page
+4. If all endpoints are slow — check Kubernetes node CPU/memory. If saturated,
+   scale up via Terraform (min 80, max 200 nodes)
+5. Check Kafka consumer lag on shipment-events and inventory-updates topics
+
+For remediation: DB issues → kill long-running queries; carrier issues → enable
+circuit breaker; Kafka lag → scale consumer replicas; node pressure → terraform apply.
+
+Escalate to SRE secondary after 30 min, VP Engineering after 1 hour.
+
+--- Confidence ---
+Freshness:     0.92
+Corroboration: 0.85
+Consistency:   1.00
+Authority:     0.95
+
+--- Sources ---
+  [confluence:ACME/runbooks/RB-001]      Confluence — ACME space
+  [slack:acme-haf5895/C0AKB4GRELF/2026-03-08] Slack — #platform-engineering
+  [confluence:ACME/infrastructure]        Confluence — ACME space
+```
+
+Sources are cross-referenced: the runbook comes from Confluence, corroborated by a Slack discussion where the team walked through the same steps during an incident. Contradictions between sources are flagged rather than hidden.
+
 ## Quick start
 
 ### Docker (recommended)
@@ -70,7 +103,7 @@ Set `ANTHROPIC_API_KEY` only when you want KB to synthesise answers via Claude.
 
 ## How it works
 
-1. **Connectors** pull content from sources (local filesystem, Git repos)
+1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki — see [docs/connectors.md](docs/connectors.md))
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** (via Ollama) convert chunks to vectors for semantic search
 4. **Storage** (SQLite + sqlite-vec) persists fragments and enables vector similarity search
@@ -99,10 +132,14 @@ Ingest documents from a source into the knowledge base.
 ```bash
 kb ingest --source ./path/to/dir              # local directory
 kb ingest --git https://github.com/owner/repo  # Git repo by URL
+kb ingest --confluence ENGINEERING             # Confluence space
+kb ingest --slack C0ABC123DEF                  # Slack channel
+kb ingest --wiki https://github.com/owner/repo # GitHub Wiki
 kb ingest --source ./repo-a --source ./repo-b  # multiple sources
 kb ingest --all                                # re-ingest all registered local sources
-kb ingest --db myproject.db                    # custom database path
 ```
+
+See [docs/connectors.md](docs/connectors.md) for full setup instructions and required environment variables for each connector.
 
 Ingestion is incremental — unchanged files are skipped based on checksums.
 
@@ -208,11 +245,16 @@ Environment variables and `.env` are both supported — env vars take precedence
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
 | `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
 | `KB_GITHUB_CLIENT_ID` | — | GitHub OAuth client ID (for Git connector) |
+| `KB_CONFLUENCE_BASE_URL` | — | Confluence instance URL (for `--confluence`) |
+| `KB_CONFLUENCE_EMAIL` | — | Confluence auth email (for `--confluence`) |
+| `KB_CONFLUENCE_TOKEN` | — | Atlassian API token (for `--confluence`) |
+| `KB_SLACK_TOKEN` | — | Slack Bot User OAuth Token (for `--slack`) |
+| `KB_SLACK_WORKSPACE` | — | Slack workspace name for display |
 
 ## Architecture
 
 ```
-Connectors (filesystem, Git)
+Connectors (filesystem, Git, Confluence, Slack, GitHub Wiki)
   → Extractors (markdown, code, plaintext)
   → Embed via Ollama
   → Store in SQLite + sqlite-vec

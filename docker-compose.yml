@@ -9,8 +9,8 @@ services:
       - KB_OLLAMA_URL=http://ollama:11434
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
-      ollama:
-        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ollama:
@@ -24,6 +24,15 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama
+    entrypoint: ["ollama", "pull", "${KB_OLLAMA_MODEL:-nomic-embed-text}"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
 
 volumes:
   kb-data:

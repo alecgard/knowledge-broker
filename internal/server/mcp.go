@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
@@ -68,10 +69,66 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 	return s
 }
 
-// ServeStdio starts the MCP server on stdio.
+// ServeStdio starts the MCP server on stdio only.
 func (s *MCPServer) ServeStdio() error {
 	s.logger.Info("starting MCP server on stdio")
 	return server.ServeStdio(s.server)
+}
+
+// Serve starts both stdio and SSE transports concurrently, sharing the same
+// underlying MCPServer instance. It blocks until ctx is cancelled or either
+// transport returns an error, then cleans up both.
+func (s *MCPServer) Serve(ctx context.Context, sseAddr string) error {
+	sseServer := server.NewSSEServer(s.server,
+		server.WithBaseURL("http://"+sseAddr),
+	)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		wg   sync.WaitGroup
+		once sync.Once
+		first error
+	)
+	setErr := func(err error) {
+		once.Do(func() { first = err })
+		cancel()
+	}
+
+	// Start SSE transport.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.logger.Info("starting MCP SSE transport", "addr", sseAddr)
+		if err := sseServer.Start(sseAddr); err != nil {
+			setErr(fmt.Errorf("sse: %w", err))
+		}
+	}()
+
+	// Start stdio transport.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.logger.Info("starting MCP stdio transport")
+		if err := server.ServeStdio(s.server); err != nil {
+			setErr(fmt.Errorf("stdio: %w", err))
+		}
+	}()
+
+	// Wait for cancellation, then shut down SSE gracefully.
+	<-ctx.Done()
+	s.logger.Info("shutting down MCP transports")
+	if err := sseServer.Shutdown(context.Background()); err != nil {
+		s.logger.Warn("SSE shutdown error", "error", err)
+	}
+
+	wg.Wait()
+
+	if first != nil {
+		return first
+	}
+	return nil
 }
 
 func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

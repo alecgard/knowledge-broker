@@ -165,11 +165,19 @@ Endpoints:
 
 ### `kb mcp`
 
-Start an MCP (Model Context Protocol) server on stdio.
+Start an MCP (Model Context Protocol) server. Both stdio and HTTP/SSE transports run simultaneously, sharing the same server instance.
 
 ```bash
-kb mcp
+kb mcp                  # stdio + SSE on :8081
+kb mcp --addr :9090     # stdio + SSE on custom port
 ```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--addr` | `:8081` | SSE listen address |
+| `--db` | `kb.db` | Path to SQLite database |
+
+The SSE endpoint is available at `http://<addr>/sse` and accepts messages at `http://<addr>/message`.
 
 Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 

@@ -677,10 +677,11 @@ func serveCmd() *cobra.Command {
 func mcpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Start MCP server on stdio",
+		Short: "Start MCP server (stdio + SSE)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
+			addr, _ := cmd.Flags().GetString("addr")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
@@ -700,11 +701,15 @@ func mcpCmd() *cobra.Command {
 			llmClient := newLLMClient(cfg, "", client)
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
 
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
 			mcpServer := server.NewMCPServer(engine, s, logger)
-			return mcpServer.ServeStdio()
+			return mcpServer.Serve(ctx, addr)
 		},
 	}
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("addr", ":8081", "SSE listen address")
 	return cmd
 }
 

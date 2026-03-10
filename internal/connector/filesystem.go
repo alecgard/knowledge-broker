@@ -43,7 +43,7 @@ var binaryExts = map[string]bool{
 	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true,
 	".7z": true, ".rar": true, ".tgz": true,
 	// Documents (non-text)
-	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
+	".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
 	".ppt": true, ".pptx": true,
 	// Databases
 	".db": true, ".db-shm": true, ".db-wal": true, ".db-journal": true,
@@ -172,7 +172,8 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 		}
 
 		// Skip files that look binary (contain null bytes in the first 8KB).
-		if isBinary(content) {
+		// PDF files are binary but have a dedicated extractor, so allow them.
+		if ext != ".pdf" && isBinary(content) {
 			return nil
 		}
 

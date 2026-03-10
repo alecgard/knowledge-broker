@@ -16,18 +16,22 @@ type Connector = connector.Connector
 // ScanOptions is the public ScanOptions type.
 type ScanOptions = connector.ScanOptions
 
+// Factory creates a Connector from source config.
+type Factory func(config map[string]string) (Connector, error)
+
+// registry maps source type names to their factory functions.
+var registry = map[string]Factory{}
+
+// Register adds a connector factory for the given source type.
+func Register(sourceType string, factory Factory) {
+	registry[sourceType] = factory
+}
+
 // FromSource reconstructs a Connector from a registered Source.
-func FromSource(src model.Source, gitHubClientID string) (Connector, error) {
-	switch src.SourceType {
-	case model.SourceTypeGit:
-		return NewGitConnector(src.Config["url"], src.Config["branch"], gitHubClientID), nil
-	case model.SourceTypeFilesystem:
-		path := src.Config["path"]
-		if path == "" {
-			return nil, fmt.Errorf("filesystem source %q missing path in config", src.SourceName)
-		}
-		return NewFilesystemConnector(path), nil
-	default:
+func FromSource(src model.Source) (Connector, error) {
+	factory, ok := registry[src.SourceType]
+	if !ok {
 		return nil, fmt.Errorf("unknown source type: %s", src.SourceType)
 	}
+	return factory(src.Config)
 }

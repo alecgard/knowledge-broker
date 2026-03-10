@@ -15,6 +15,19 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
+// SourceTypeFilesystem is the source type identifier for local filesystem sources.
+const SourceTypeFilesystem = "filesystem"
+
+func init() {
+	Register(SourceTypeFilesystem, func(config map[string]string) (Connector, error) {
+		path := config["path"]
+		if path == "" {
+			return nil, fmt.Errorf("filesystem source missing 'path' in config")
+		}
+		return NewFilesystemConnector(path), nil
+	})
+}
+
 // maxFileSize is the maximum file size (1 MB) that the scanner will read.
 const maxFileSize = 1 << 20
 
@@ -87,7 +100,7 @@ func (c *FilesystemConnector) SourceName() string {
 
 // Name returns the connector type identifier.
 func (c *FilesystemConnector) Name() string {
-	return model.SourceTypeFilesystem
+	return SourceTypeFilesystem
 }
 
 // Config returns the connector's configuration for source registration.
@@ -206,7 +219,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			LastModified: lastModified,
 			Author:       author,
 			SourceURI:    "file://" + absPath,
-			SourceType:   model.SourceTypeFilesystem,
+			SourceType:   SourceTypeFilesystem,
 			SourceName:   c.SourceName(),
 			Checksum:     checksum,
 		})

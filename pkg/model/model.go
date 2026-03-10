@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-// SourceType constants for connector types.
-const (
-	SourceTypeFilesystem = "filesystem"
-	SourceTypeGit        = "git"
-)
-
 // Message role constants.
 const (
 	RoleUser      = "user"

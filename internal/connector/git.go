@@ -16,6 +16,15 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
+// SourceTypeGit is the source type identifier for git repository sources.
+const SourceTypeGit = "git"
+
+func init() {
+	Register(SourceTypeGit, func(config map[string]string) (Connector, error) {
+		return NewGitConnector(config["url"], config["branch"], config["github_client_id"]), nil
+	})
+}
+
 // GitConnector clones a git repository and scans it using FilesystemConnector.
 // Works with any git remote: GitHub, GitLab, Bitbucket, self-hosted, etc.
 type GitConnector struct {
@@ -36,7 +45,7 @@ func NewGitConnector(repoURL, branch, clientID string) *GitConnector {
 
 // Name returns the connector type identifier.
 func (c *GitConnector) Name() string {
-	return model.SourceTypeGit
+	return SourceTypeGit
 }
 
 // Config returns the connector's configuration for source registration.
@@ -44,6 +53,9 @@ func (c *GitConnector) Config(mode string) map[string]string {
 	cfg := map[string]string{"url": c.repoURL}
 	if c.branch != "" {
 		cfg["branch"] = c.branch
+	}
+	if c.clientID != "" {
+		cfg["github_client_id"] = c.clientID
 	}
 	return cfg
 }
@@ -90,7 +102,7 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		// Convert absolute temp path to relative path within repo.
 		relPath, _ := filepath.Rel(tmpDir, docs[i].Path)
 		docs[i].Path = relPath
-		docs[i].SourceType = model.SourceTypeGit
+		docs[i].SourceType = SourceTypeGit
 		docs[i].SourceName = sourceName
 		docs[i].SourceURI = sourceURI + "/" + relPath
 	}

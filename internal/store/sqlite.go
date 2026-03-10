@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 	vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 //go:embed migrations/001_initial.sql
@@ -32,7 +33,7 @@ func init() {
 // NewSQLiteStore opens (or creates) a SQLite database at dbPath, runs
 // migrations, creates the sqlite-vec virtual table, and validates metadata.
 func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -79,6 +80,29 @@ func validateOrSetMeta(db *sql.DB, key, expected string) error {
 	return nil
 }
 
+// isSQLiteBusy reports whether the error is a SQLite BUSY error.
+func isSQLiteBusy(err error) bool {
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code == sqlite3.ErrBusy || sqliteErr.ExtendedCode == sqlite3.ErrBusySnapshot
+	}
+	return false
+}
+
+// withRetry retries fn up to maxAttempts times when SQLite returns BUSY.
+// It uses exponential backoff starting at 50ms.
+func withRetry(maxAttempts int, fn func() error) error {
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err = fn()
+		if err == nil || !isSQLiteBusy(err) {
+			return err
+		}
+		time.Sleep(time.Duration(50<<uint(attempt)) * time.Millisecond)
+	}
+	return err
+}
+
 // serializeEmbedding converts a float32 slice to a little-endian byte slice.
 func serializeEmbedding(v []float32) []byte {
 	buf := make([]byte, len(v)*4)
@@ -119,7 +143,14 @@ func scanFragment(scanner interface{ Scan(...any) error }, extra ...any) (model.
 }
 
 // UpsertFragments inserts or replaces fragments and their embeddings.
+// It retries on SQLite BUSY errors to handle concurrent writers.
 func (s *SQLiteStore) UpsertFragments(ctx context.Context, fragments []model.SourceFragment) error {
+	return withRetry(3, func() error {
+		return s.upsertFragmentsOnce(ctx, fragments)
+	})
+}
+
+func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model.SourceFragment) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -269,11 +300,17 @@ func (s *SQLiteStore) GetChecksums(ctx context.Context, sourceType, sourceName s
 }
 
 // DeleteByPaths removes fragments matching the given source type, name, and paths.
+// It retries on SQLite BUSY errors to handle concurrent writers.
 func (s *SQLiteStore) DeleteByPaths(ctx context.Context, sourceType, sourceName string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
+	return withRetry(3, func() error {
+		return s.deleteByPathsOnce(ctx, sourceType, sourceName, paths)
+	})
+}
 
+func (s *SQLiteStore) deleteByPathsOnce(ctx context.Context, sourceType, sourceName string, paths []string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)

@@ -191,16 +191,60 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Fragments) == 0 {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"ingested": 0})
+		json.NewEncoder(w).Encode(map[string]int{"ingested": 0, "skipped": 0})
+		return
+	}
+
+	// Deduplicate: skip fragments whose checksum already exists in the store,
+	// avoiding unnecessary embedding calls and write contention.
+	type sourceKey struct{ typ, name string }
+	checksumCache := make(map[sourceKey]map[string]string)
+	getChecksums := func(typ, name string) (map[string]string, error) {
+		k := sourceKey{typ, name}
+		if m, ok := checksumCache[k]; ok {
+			return m, nil
+		}
+		m, err := s.store.GetChecksums(ctx, typ, name)
+		if err != nil {
+			return nil, err
+		}
+		checksumCache[k] = m
+		return m, nil
+	}
+
+	// Identify which fragments actually need embedding.
+	type indexedFragment struct {
+		origIdx int
+		frag    model.IngestFragment
+	}
+	var needEmbed []indexedFragment
+	skipped := 0
+	for i, f := range req.Fragments {
+		existing, err := getChecksums(f.SourceType, f.SourceName)
+		if err != nil {
+			s.logger.Error("get checksums failed", "error", err)
+			http.Error(w, fmt.Sprintf("checksum lookup failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if existing[f.SourcePath] == f.Checksum && f.Checksum != "" {
+			skipped++
+			continue
+		}
+		needEmbed = append(needEmbed, indexedFragment{origIdx: i, frag: f})
+	}
+
+	if len(needEmbed) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"ingested": 0, "skipped": skipped})
 		return
 	}
 
 	// Collect texts for batch embedding, processing in groups of 50 to
 	// avoid overwhelming the embedding service on large ingests.
 	const embedBatchSize = 50
-	texts := make([]string, len(req.Fragments))
-	for i, f := range req.Fragments {
-		texts[i] = f.Content
+	texts := make([]string, len(needEmbed))
+	for i, nf := range needEmbed {
+		texts[i] = nf.frag.Content
 	}
 
 	embeddings := make([][]float32, len(texts))
@@ -219,8 +263,9 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build SourceFragment objects with generated IDs.
-	fragments := make([]model.SourceFragment, len(req.Fragments))
-	for i, f := range req.Fragments {
+	fragments := make([]model.SourceFragment, len(needEmbed))
+	for i, nf := range needEmbed {
+		f := nf.frag
 		// Use provided FileType, or derive from path.
 		fileType := f.FileType
 		if fileType == "" {
@@ -228,7 +273,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fragments[i] = model.SourceFragment{
-			ID:           model.FragmentID(f.SourceType, f.SourcePath, i),
+			ID:           model.FragmentID(f.SourceType, f.SourcePath, nf.origIdx),
 			Content:      f.Content,
 			SourceType:   f.SourceType,
 			SourceName:   f.SourceName,
@@ -249,7 +294,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int{"ingested": len(fragments)})
+	json.NewEncoder(w).Encode(map[string]int{"ingested": len(fragments), "skipped": skipped})
 }
 
 // ListenAndServe starts the HTTP server.

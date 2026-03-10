@@ -837,6 +837,7 @@ func sourcesCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
 	cmd.AddCommand(sourcesListCmd())
+	cmd.AddCommand(sourcesRemoveCmd())
 	return cmd
 }
 
@@ -866,6 +867,67 @@ func sourcesListCmd() *cobra.Command {
 
 			out, _ := json.MarshalIndent(sources, "", "  ")
 			fmt.Println(string(out))
+			return nil
+		},
+	}
+}
+
+func sourcesRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <type/name>",
+		Short: "Remove a registered source and all its fragments",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("argument must be in the form <type>/<name>")
+			}
+			sourceType, sourceName := parts[0], parts[1]
+
+			cfg := config.Default()
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			ctx := context.Background()
+
+			// Verify the source exists.
+			sources, err := s.ListSources(ctx)
+			if err != nil {
+				return fmt.Errorf("list sources: %w", err)
+			}
+			found := false
+			for _, src := range sources {
+				if src.SourceType == sourceType && src.SourceName == sourceName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("source %s/%s not found", sourceType, sourceName)
+			}
+
+			// Count fragments before deletion.
+			counts, err := s.CountFragmentsBySource(ctx)
+			if err != nil {
+				return fmt.Errorf("count fragments: %w", err)
+			}
+			key := sourceType + "/" + sourceName
+			fragCount := counts[key]
+
+			// Delete fragments first, then the source registration.
+			if err := s.DeleteFragmentsBySource(ctx, sourceType, sourceName); err != nil {
+				return fmt.Errorf("delete fragments: %w", err)
+			}
+			if err := s.DeleteSource(ctx, sourceType, sourceName); err != nil {
+				return fmt.Errorf("delete source: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed source %s: deleted %d fragments\n", key, fragCount)
 			return nil
 		},
 	}

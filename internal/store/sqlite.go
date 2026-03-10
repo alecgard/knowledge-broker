@@ -411,6 +411,47 @@ func (s *SQLiteStore) CountFragmentsBySource(ctx context.Context) (map[string]in
 	return result, rows.Err()
 }
 
+// DeleteFragmentsBySource removes all fragments and their embeddings for the given source type and name.
+func (s *SQLiteStore) DeleteFragmentsBySource(ctx context.Context, sourceType, sourceName string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete from fragment_embeddings first (referencing fragment IDs).
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM fragment_embeddings
+		WHERE fragment_id IN (
+			SELECT id FROM fragments WHERE source_type = ? AND source_name = ?
+		)
+	`, sourceType, sourceName)
+	if err != nil {
+		return fmt.Errorf("delete embeddings: %w", err)
+	}
+
+	// Delete from fragments.
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM fragments WHERE source_type = ? AND source_name = ?
+	`, sourceType, sourceName)
+	if err != nil {
+		return fmt.Errorf("delete fragments: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// DeleteSource removes a source registration from the sources table.
+func (s *SQLiteStore) DeleteSource(ctx context.Context, sourceType, sourceName string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM sources WHERE source_type = ? AND source_name = ?
+	`, sourceType, sourceName)
+	if err != nil {
+		return fmt.Errorf("delete source: %w", err)
+	}
+	return nil
+}
+
 // Close releases the database connection.
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()

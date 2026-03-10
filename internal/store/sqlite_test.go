@@ -257,6 +257,90 @@ func TestDeleteByPathsEmpty(t *testing.T) {
 	}
 }
 
+func TestDeleteFragmentsBySource(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "f1", Content: "a", SourceType: "filesystem", SourceName: "proj1",
+			SourcePath: "/a.txt", SourceURI: "f:///a", LastModified: now,
+			FileType: "txt", Checksum: "aaa", Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "f2", Content: "b", SourceType: "filesystem", SourceName: "proj1",
+			SourcePath: "/b.txt", SourceURI: "f:///b", LastModified: now,
+			FileType: "txt", Checksum: "bbb", Embedding: []float32{0, 1, 0, 0},
+		},
+		{
+			ID: "f3", Content: "c", SourceType: "github", SourceName: "repo1",
+			SourcePath: "/c.txt", SourceURI: "f:///c", LastModified: now,
+			FileType: "txt", Checksum: "ccc", Embedding: []float32{0, 0, 1, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete all fragments for filesystem/proj1.
+	if err := s.DeleteFragmentsBySource(ctx, "filesystem", "proj1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// f1 and f2 should be gone, f3 should remain.
+	got, err := s.GetFragments(ctx, []string{"f1", "f2", "f3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "f3" {
+		t.Errorf("expected only f3 remaining, got %v", got)
+	}
+
+	// Embeddings for f3 should still work in search.
+	results, err := s.SearchByVector(ctx, []float32{0, 0, 1, 0}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].ID != "f3" {
+		t.Errorf("expected f3 in search results, got %v", results)
+	}
+}
+
+func TestDeleteSource(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	src := model.Source{
+		SourceType: "filesystem",
+		SourceName: "proj1",
+		Config:     map[string]string{"path": "/tmp"},
+		LastIngest: time.Now().UTC().Truncate(time.Second),
+	}
+
+	if err := s.RegisterSource(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify it exists.
+	sources, _ := s.ListSources(ctx)
+	if len(sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources))
+	}
+
+	// Delete it.
+	if err := s.DeleteSource(ctx, "filesystem", "proj1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should be gone.
+	sources, _ = s.ListSources(ctx)
+	if len(sources) != 0 {
+		t.Errorf("expected 0 sources, got %d", len(sources))
+	}
+}
+
 // Ensure the interface is satisfied at compile time.
 var _ Store = (*SQLiteStore)(nil)
 

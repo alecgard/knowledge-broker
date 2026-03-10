@@ -5,34 +5,26 @@ A knowledge engine that ingests documents from multiple sources, embeds them for
 Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
 
 ```jsonc
-// An agent asks KB for specific facts via the MCP tool or HTTP API:
-// POST /v1/query  {"messages": [{"role": "user", "content": "..."}], "mode": "raw"}
+// POST /v1/query  {"messages": [{"role": "user", "content": "..."}]}
 
-$ kb query --raw "What database does the inventory service use and what port does it run on?"
+$ kb query "What database does the inventory service use and what port does it run on?"
 {
-  "fragments": [
-    {
-      "content": "| `inventory-service` | Inventory Squad | Go | acme/inventory-service | 8081 | PostgreSQL, Kafka, Redis |",
-      "source_type": "confluence",
-      "source_name": "ACME",
-      "source_path": "Internal Services & Infrastructure",
-      "similarity": 0.91,
-      "confidence": { "freshness": 0.94, "corroboration": 0.80, "consistency": 1.0, "authority": 0.95 }
-    },
-    {
-      "content": "PostgreSQL 16 on RDS (Multi-AZ, r6g.2xlarge). Separate instances per service.",
-      "source_type": "slack",
-      "source_name": "acme-haf5895",
-      "source_path": "#platform-engineering/2026-03-06",
-      "similarity": 0.85,
-      "confidence": { "freshness": 0.97, "corroboration": 0.80, "consistency": 1.0, "authority": 0.72 }
-    }
-    // ... 18 more fragments ranked by relevance
-  ]
+  "answer": "The inventory service (inventory-service) runs on port 8081 and uses PostgreSQL as its primary database, along with Kafka and Redis. The PostgreSQL instance is version 16 on RDS with Multi-AZ deployment (r6g.2xlarge). Each service has a separate database instance.",
+  "confidence": {
+    "freshness": 0.94,
+    "corroboration": 0.85,
+    "consistency": 1.00,
+    "authority": 0.95
+  },
+  "sources": [
+    { "source_type": "confluence", "source_name": "ACME", "source_path": "Internal Services & Infrastructure" },
+    { "source_type": "slack", "source_name": "acme-haf5895", "source_path": "#platform-engineering/2026-03-06" }
+  ],
+  "contradictions": []
 }
 ```
 
-Raw mode returns ranked fragments with per-fragment confidence signals — the calling agent decides how to use them. No API key needed. Synthesis mode (`--human`) uses Claude to compose a natural-language answer across sources instead.
+The answer is synthesised from Confluence docs and Slack history, with confidence signals indicating how much to trust it. Raw mode (`--raw`) returns the underlying fragments instead, for when the caller handles its own synthesis or no API key is available.
 
 ## Quick start
 

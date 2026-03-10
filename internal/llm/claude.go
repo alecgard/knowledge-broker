@@ -8,7 +8,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 const defaultModel = "claude-sonnet-4-20250514"
@@ -24,7 +24,7 @@ type ClaudeClient struct {
 // If apiKey is empty, the SDK reads ANTHROPIC_API_KEY from the environment.
 // If model is empty, it defaults to claude-sonnet-4-20250514.
 // If httpClient is provided, it is used for all API requests (useful for debug logging).
-func NewClaudeClient(apiKey string, model string, httpClient ...*http.Client) *ClaudeClient {
+func NewClaudeClient(apiKey string, model string, httpClient *http.Client) *ClaudeClient {
 	if model == "" {
 		model = defaultModel
 	}
@@ -33,8 +33,8 @@ func NewClaudeClient(apiKey string, model string, httpClient ...*http.Client) *C
 	if apiKey != "" {
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}
-	if len(httpClient) > 0 && httpClient[0] != nil {
-		opts = append(opts, option.WithHTTPClient(httpClient[0]))
+	if httpClient != nil {
+		opts = append(opts, option.WithHTTPClient(httpClient))
 	}
 
 	client := anthropic.NewClient(opts...)

@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // Store persists and retrieves source fragments.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // PlaintextExtractor splits arbitrary text files into fixed-size chunks.

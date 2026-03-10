@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
@@ -77,8 +78,8 @@ func TestHandleIngest(t *testing.T) {
 
 	srv := NewHTTPServer(nil, emb, st, nil)
 
-	reqBody := IngestRequest{
-		Fragments: []IngestFragment{
+	reqBody := model.IngestRequest{
+		Fragments: []model.IngestFragment{
 			{
 				Content:      "This is a test fragment about authentication.",
 				SourceType:   "filesystem",
@@ -152,8 +153,8 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 	srv := NewHTTPServer(nil, emb, st, nil)
 
 	// First, ingest a fragment.
-	reqBody := IngestRequest{
-		Fragments: []IngestFragment{
+	reqBody := model.IngestRequest{
+		Fragments: []model.IngestFragment{
 			{
 				Content:      "Document to be deleted later.",
 				SourceType:   "github",
@@ -183,8 +184,8 @@ func TestHandleIngestWithDeletions(t *testing.T) {
 	}
 
 	// Now send a deletion request.
-	deleteReq := IngestRequest{
-		Deleted: []IngestDeletedPath{
+	deleteReq := model.IngestRequest{
+		Deleted: []model.IngestDeletedPath{
 			{SourceType: "github", Path: "docs/old.md"},
 		},
 	}
@@ -220,7 +221,7 @@ func TestHandleIngestMethodNotAllowed(t *testing.T) {
 func TestHandleIngestEmptyBody(t *testing.T) {
 	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, newTestStore(t), nil)
 
-	body, _ := json.Marshal(IngestRequest{})
+	body, _ := json.Marshal(model.IngestRequest{})
 	req := httptest.NewRequest(http.MethodPost, "/v1/ingest", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -237,8 +238,8 @@ func TestHandleIngestMultipleFragmentsSamePath(t *testing.T) {
 	srv := NewHTTPServer(nil, emb, st, nil)
 
 	// Simulate multiple chunks from the same file (different chunk indices).
-	reqBody := IngestRequest{
-		Fragments: []IngestFragment{
+	reqBody := model.IngestRequest{
+		Fragments: []model.IngestFragment{
 			{
 				Content:    "First chunk of a long document.",
 				SourceType: "filesystem",
@@ -293,8 +294,8 @@ func TestIngestFragmentIDConsistency(t *testing.T) {
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 	srv := NewHTTPServer(nil, emb, st, nil)
 
-	reqBody := IngestRequest{
-		Fragments: []IngestFragment{
+	reqBody := model.IngestRequest{
+		Fragments: []model.IngestFragment{
 			{
 				Content:    "Test content",
 				SourceType: "github",

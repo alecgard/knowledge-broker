@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // CodeExtractor splits source code files at function/class/type boundaries.

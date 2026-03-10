@@ -28,7 +28,7 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/internal/llm"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/server"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"

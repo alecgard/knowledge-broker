@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // maxFileSize is the maximum file size (1 MB) that the scanner will read.

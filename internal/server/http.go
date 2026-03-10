@@ -9,15 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
-
-// Type aliases for backward compatibility with tests.
-type IngestFragment = model.IngestFragment
-type IngestRequest = model.IngestRequest
-type IngestDeletedPath = model.IngestDeletedPath
 
 // HTTPServer serves the Knowledge Broker HTTP API.
 type HTTPServer struct {
@@ -163,7 +158,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req IngestRequest
+	var req model.IngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return

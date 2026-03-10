@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 func newTestStore(t *testing.T) *SQLiteStore {

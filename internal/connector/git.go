@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // GitConnector clones a git repository and scans it using FilesystemConnector.

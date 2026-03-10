@@ -10,7 +10,7 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 

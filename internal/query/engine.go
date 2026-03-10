@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
@@ -365,23 +365,4 @@ func computeAuthority(fileType string) float64 {
 	default:
 		return 0.5
 	}
-}
-
-// cosineSimilarity computes the cosine similarity between two vectors.
-func cosineSimilarity(a, b []float32) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	var dot, normA, normB float64
-	for i := 0; i < n; i++ {
-		dot += float64(a[i]) * float64(b[i])
-		normA += float64(a[i]) * float64(a[i])
-		normB += float64(b[i]) * float64(b[i])
-	}
-	denom := math.Sqrt(normA) * math.Sqrt(normB)
-	if denom == 0 {
-		return 0
-	}
-	return dot / denom
 }

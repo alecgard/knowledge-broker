@@ -41,7 +41,7 @@ type OllamaEmbedder struct {
 // If model is empty, "nomic-embed-text" is used.
 // If dimension is 0, 768 is used.
 // If httpClient is nil, a default client is used.
-func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient ...*http.Client) *OllamaEmbedder {
+func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient *http.Client) *OllamaEmbedder {
 	if baseURL == "" {
 		baseURL = defaultOllamaBaseURL
 	}
@@ -52,8 +52,8 @@ func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient ...*http
 		dimension = defaultOllamaDimension
 	}
 	var client *http.Client
-	if len(httpClient) > 0 && httpClient[0] != nil {
-		client = httpClient[0]
+	if httpClient != nil {
+		client = httpClient
 	} else {
 		client = &http.Client{}
 	}

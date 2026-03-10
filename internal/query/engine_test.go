@@ -5,52 +5,6 @@ import (
 	"testing"
 )
 
-func TestCosineSimilarity_IdenticalVectors(t *testing.T) {
-	a := []float32{1, 0, 0}
-	sim := cosineSimilarity(a, a)
-	if math.Abs(sim-1.0) > 1e-6 {
-		t.Fatalf("expected 1.0 for identical vectors, got %f", sim)
-	}
-}
-
-func TestCosineSimilarity_OrthogonalVectors(t *testing.T) {
-	a := []float32{1, 0, 0}
-	b := []float32{0, 1, 0}
-	sim := cosineSimilarity(a, b)
-	if math.Abs(sim) > 1e-6 {
-		t.Fatalf("expected 0.0 for orthogonal vectors, got %f", sim)
-	}
-}
-
-func TestCosineSimilarity_OppositeVectors(t *testing.T) {
-	a := []float32{1, 0, 0}
-	b := []float32{-1, 0, 0}
-	sim := cosineSimilarity(a, b)
-	if math.Abs(sim-(-1.0)) > 1e-6 {
-		t.Fatalf("expected -1.0 for opposite vectors, got %f", sim)
-	}
-}
-
-func TestCosineSimilarity_ZeroVector(t *testing.T) {
-	a := []float32{0, 0, 0}
-	b := []float32{1, 2, 3}
-	sim := cosineSimilarity(a, b)
-	if sim != 0 {
-		t.Fatalf("expected 0 when one vector is zero, got %f", sim)
-	}
-}
-
-func TestCosineSimilarity_KnownAngle(t *testing.T) {
-	// 45-degree angle between (1,0) and (1,1) => cos(45) = 1/sqrt(2) ~= 0.7071
-	a := []float32{1, 0}
-	b := []float32{1, 1}
-	sim := cosineSimilarity(a, b)
-	expected := 1.0 / math.Sqrt(2.0)
-	if math.Abs(sim-expected) > 1e-5 {
-		t.Fatalf("expected %f, got %f", expected, sim)
-	}
-}
-
 func TestCombineEmbeddings_ZeroWeight(t *testing.T) {
 	a := []float32{3, 4}
 	b := []float32{10, 20}

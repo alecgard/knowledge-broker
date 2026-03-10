@@ -12,18 +12,12 @@ import (
 	"time"
 
 	vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed migrations/001_initial.sql
 var migrationSQL string
-
-//go:embed migrations/002_add_source_name.sql
-var migration002SQL string
-
-//go:embed migrations/003_add_sources.sql
-var migration003SQL string
 
 // SQLiteStore implements Store using SQLite and sqlite-vec.
 type SQLiteStore struct {
@@ -47,16 +41,6 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 	if _, err := db.Exec(migrationSQL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
-	}
-
-	// Run migration 002: add source_name column for existing databases.
-	// This will fail harmlessly if the column already exists (new databases).
-	db.Exec(migration002SQL)
-
-	// Run migration 003: add sources table.
-	if _, err := db.Exec(migration003SQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("run migration 003: %w", err)
 	}
 
 	// Create the sqlite-vec virtual table.

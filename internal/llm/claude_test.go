@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
-	"github.com/knowledge-broker/knowledge-broker/internal/model"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 func TestConvertMessages(t *testing.T) {
@@ -79,14 +79,14 @@ func TestConvertMessages_SkipsUnknownRoles(t *testing.T) {
 }
 
 func TestNewClaudeClient_Defaults(t *testing.T) {
-	client := NewClaudeClient("", "")
+	client := NewClaudeClient("", "", nil)
 	if client.model != defaultModel {
 		t.Errorf("expected default model %q, got %q", defaultModel, client.model)
 	}
 }
 
 func TestNewClaudeClient_CustomModel(t *testing.T) {
-	client := NewClaudeClient("", "claude-opus-4-5")
+	client := NewClaudeClient("", "claude-opus-4-5", nil)
 	if client.model != "claude-opus-4-5" {
 		t.Errorf("expected model claude-opus-4-5, got %q", client.model)
 	}

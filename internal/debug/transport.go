@@ -2,9 +2,7 @@
 package debug
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -71,18 +69,6 @@ func NewLoggingClient(logger *slog.Logger, debug bool) *http.Client {
 			Logger: logger,
 		},
 	}
-}
-
-// ReadAndRestore reads a response body fully, logs it, and replaces the body
-// with a new reader so the caller can still read it. Only use in debug mode.
-func ReadAndRestore(resp *http.Response) ([]byte, error) {
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	return body, nil
 }
 
 func formatBytes(b int64) string {

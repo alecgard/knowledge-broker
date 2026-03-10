@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewOllamaEmbedderDefaults(t *testing.T) {
-	e := NewOllamaEmbedder("", "", 0)
+	e := NewOllamaEmbedder("", "", 0, nil)
 	if e.baseURL != defaultOllamaBaseURL {
 		t.Errorf("baseURL = %q, want %q", e.baseURL, defaultOllamaBaseURL)
 	}
@@ -22,7 +22,7 @@ func TestNewOllamaEmbedderDefaults(t *testing.T) {
 }
 
 func TestNewOllamaEmbedderCustom(t *testing.T) {
-	e := NewOllamaEmbedder("http://example.com:1234", "mxbai-embed-large", 1024)
+	e := NewOllamaEmbedder("http://example.com:1234", "mxbai-embed-large", 1024, nil)
 	if e.baseURL != "http://example.com:1234" {
 		t.Errorf("baseURL = %q, want %q", e.baseURL, "http://example.com:1234")
 	}
@@ -60,7 +60,7 @@ func TestEmbed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 3)
+	e := NewOllamaEmbedder(srv.URL, "", 3, nil)
 	vec, err := e.Embed(context.Background(), "hello world")
 	if err != nil {
 		t.Fatalf("Embed() error: %v", err)
@@ -89,7 +89,7 @@ func TestEmbed_CacheHit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 3)
+	e := NewOllamaEmbedder(srv.URL, "", 3, nil)
 
 	// First call: cache miss, hits server.
 	vec1, err := e.Embed(context.Background(), "hello world")
@@ -154,7 +154,7 @@ func TestEmbedBatch_CachePartialHit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 2)
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
 
 	// Pre-populate cache by embedding "hello".
 	_, err := e.Embed(context.Background(), "hello")
@@ -220,7 +220,7 @@ func TestEmbedBatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 2)
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
 	vecs, err := e.EmbedBatch(context.Background(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("EmbedBatch() error: %v", err)
@@ -237,7 +237,7 @@ func TestEmbedBatch(t *testing.T) {
 }
 
 func TestEmbedBatchEmpty(t *testing.T) {
-	e := NewOllamaEmbedder("http://localhost:11434", "", 0)
+	e := NewOllamaEmbedder("http://localhost:11434", "", 0, nil)
 	vecs, err := e.EmbedBatch(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("EmbedBatch(nil) error: %v", err)
@@ -254,7 +254,7 @@ func TestEmbedServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 0)
+	e := NewOllamaEmbedder(srv.URL, "", 0, nil)
 	_, err := e.Embed(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -271,7 +271,7 @@ func TestEmbedAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "nonexistent", 0)
+	e := NewOllamaEmbedder(srv.URL, "nonexistent", 0, nil)
 	_, err := e.Embed(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error for API error response")
@@ -285,7 +285,7 @@ func TestEmbedBadResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := NewOllamaEmbedder(srv.URL, "", 0)
+	e := NewOllamaEmbedder(srv.URL, "", 0, nil)
 	_, err := e.Embed(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON response")
@@ -294,7 +294,7 @@ func TestEmbedBadResponse(t *testing.T) {
 
 func TestEmbedConnectionError(t *testing.T) {
 	// Use a URL that will refuse connections.
-	e := NewOllamaEmbedder("http://127.0.0.1:1", "", 0)
+	e := NewOllamaEmbedder("http://127.0.0.1:1", "", 0, nil)
 	_, err := e.Embed(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error for connection refused")

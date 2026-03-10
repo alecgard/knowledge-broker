@@ -31,7 +31,7 @@ kb eval --db eval.db --corpus eval/corpus --ingest
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--db` | `kb.db` | Database path |
-| `--testset` | `eval/testset.json` | Path to question/answer test set |
+| `--testset` | `eval/testset.json` | Path to query/answer test set |
 | `--corpus` | `eval/corpus` | Path to eval corpus directory |
 | `--limit` | `20` | K value for retrieval (top-K fragments) |
 | `--ingest` | false | Ingest the corpus before running eval |
@@ -43,7 +43,7 @@ kb eval --db eval.db --corpus eval/corpus --ingest
 
 - **Recall@K** — Did the expected source files appear in the top-K retrieved fragments?
 - **Precision@K** — What fraction of top-K fragments came from expected source files?
-- **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across questions.
+- **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across queries.
 
 ### Chunking stats
 
@@ -74,7 +74,7 @@ Located in `eval/testset.json`. Each entry has:
 ```json
 {
   "id": "q01",
-  "question": "What database does the widget service use?",
+  "query": "What database does the widget service use?",
   "expected_sources": ["config.go", "architecture.md"],
   "reference_answer": "PostgreSQL, configured via DATABASE_URL.",
   "category": "factual"
@@ -89,7 +89,7 @@ Categories:
 
 ## Extending the eval
 
-**Adding questions:** Edit `eval/testset.json`. Include `expected_sources` (filenames that should appear in results) and a `reference_answer` for human comparison.
+**Adding queries:** Edit `eval/testset.json`. Include `expected_sources` (filenames that should appear in results) and a `reference_answer` for human comparison.
 
 **Adding corpus files:** Add files to `eval/corpus/` and write questions that reference them. Re-run `make eval` to see the impact.
 

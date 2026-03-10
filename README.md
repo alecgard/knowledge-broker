@@ -31,9 +31,6 @@ The answer is synthesised from Confluence docs and Slack history, with confidenc
 ```bash
 docker compose up -d
 
-# Pull the embedding model (first time only)
-docker compose exec ollama ollama pull nomic-embed-text
-
 # Ingest a local directory into the server
 kb ingest --source ./my-repo --remote http://localhost:8080
 
@@ -89,7 +86,7 @@ curl -X POST localhost:8080/v1/query \
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** (via Ollama) convert chunks to vectors for semantic search
 4. **Storage** (SQLite + sqlite-vec) persists fragments and enables vector similarity search
-5. **Query engine** embeds your question, finds relevant fragments, and either returns them directly (raw mode) or synthesises an answer via Claude
+5. **Query engine** embeds your query, finds relevant fragments, and either returns them directly (raw mode) or synthesises an answer via Claude
 6. **Confidence signals** assess how much to trust each fragment across four dimensions
 
 ## Confidence signals
@@ -101,7 +98,7 @@ Every result includes four independent confidence scores (0.0–1.0):
 | **Freshness** | How recently were the sources modified, relative to the corpus |
 | **Corroboration** | How many independent sources support the answer |
 | **Consistency** | Do the sources agree, or are there contradictions |
-| **Authority** | How authoritative are the source types for this kind of question |
+| **Authority** | How authoritative are the source types for this kind of query |
 
 In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are flagged rather than hidden.
 
@@ -134,7 +131,7 @@ The client extracts and chunks locally, then POSTs fragments to the server which
 
 ### `kb query`
 
-Ask a question and get an answer with confidence signals.
+Query the knowledge base and get an answer with confidence signals.
 
 ```bash
 # Raw retrieval — returns ranked fragments, no LLM needed
@@ -145,6 +142,7 @@ kb query --raw --limit 10 --topics "billing,payments" "retry policy"
 # Synthesised answer (requires ANTHROPIC_API_KEY)
 kb query "what is the billing retry policy?"
 kb query --human "how does auth work?"    # streamed, human-readable
+kb query --raw --source-type git "deployment process"
 ```
 
 Raw mode (`--raw`) returns full fragments as JSON with per-fragment confidence signals and source metadata.
@@ -243,13 +241,13 @@ Connectors (filesystem, Git, Confluence, Slack, GitHub Wiki)
   → Store in SQLite + sqlite-vec
 
 Query (raw mode)
-  → Embed question via Ollama
+  → Embed query via Ollama
   → Vector search (sqlite-vec)
   → Compute per-fragment confidence signals
   → Return ranked fragments
 
 Query (synthesis mode)
-  → Embed question via Ollama
+  → Embed query via Ollama
   → Vector search (sqlite-vec)
   → Synthesise via Claude
   → Stream answer + confidence signals

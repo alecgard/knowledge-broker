@@ -15,7 +15,7 @@ No configuration needed. This is the default if no flags are given — `kb inges
 
 ## Git
 
-Clone and ingest a Git repository by URL. Supports public repos directly; private repos authenticate via `GITHUB_TOKEN`, the `gh` CLI, or GitHub device flow.
+Clone and ingest a Git repository by URL. Supports public repos directly; private repos authenticate via `KB_GITHUB_TOKEN` (or `GITHUB_TOKEN`), the `gh` CLI, or GitHub device flow.
 
 ```bash
 kb ingest --git https://github.com/owner/repo
@@ -24,7 +24,7 @@ kb ingest --git https://github.com/owner/private-repo   # uses gh CLI or device 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GITHUB_TOKEN` | No | GitHub personal access token for private repos |
+| `KB_GITHUB_TOKEN` | No | GitHub personal access token for private repos (falls back to `GITHUB_TOKEN`) |
 | `KB_GITHUB_CLIENT_ID` | No | GitHub OAuth app client ID for device flow auth |
 
 If neither is set, KB tries the `gh` CLI's cached token, then falls back to device flow if a client ID is configured.
@@ -91,11 +91,11 @@ kb ingest --wiki https://github.com/owner/repo --wiki https://github.com/owner/o
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GITHUB_TOKEN` | No | Required for private repos (same as Git connector) |
+| `KB_GITHUB_TOKEN` | No | Required for private repos (falls back to `GITHUB_TOKEN`) |
 
 The `--wiki` flag takes the **main repository URL** (not the wiki URL). KB automatically derives the wiki clone URL.
 
-Authentication works the same as the Git connector — `GITHUB_TOKEN`, `gh` CLI, or device flow.
+Authentication works the same as the Git connector — `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
 
 ## Combining sources
 

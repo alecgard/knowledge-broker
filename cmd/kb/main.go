@@ -709,7 +709,7 @@ func mcpCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
-	cmd.Flags().String("addr", ":8081", "SSE listen address")
+	cmd.Flags().String("addr", ":8082", "SSE listen address")
 	return cmd
 }
 

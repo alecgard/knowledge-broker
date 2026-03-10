@@ -1,56 +1,71 @@
 # MCP Server
 
-Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base.
+Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. Both stdio and SSE transports run simultaneously.
 
 ## Setup
 
-### stdio mode (local)
+### Claude Desktop
 
-Run `kb mcp` as a subprocess. Add to your MCP client config:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "knowledge-broker": {
-      "command": "kb",
-      "args": ["mcp", "--db", "/path/to/kb.db"]
+      "command": "/path/to/kb",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-If `kb` is not in your PATH, use the full path to the binary.
+This uses the stdio transport — no ports or HTTPS needed. Restart Claude after editing.
 
-### HTTP mode (shared server)
+If `kb` is on your PATH (e.g. after `make install`), you can use `"command": "kb"` directly.
 
-For team use, run the HTTP server and point MCP clients at it. Developers push content via `kb ingest --remote`, and clients query the shared instance.
+### Claude Code / Cursor
+
+Same config format as above. These editors launch MCP servers as subprocesses via stdio.
+
+### Remote / SSE
+
+`kb mcp` also starts an SSE transport on `:8082` by default:
 
 ```bash
-# Start the server
-kb serve --db /shared/kb.db --addr :8080
+kb mcp                  # stdio + SSE on :8082
+kb mcp --addr :9090     # custom SSE port
+```
+
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For the Claude app's remote MCP feature, you'll need HTTPS — put a reverse proxy or tunnel (e.g. Cloudflare Tunnel, ngrok) in front.
+
+### Shared server
+
+For team use, run the HTTP server and push content from local checkouts:
+
+```bash
+kb serve --addr :8080
 
 # Push content from a local checkout
 kb ingest --source ./my-repo --remote http://server:8080
 ```
 
-MCP clients that support HTTP transports can connect to the server's `/v1/query` endpoint directly. For clients that only support stdio, run `kb mcp` locally and configure it to proxy to the shared server (not yet implemented — use the HTTP API directly for now).
-
 ## Tools
 
 ### query
 
-Retrieve relevant knowledge fragments, optionally with LLM synthesis.
+Ask a question and get an answer from the knowledge base.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `question` | string | yes | — | The question to ask |
 | `topics` | string | no | — | Comma-separated topics to boost relevance |
 | `limit` | number | no | 20 | Max fragments to retrieve |
-| `raw` | boolean | no | true | Return raw fragments (true) or LLM-synthesised answer (false) |
+| `raw` | boolean | no | false | Return raw fragments instead of synthesised answer |
+| `sources` | string | no | — | Comma-separated source names to filter results |
 
-**Raw mode (default):** Returns fragments with content, source metadata, and per-fragment confidence signals. No `ANTHROPIC_API_KEY` required.
+**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
 
-**Synthesis mode (raw=false):** Requires `ANTHROPIC_API_KEY`. Returns a synthesised answer with confidence signals and source citations.
+**Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
 
 ### list-sources
 
@@ -62,7 +77,7 @@ Returns an array of sources with `source_type`, `source_name`, `fragment_count`,
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Only for synthesis mode | Not needed when `raw=true` (default) |
+| `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
 | `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama server for embeddings |
 | `KB_OLLAMA_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |
@@ -71,5 +86,5 @@ Returns an array of sources with `source_type`, `source_name`, `fragment_count`,
 
 1. Ingest content: `kb ingest --source /path/to/project`
 2. Configure your MCP client to run `kb mcp`
-3. Query the knowledge base — raw mode returns fragments for the client to reason over
+3. Query the knowledge base — synthesis mode returns answers, raw mode returns fragments
 4. Use `list-sources` to see what's been ingested

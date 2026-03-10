@@ -203,7 +203,7 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	}
 
 	// Filter to repo-b only — should return only f2.
-	results, err := s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-b"})
+	results, err := s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-b"}, nil)
 	if err != nil {
 		t.Fatalf("SearchByVectorFiltered: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	}
 
 	// Filter to repo-a and repo-c — should return f1 and f3.
-	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-a", "org/repo-c"})
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-a", "org/repo-c"}, nil)
 	if err != nil {
 		t.Fatalf("SearchByVectorFiltered: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	}
 
 	// Empty source names — should delegate to SearchByVector (return all 3).
-	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, nil)
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, nil, nil)
 	if err != nil {
 		t.Fatalf("SearchByVectorFiltered empty: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	}
 
 	// Filter to non-existent source — should return empty.
-	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"no/such-repo"})
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"no/such-repo"}, nil)
 	if err != nil {
 		t.Fatalf("SearchByVectorFiltered no match: %v", err)
 	}

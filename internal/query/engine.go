@@ -84,8 +84,8 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		fragments []model.SourceFragment
 		searchErr error
 	)
-	if len(req.Sources) > 0 {
-		fragments, searchErr = e.store.SearchByVectorFiltered(ctx, queryEmb, limit, req.Sources)
+	if len(req.Sources) > 0 || len(req.SourceTypes) > 0 {
+		fragments, searchErr = e.store.SearchByVectorFiltered(ctx, queryEmb, limit, req.Sources, req.SourceTypes)
 	} else {
 		fragments, searchErr = e.store.SearchByVector(ctx, queryEmb, limit)
 	}

@@ -38,7 +38,7 @@ func (m *mockStore) SearchByVector(ctx context.Context, embedding []float32, lim
 	return results, nil
 }
 
-func (m *mockStore) SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string) ([]model.SourceFragment, error) {
+func (m *mockStore) SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error) {
 	return m.SearchByVector(ctx, embedding, limit)
 }
 

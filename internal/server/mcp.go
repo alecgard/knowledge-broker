@@ -60,6 +60,9 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 		mcp.WithString("sources",
 			mcp.Description("Optional comma-separated source names to filter results (e.g., 'owner/repo,other/repo')"),
 		),
+		mcp.WithString("source_types",
+			mcp.Description("Optional comma-separated source types to filter results (e.g., 'git,confluence')"),
+		),
 	), s.handleQuery)
 
 	s.server.AddTool(mcp.NewTool("list-sources",
@@ -163,6 +166,16 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		}
 	}
 
+	var sourceTypes []string
+	if typesRaw, ok := args["source_types"].(string); ok && typesRaw != "" {
+		for _, t := range strings.Split(typesRaw, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				sourceTypes = append(sourceTypes, t)
+			}
+		}
+	}
+
 	// Default to synthesis mode (rawMode=false) unless explicitly set to true.
 	rawMode := false
 	if rawVal, ok := args["raw"].(bool); ok {
@@ -178,10 +191,11 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		Messages: []model.Message{
 			{Role: model.RoleUser, Content: question},
 		},
-		Limit:   limit,
-		Concise: true,
-		Topics:  topics,
-		Sources: sources,
+		Limit:       limit,
+		Concise:     true,
+		Topics:      topics,
+		Sources:     sources,
+		SourceTypes: sourceTypes,
 	}
 
 	if rawMode {

@@ -116,7 +116,8 @@ type QueryRequest struct {
 	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "octroi")
 	Stream   *bool     `json:"stream,omitempty"`  // stream SSE responses; default false (single JSON response)
 	Mode     string    `json:"mode,omitempty"`    // "raw" for raw retrieval without LLM synthesis
-	Sources  []string  `json:"sources,omitempty"` // filter results to these source names
+	Sources     []string `json:"sources,omitempty"`      // filter results to these source names
+	SourceTypes []string `json:"source_types,omitempty"` // filter results to these source types (e.g., "git", "confluence")
 }
 
 // Answer is the response from the query engine.

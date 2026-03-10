@@ -540,16 +540,18 @@ func queryCmd() *cobra.Command {
 			}
 
 			sources, _ := cmd.Flags().GetStringArray("source")
+			sourceTypes, _ := cmd.Flags().GetStringArray("source-type")
 
 			question := strings.Join(args, " ")
 			req := model.QueryRequest{
 				Messages: []model.Message{
 					{Role: model.RoleUser, Content: question},
 				},
-				Limit:   limit,
-				Concise: !human,
-				Topics:  topics,
-				Sources: sources,
+				Limit:       limit,
+				Concise:     !human,
+				Topics:      topics,
+				Sources:     sources,
+				SourceTypes: sourceTypes,
 			}
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -574,6 +576,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
 	cmd.Flags().StringArray("source", nil, "Filter results to this source name (repeatable, e.g., --source owner/repo)")
+	cmd.Flags().StringArray("source-type", nil, "Filter results to this source type (repeatable, e.g., --source-type git)")
 	cmd.Flags().String("llm", "", "LLM provider override: claude, openai, ollama (default from KB_LLM_PROVIDER or claude)")
 	return cmd
 }

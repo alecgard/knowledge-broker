@@ -267,27 +267,41 @@ func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, l
 	return results, rows.Err()
 }
 
-// SearchByVectorFiltered finds the nearest fragments filtered by source names.
-// If sourceNames is empty, it delegates to SearchByVector.
+// SearchByVectorFiltered finds the nearest fragments filtered by source names and/or types.
+// If both sourceNames and sourceTypes are empty, it delegates to SearchByVector.
 // Since sqlite-vec doesn't support WHERE clauses on joined columns in the
 // virtual table query, we over-fetch from the vector index and post-filter.
-func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string) ([]model.SourceFragment, error) {
-	if len(sourceNames) == 0 {
+func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error) {
+	if len(sourceNames) == 0 && len(sourceTypes) == 0 {
 		return s.SearchByVector(ctx, embedding, limit)
 	}
 
 	// Over-fetch to account for filtering. We fetch limit*5 candidates from
-	// the vector index and then filter by source_name.
+	// the vector index and then filter by source_name/source_type.
 	overFetch := limit * 5
 	if overFetch < 50 {
 		overFetch = 50
 	}
 
-	placeholders := make([]string, len(sourceNames))
 	args := []interface{}{serializeEmbedding(embedding), overFetch}
-	for i, name := range sourceNames {
-		placeholders[i] = "?"
-		args = append(args, name)
+	var conditions []string
+
+	if len(sourceNames) > 0 {
+		placeholders := make([]string, len(sourceNames))
+		for i, name := range sourceNames {
+			placeholders[i] = "?"
+			args = append(args, name)
+		}
+		conditions = append(conditions, fmt.Sprintf("f.source_name IN (%s)", strings.Join(placeholders, ",")))
+	}
+
+	if len(sourceTypes) > 0 {
+		placeholders := make([]string, len(sourceTypes))
+		for i, typ := range sourceTypes {
+			placeholders[i] = "?"
+			args = append(args, typ)
+		}
+		conditions = append(conditions, fmt.Sprintf("f.source_type IN (%s)", strings.Join(placeholders, ",")))
 	}
 
 	query := fmt.Sprintf(`
@@ -297,10 +311,10 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
 		WHERE fe.embedding MATCH ? AND k = ?
-		  AND f.source_name IN (%s)
+		  AND %s
 		ORDER BY fe.distance
 		LIMIT ?
-	`, strings.Join(placeholders, ","))
+	`, strings.Join(conditions, " AND "))
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

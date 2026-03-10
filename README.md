@@ -223,9 +223,8 @@ Copy `.env.example` to `.env` and fill in your values. Environment variables als
 | `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
 | `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
-| `KB_GITHUB_CLIENT_ID` | — | GitHub OAuth client ID (for Git connector) |
 
-Connector-specific variables (Confluence, Slack, etc.) are documented in [docs/connectors.md](docs/connectors.md).
+Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [docs/connectors.md](docs/connectors.md).
 
 ## Architecture
 

@@ -90,7 +90,6 @@ SourceFragment {
 ```
 searchFragments(query_embedding, limit) → []SourceFragment
 getFragments(ids: []string)             → []SourceFragment
-reportFeedback(fragment_id, type, content?, evidence?) → void
 ```
 
 **Query engine → Consumer.** The external interface is a stateless query operation. The caller can pass conversation history for multi-turn context (same pattern as the Claude API messages array).
@@ -121,26 +120,6 @@ Each file type has a pluggable extractor that handles chunking:
 
 Extractors are responsible for turning a raw file into one or more content chunks. Adding support for a new file type (e.g., PDF) means adding a new extractor — no core changes needed.
 
-## Feedback
-
-Knowledge Broker accepts feedback to improve its knowledge over time:
-
-**Corrections** — "that's wrong, it's actually X." The correction is stored as a new high-authority source fragment and the contradicted sources are confidence-degraded.
-
-**Challenges** — "I don't think that's right." Degrades confidence on related fragments. Repeated challenges surface the content for attention.
-
-**Confirmations** — "that's correct." Boosts confidence on the retrieved fragments.
-
-Feedback takes effect immediately without requiring review. If a correction is itself wrong, subsequent feedback corrects it. The system is self-correcting through use.
-
-Feedback is anonymous in v1.
-
-```
-report(fragment_id, type, content?, evidence?) → void
-
-type: correction | challenge | confirmation
-```
-
 ## Decisions
 
 Resolved decisions for v1:
@@ -165,7 +144,6 @@ Resolved decisions for v1:
 | Streaming | Yes, from the start |
 | Latency | 2-3s acceptable for v1, optimize later |
 | Scoping | Full corpus for v1 |
-| Feedback | Anonymous for v1 |
 | Interface | CLI + HTTP API + MCP server |
 | Target scale | Large — multi-repo, org-wide |
 | Re-ingestion | Incremental via checksums |

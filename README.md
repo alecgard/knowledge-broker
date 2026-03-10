@@ -22,7 +22,7 @@ $ kb query "What database does the inventory service use and what port does it r
 }
 ```
 
-The answer is synthesised from Confluence docs and Slack history, with confidence signals indicating how much to trust it. Raw mode (`--raw`) returns the underlying fragments instead, for when the caller handles its own synthesis or no API key is available.
+The answer is synthesised from Confluence docs and Slack history, with confidence signals indicating how much to trust it. 
 
 ## Quick start
 

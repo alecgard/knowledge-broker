@@ -17,9 +17,19 @@ type Config struct {
 	OllamaModel  string
 	EmbeddingDim int
 
+	// LLM Provider
+	LLMProvider string // "claude" (default), "openai", "ollama"
+
 	// Claude
 	AnthropicAPIKey string
 	ClaudeModel     string
+
+	// OpenAI
+	OpenAIAPIKey string
+	OpenAIModel  string
+
+	// Ollama LLM (separate from embedding model)
+	OllamaLLMModel string
 
 	// Server
 	ListenAddr string
@@ -48,8 +58,12 @@ func Default() Config {
 		OllamaURL:       envOr("KB_OLLAMA_URL", "http://localhost:11434"),
 		OllamaModel:     envOr("KB_OLLAMA_MODEL", "nomic-embed-text"),
 		EmbeddingDim:    envOrInt("KB_EMBEDDING_DIM", 768),
+		LLMProvider:     envOr("KB_LLM_PROVIDER", "claude"),
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
 		ClaudeModel:     envOr("KB_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+		OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
+		OpenAIModel:     envOr("KB_OPENAI_MODEL", ""),
+		OllamaLLMModel:  envOr("KB_OLLAMA_LLM_MODEL", ""),
 		ListenAddr:      envOr("KB_LISTEN_ADDR", ":8080"),
 		MaxFileSize:     int64(envOrInt("KB_MAX_FILE_SIZE", 1_048_576)),
 		MaxChunkSize:    envOrInt("KB_MAX_CHUNK_SIZE", 2000),

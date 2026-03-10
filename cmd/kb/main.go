@@ -97,6 +97,29 @@ func newEmbedder(cfg config.Config, client *http.Client) *embedding.OllamaEmbedd
 	return embedding.NewOllamaEmbedder(cfg.OllamaURL, cfg.OllamaModel, cfg.EmbeddingDim, client)
 }
 
+// newLLMClient creates the appropriate LLM client based on the configured provider.
+// If provider is empty, it defaults to "claude". Returns nil if the provider
+// requires an API key that is not set (allowing raw mode to work without one).
+func newLLMClient(cfg config.Config, provider string, client *http.Client) query.LLM {
+	if provider == "" {
+		provider = cfg.LLMProvider
+	}
+	switch provider {
+	case "openai":
+		if cfg.OpenAIAPIKey == "" {
+			return nil
+		}
+		return llm.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel, client)
+	case "ollama":
+		return llm.NewOllamaLLMClient(cfg.OllamaURL, cfg.OllamaLLMModel, client)
+	default: // "claude"
+		if cfg.AnthropicAPIKey == "" {
+			return nil
+		}
+		return llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+	}
+}
+
 func newExtractorRegistry(cfg config.Config) *extractor.Registry {
 	reg := extractor.NewRegistry(extractor.NewPlaintextExtractor(cfg.MaxChunkSize, cfg.ChunkOverlap))
 	reg.Register(extractor.NewMarkdownExtractor(cfg.MaxChunkSize))
@@ -419,6 +442,7 @@ func queryCmd() *cobra.Command {
 			debugMode := isDebug(cmd)
 			human, _ := cmd.Flags().GetBool("human")
 			rawMode, _ := cmd.Flags().GetBool("raw")
+			llmFlag, _ := cmd.Flags().GetString("llm")
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
 
@@ -433,7 +457,7 @@ func queryCmd() *cobra.Command {
 			// When --raw is set, LLM is not needed.
 			var llmClient query.LLM
 			if !rawMode {
-				llmClient = llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+				llmClient = newLLMClient(cfg, llmFlag, client)
 			}
 
 			limit, _ := cmd.Flags().GetInt("limit")
@@ -477,6 +501,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
+	cmd.Flags().String("llm", "", "LLM provider override: claude, openai, ollama (default from KB_LLM_PROVIDER or claude)")
 	return cmd
 }
 
@@ -556,8 +581,8 @@ func serveCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
-			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
-			engine := query.NewEngine(s, emb, claude, cfg.DefaultLimit)
+			llmClient := newLLMClient(cfg, "", client)
+			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
@@ -591,10 +616,7 @@ func mcpCmd() *cobra.Command {
 			emb := newEmbedder(cfg, client)
 
 			// LLM is optional for MCP — raw mode works without it.
-			var llmClient query.LLM
-			if cfg.AnthropicAPIKey != "" {
-				llmClient = llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
-			}
+			llmClient := newLLMClient(cfg, "", client)
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
 
 			mcpServer := server.NewMCPServer(engine, s, logger)

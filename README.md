@@ -4,38 +4,35 @@ A knowledge engine that ingests documents from multiple sources, embeds them for
 
 Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
 
-```
-$ kb query --human "What should I check if the Nexus API is slow?"
+```jsonc
+// An agent asks KB for specific facts via the MCP tool or HTTP API:
+// POST /v1/query  {"messages": [{"role": "user", "content": "..."}], "mode": "raw"}
 
-The Nexus API high latency runbook (RB-001) outlines the following diagnostic steps:
-
-1. Check the Grafana dashboard "Nexus API Overview" for latency breakdown by endpoint
-2. If /inventory/positions is slow — likely PostgreSQL. Check pg_stat_statements
-   for long-running queries on the inventory-service DB
-3. If /shipments/track is slow — likely carrier API latency. Check the
-   "Carrier API Latency" dashboard and the carrier's status page
-4. If all endpoints are slow — check Kubernetes node CPU/memory. If saturated,
-   scale up via Terraform (min 80, max 200 nodes)
-5. Check Kafka consumer lag on shipment-events and inventory-updates topics
-
-For remediation: DB issues → kill long-running queries; carrier issues → enable
-circuit breaker; Kafka lag → scale consumer replicas; node pressure → terraform apply.
-
-Escalate to SRE secondary after 30 min, VP Engineering after 1 hour.
-
---- Confidence ---
-Freshness:     0.92
-Corroboration: 0.85
-Consistency:   1.00
-Authority:     0.95
-
---- Sources ---
-  [confluence:ACME/runbooks/RB-001]      Confluence — ACME space
-  [slack:acme-haf5895/C0AKB4GRELF/2026-03-08] Slack — #platform-engineering
-  [confluence:ACME/infrastructure]        Confluence — ACME space
+$ kb query --raw "What database does the inventory service use and what port does it run on?"
+{
+  "fragments": [
+    {
+      "content": "| `inventory-service` | Inventory Squad | Go | acme/inventory-service | 8081 | PostgreSQL, Kafka, Redis |",
+      "source_type": "confluence",
+      "source_name": "ACME",
+      "source_path": "Internal Services & Infrastructure",
+      "similarity": 0.91,
+      "confidence": { "freshness": 0.94, "corroboration": 0.80, "consistency": 1.0, "authority": 0.95 }
+    },
+    {
+      "content": "PostgreSQL 16 on RDS (Multi-AZ, r6g.2xlarge). Separate instances per service.",
+      "source_type": "slack",
+      "source_name": "acme-haf5895",
+      "source_path": "#platform-engineering/2026-03-06",
+      "similarity": 0.85,
+      "confidence": { "freshness": 0.97, "corroboration": 0.80, "consistency": 1.0, "authority": 0.72 }
+    }
+    // ... 18 more fragments ranked by relevance
+  ]
+}
 ```
 
-Sources are cross-referenced: the runbook comes from Confluence, corroborated by a Slack discussion where the team walked through the same steps during an incident. Contradictions between sources are flagged rather than hidden.
+Raw mode returns ranked fragments with per-fragment confidence signals — the calling agent decides how to use them. No API key needed. Synthesis mode (`--human`) uses Claude to compose a natural-language answer across sources instead.
 
 ## Quick start
 

@@ -4,9 +4,9 @@ Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that a
 
 ## Setup
 
-### Claude Desktop
+### stdio (local)
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Most MCP clients launch servers as subprocesses via stdio. Point your client at `kb mcp`:
 
 ```json
 {
@@ -19,15 +19,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-This uses the stdio transport — no ports or HTTPS needed. Restart Claude after editing.
+If `kb` is on your PATH, you can use `"command": "kb"` directly.
 
-If `kb` is on your PATH (e.g. after `make install`), you can use `"command": "kb"` directly.
-
-### Claude Code / Cursor
-
-Same config format as above. These editors launch MCP servers as subprocesses via stdio.
-
-### Remote / SSE
+### SSE (remote)
 
 `kb mcp` also starts an SSE transport on `:8082` by default:
 
@@ -36,7 +30,7 @@ kb mcp                  # stdio + SSE on :8082
 kb mcp --addr :9090     # custom SSE port
 ```
 
-The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For the Claude app's remote MCP feature, you'll need HTTPS — put a reverse proxy or tunnel (e.g. Cloudflare Tunnel, ngrok) in front.
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For remote access over HTTPS, put a reverse proxy or tunnel in front.
 
 ### Shared server
 

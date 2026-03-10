@@ -132,14 +132,11 @@ Ingest documents from a source into the knowledge base.
 ```bash
 kb ingest --source ./path/to/dir              # local directory
 kb ingest --git https://github.com/owner/repo  # Git repo by URL
-kb ingest --confluence ENGINEERING             # Confluence space
-kb ingest --slack C0ABC123DEF                  # Slack channel
-kb ingest --wiki https://github.com/owner/repo # GitHub Wiki
 kb ingest --source ./repo-a --source ./repo-b  # multiple sources
 kb ingest --all                                # re-ingest all registered local sources
 ```
 
-See [docs/connectors.md](docs/connectors.md) for full setup instructions and required environment variables for each connector.
+Connectors are also available for Confluence, Slack, and GitHub Wiki. See [docs/connectors.md](docs/connectors.md) for setup instructions.
 
 Ingestion is incremental — unchanged files are skipped based on checksums.
 
@@ -245,11 +242,8 @@ Environment variables and `.env` are both supported — env vars take precedence
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
 | `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
 | `KB_GITHUB_CLIENT_ID` | — | GitHub OAuth client ID (for Git connector) |
-| `KB_CONFLUENCE_BASE_URL` | — | Confluence instance URL (for `--confluence`) |
-| `KB_CONFLUENCE_EMAIL` | — | Confluence auth email (for `--confluence`) |
-| `KB_CONFLUENCE_TOKEN` | — | Atlassian API token (for `--confluence`) |
-| `KB_SLACK_TOKEN` | — | Slack Bot User OAuth Token (for `--slack`) |
-| `KB_SLACK_WORKSPACE` | — | Slack workspace name for display |
+
+Connector-specific variables (Confluence, Slack, etc.) are documented in [docs/connectors.md](docs/connectors.md).
 
 ## Architecture
 

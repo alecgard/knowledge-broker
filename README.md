@@ -74,15 +74,11 @@ kb query --raw "how does retry logic work?"
 
 ### Running without an API key
 
-Synthesis mode is the default everywhere (CLI, HTTP, MCP). If no API key is configured and you do not pass `--raw` (CLI), `"mode":"raw"` (HTTP), or `raw=true` (MCP), you will get a clear error asking you to either set the key or explicitly opt into raw mode.
-
 Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. Useful when the calling LLM handles its own synthesis.
 
 ```bash
-# CLI — returns ranked fragments as JSON (must explicitly request --raw)
 kb query --raw "how does auth work?"
 
-# HTTP API — must explicitly request "mode":"raw"
 curl -X POST localhost:8080/v1/query \
   -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
 ```
@@ -175,7 +171,7 @@ Start an MCP (Model Context Protocol) server on stdio.
 kb mcp --db kb.db
 ```
 
-Exposes tools: `query`, `list-sources`. Synthesis mode is the default; use the `raw=true` parameter for retrieval without LLM. If no API key is configured and synthesis is requested, the tool returns an error rather than silently degrading. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
+Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 
 ### `kb sources list`
 

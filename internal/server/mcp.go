@@ -56,6 +56,9 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 		mcp.WithBoolean("raw",
 			mcp.Description("If true (default), return raw fragments without LLM synthesis. If false, use LLM to synthesise an answer."),
 		),
+		mcp.WithString("sources",
+			mcp.Description("Optional comma-separated source names to filter results (e.g., 'owner/repo,other/repo')"),
+		),
 	), s.handleQuery)
 
 	s.server.AddTool(mcp.NewTool("list-sources",
@@ -93,6 +96,16 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		limit = int(limitRaw)
 	}
 
+	var sources []string
+	if sourcesRaw, ok := args["sources"].(string); ok && sourcesRaw != "" {
+		for _, s := range strings.Split(sourcesRaw, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				sources = append(sources, s)
+			}
+		}
+	}
+
 	// Default to raw mode (true) unless explicitly set to false.
 	rawMode := true
 	if rawVal, ok := args["raw"].(bool); ok {
@@ -106,6 +119,7 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		Limit:   limit,
 		Concise: true,
 		Topics:  topics,
+		Sources: sources,
 	}
 
 	if rawMode {

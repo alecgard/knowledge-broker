@@ -75,9 +75,17 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		}
 	}
 
-	fragments, err := e.store.SearchByVector(ctx, queryEmb, limit)
-	if err != nil {
-		return model.Message{}, nil, fmt.Errorf("search: %w", err)
+	var (
+		fragments []model.SourceFragment
+		searchErr error
+	)
+	if len(req.Sources) > 0 {
+		fragments, searchErr = e.store.SearchByVectorFiltered(ctx, queryEmb, limit, req.Sources)
+	} else {
+		fragments, searchErr = e.store.SearchByVector(ctx, queryEmb, limit)
+	}
+	if searchErr != nil {
+		return model.Message{}, nil, fmt.Errorf("search: %w", searchErr)
 	}
 
 	return lastMsg, fragments, nil

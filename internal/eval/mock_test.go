@@ -76,6 +76,26 @@ func (m *mockStore) CountFragmentsBySource(ctx context.Context) (map[string]int,
 	return nil, nil
 }
 
+func (m *mockStore) UpsertKnowledgeUnit(ctx context.Context, unit model.KnowledgeUnit) error {
+	return nil
+}
+
+func (m *mockStore) ListKnowledgeUnits(ctx context.Context) ([]model.KnowledgeUnit, error) {
+	return nil, nil
+}
+
+func (m *mockStore) GetKnowledgeUnit(ctx context.Context, id string) (*model.KnowledgeUnit, error) {
+	return nil, nil
+}
+
+func (m *mockStore) SearchKnowledgeUnits(ctx context.Context, embedding []float32, limit int) ([]model.KnowledgeUnit, error) {
+	return nil, nil
+}
+
+func (m *mockStore) DeleteAllKnowledgeUnits(ctx context.Context) error {
+	return nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

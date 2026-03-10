@@ -263,9 +263,32 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 		}
 	}
 
-	return &model.RawResult{
+	result := &model.RawResult{
 		Fragments: rawFragments,
-	}, nil
+	}
+
+	// Search knowledge units if any exist (best-effort; ignore errors).
+	if len(fragments) > 0 {
+		queryEmb, _ := e.embedder.Embed(ctx, req.Messages[len(req.Messages)-1].Content)
+		if queryEmb != nil {
+			units, err := e.store.SearchKnowledgeUnits(ctx, queryEmb, 5)
+			if err == nil && len(units) > 0 {
+				rawUnits := make([]model.RawKnowledgeUnit, len(units))
+				for i, u := range units {
+					rawUnits[i] = model.RawKnowledgeUnit{
+						ID:          u.ID,
+						Topic:       u.Topic,
+						Summary:     u.Summary,
+						Confidence:  u.Confidence,
+						FragmentIDs: u.FragmentIDs,
+					}
+				}
+				result.KnowledgeUnits = rawUnits
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // computeFreshness returns a score from 0 to 1 based on how recent the document is.

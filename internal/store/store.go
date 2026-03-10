@@ -35,6 +35,21 @@ type Store interface {
 	// CountFragmentsBySource returns a map of "source_type/source_name" to fragment count.
 	CountFragmentsBySource(ctx context.Context) (map[string]int, error)
 
+	// UpsertKnowledgeUnit inserts or replaces a knowledge unit and its fragment associations.
+	UpsertKnowledgeUnit(ctx context.Context, unit model.KnowledgeUnit) error
+
+	// ListKnowledgeUnits returns all knowledge units with their fragment IDs.
+	ListKnowledgeUnits(ctx context.Context) ([]model.KnowledgeUnit, error)
+
+	// GetKnowledgeUnit retrieves a single knowledge unit by ID.
+	GetKnowledgeUnit(ctx context.Context, id string) (*model.KnowledgeUnit, error)
+
+	// SearchKnowledgeUnits finds the nearest knowledge units by centroid embedding.
+	SearchKnowledgeUnits(ctx context.Context, embedding []float32, limit int) ([]model.KnowledgeUnit, error)
+
+	// DeleteAllKnowledgeUnits removes all knowledge units and their associations.
+	DeleteAllKnowledgeUnits(ctx context.Context) error
+
 	// Close releases resources.
 	Close() error
 }

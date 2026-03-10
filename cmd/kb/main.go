@@ -126,6 +126,9 @@ func newExtractorRegistry(cfg config.Config) *extractor.Registry {
 	reg := extractor.NewRegistry(extractor.NewPlaintextExtractor(cfg.MaxChunkSize, cfg.ChunkOverlap))
 	reg.Register(extractor.NewMarkdownExtractor(cfg.MaxChunkSize))
 	reg.Register(extractor.NewCodeExtractor(cfg.MaxChunkSize))
+	reg.Register(extractor.NewYAMLExtractor(cfg.MaxChunkSize))
+	reg.Register(extractor.NewJupyterExtractor(cfg.MaxChunkSize))
+	reg.Register(extractor.NewPDFExtractor(cfg.MaxChunkSize))
 	return reg
 }
 

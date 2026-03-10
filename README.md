@@ -124,13 +124,13 @@ Ingestion is incremental — unchanged files are skipped based on checksums.
 
 #### Remote ingestion
 
-Push fragments to a shared KB server instead of embedding locally:
+Send content to a KB server for embedding and storage:
 
 ```bash
 kb ingest --source ./my-repo --remote http://server:8080
 ```
 
-The client extracts and chunks locally, then POSTs fragments to the server which handles embedding and storage. Checksums are tracked locally for incremental re-ingestion.
+The client extracts and chunks locally, then POSTs fragments to the server which handles embedding and storage. This is how the Docker quickstart works — the CLI runs on the host while Ollama runs in a container.
 
 ### `kb query`
 
@@ -154,7 +154,7 @@ Raw mode (`--raw`) returns full fragments as JSON with per-fragment confidence s
 Start an HTTP API server.
 
 ```bash
-kb serve --addr :8080 --db kb.db
+kb serve --addr :8080
 ```
 
 Endpoints:
@@ -168,7 +168,7 @@ Endpoints:
 Start an MCP (Model Context Protocol) server on stdio.
 
 ```bash
-kb mcp --db kb.db
+kb mcp
 ```
 
 Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
@@ -178,7 +178,7 @@ Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true
 List all registered ingestion sources.
 
 ```bash
-kb sources list --db kb.db
+kb sources list
 ```
 
 Returns JSON with source type, name, config, and last ingest time for each registered source.
@@ -188,7 +188,7 @@ Returns JSON with source type, name, config, and last ingest time for each regis
 Export fragment embeddings for visualization with TensorBoard Embedding Projector.
 
 ```bash
-kb export --db kb.db --out ./export/
+kb export --out ./export/
 ```
 
 Produces `tensors.tsv` and `metadata.tsv` files.

@@ -9,12 +9,21 @@ services:
       - KB_OLLAMA_URL=http://ollama:11434
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama
     volumes:
       - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
   kb-data:

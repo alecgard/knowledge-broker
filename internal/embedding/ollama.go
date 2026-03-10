@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -34,7 +36,14 @@ type OllamaEmbedder struct {
 
 	cacheMu sync.RWMutex
 	cache   map[string]embCacheEntry
+
+	healthMu        sync.Mutex
+	healthErr       error
+	healthCheckedAt time.Time
+	healthFlight    singleflight.Group
 }
+
+const healthCacheTTL = 5 * time.Second
 
 // NewOllamaEmbedder creates an OllamaEmbedder with sensible defaults.
 // If baseURL is empty, "http://localhost:11434" is used.
@@ -64,9 +73,32 @@ func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient *http.Cl
 }
 
 // CheckHealth verifies that Ollama is reachable by sending a GET request to its
-// base URL. It uses a short timeout so callers get a fast, clear error instead
-// of waiting for the full HTTP client timeout.
+// base URL. Results are cached for 5 seconds so that frequent callers (e.g.
+// load balancer health probes) don't hammer Ollama. Concurrent callers are
+// coalesced via singleflight so only one request is in-flight at a time.
 func (o *OllamaEmbedder) CheckHealth(ctx context.Context) error {
+	o.healthMu.Lock()
+	if time.Since(o.healthCheckedAt) < healthCacheTTL {
+		err := o.healthErr
+		o.healthMu.Unlock()
+		return err
+	}
+	o.healthMu.Unlock()
+
+	v, err, _ := o.healthFlight.Do("health", func() (any, error) {
+		return nil, o.doHealthCheck(ctx)
+	})
+	_ = v
+
+	o.healthMu.Lock()
+	o.healthErr = err
+	o.healthCheckedAt = time.Now()
+	o.healthMu.Unlock()
+
+	return err
+}
+
+func (o *OllamaEmbedder) doHealthCheck(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 

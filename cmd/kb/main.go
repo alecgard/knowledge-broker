@@ -419,7 +419,6 @@ func queryCmd() *cobra.Command {
 			debugMode := isDebug(cmd)
 			human, _ := cmd.Flags().GetBool("human")
 			rawMode, _ := cmd.Flags().GetBool("raw")
-			jsonOutput, _ := cmd.Flags().GetBool("json")
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
 
@@ -465,7 +464,7 @@ func queryCmd() *cobra.Command {
 			defer cancel()
 
 			if rawMode {
-				return queryRaw(ctx, engine, req, jsonOutput)
+				return queryRaw(ctx, engine, req)
 			}
 			if human {
 				return queryHuman(ctx, engine, req)
@@ -476,8 +475,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve")
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
-	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments without LLM synthesis (no API key needed)")
-	cmd.Flags().Bool("json", false, "Output raw results as indented JSON (use with --raw)")
+	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
 	return cmd
 }
@@ -530,46 +528,15 @@ func queryHuman(ctx context.Context, engine *query.Engine, req model.QueryReques
 	return nil
 }
 
-// queryRaw outputs raw retrieval results without LLM synthesis.
-func queryRaw(ctx context.Context, engine *query.Engine, req model.QueryRequest, jsonOutput bool) error {
+// queryRaw outputs raw retrieval results as JSON without LLM synthesis.
+func queryRaw(ctx context.Context, engine *query.Engine, req model.QueryRequest) error {
 	result, err := engine.QueryRaw(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	if jsonOutput {
-		out, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(out))
-		return nil
-	}
-
-	// Human-readable terminal output.
-	for i, f := range result.Fragments {
-		if i > 0 {
-			fmt.Println()
-		}
-		fmt.Printf("[%d] %s\n", i+1, f.SourcePath)
-		fmt.Printf("    Source: %s  Type: %s  Modified: %s\n",
-			f.SourceName, f.FileType, f.LastModified.Format("2006-01-02"))
-		fmt.Printf("    Confidence: fresh=%.2f corr=%.2f cons=%.2f auth=%.2f\n",
-			f.Confidence.Freshness, f.Confidence.Corroboration,
-			f.Confidence.Consistency, f.Confidence.Authority)
-		fmt.Printf("    ID: %s\n", f.FragmentID)
-
-		// Truncate content to ~200 chars for preview.
-		content := f.Content
-		if len(content) > 200 {
-			content = content[:200] + "..."
-		}
-		// Replace newlines for compact display.
-		content = strings.ReplaceAll(content, "\n", " ")
-		fmt.Printf("    %s\n", content)
-	}
-
-	if len(result.Fragments) == 0 {
-		fmt.Println("No matching fragments found.")
-	}
-
+	out, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(out))
 	return nil
 }
 

@@ -50,9 +50,8 @@ ANTHROPIC_API_KEY=sk-ant-... kb query "how does retry logic work?"
 Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. This is the default mode for MCP consumers and is sufficient for most tool integrations where the calling LLM handles synthesis.
 
 ```bash
-# CLI
+# CLI — returns JSON
 kb query --raw "how does auth work?"
-kb query --raw --json "how does auth work?"   # structured output
 
 # MCP server (raw by default)
 kb mcp --db kb.db
@@ -119,7 +118,7 @@ Ask a question and get an answer with confidence signals.
 ```bash
 # Raw retrieval — returns ranked fragments, no LLM needed
 kb query --raw "how does auth work?"
-kb query --raw --json "explain the deployment process"
+kb query --raw "explain the deployment process"
 kb query --raw --limit 10 --topics "billing,payments" "retry policy"
 
 # Synthesised answer (requires ANTHROPIC_API_KEY)
@@ -127,7 +126,7 @@ kb query "what is the billing retry policy?"
 kb query --human "how does auth work?"    # streamed, human-readable
 ```
 
-Raw mode (`--raw`) returns fragments with per-fragment confidence signals, source metadata, and content previews. Add `--json` for structured output.
+Raw mode (`--raw`) returns full fragments as JSON with per-fragment confidence signals and source metadata.
 
 ### `kb serve`
 

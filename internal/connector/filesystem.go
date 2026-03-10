@@ -31,22 +31,33 @@ var skipDirs = map[string]bool{
 
 // binaryExts contains file extensions that are considered binary and should be skipped.
 var binaryExts = map[string]bool{
-	".exe":   true,
-	".bin":   true,
-	".png":   true,
-	".jpg":   true,
-	".gif":   true,
-	".ico":   true,
-	".woff":  true,
-	".ttf":   true,
-	".zip":   true,
-	".tar":   true,
-	".gz":    true,
-	".pdf":   true,
-	".o":     true,
-	".a":     true,
-	".so":    true,
-	".dylib": true,
+	// Executables and libraries
+	".exe": true, ".bin": true, ".o": true, ".a": true,
+	".so": true, ".dylib": true, ".dll": true,
+	// Images
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".ico": true, ".bmp": true, ".svg": true, ".webp": true,
+	// Fonts
+	".woff": true, ".woff2": true, ".ttf": true, ".otf": true, ".eot": true,
+	// Archives
+	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true,
+	".7z": true, ".rar": true, ".tgz": true,
+	// Documents (non-text)
+	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
+	".ppt": true, ".pptx": true,
+	// Databases
+	".db": true, ".db-shm": true, ".db-wal": true, ".db-journal": true,
+	".sqlite": true, ".sqlite3": true,
+	// Media
+	".mp3": true, ".mp4": true, ".wav": true, ".avi": true, ".mov": true,
+	".flac": true, ".ogg": true, ".webm": true,
+	// Data files
+	".parquet": true, ".arrow": true, ".avro": true, ".tfrecord": true,
+	// Lock files and generated
+	".lock": true, ".sum": true,
+	// Other binary
+	".wasm": true, ".pyc": true, ".pyo": true, ".class": true,
+	".jar": true, ".war": true,
 }
 
 // FilesystemConnector scans a local directory tree for content files.
@@ -160,6 +171,11 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			return nil
 		}
 
+		// Skip files that look binary (contain null bytes in the first 8KB).
+		if isBinary(content) {
+			return nil
+		}
+
 		// Compute checksum.
 		hash := sha256.Sum256(content)
 		checksum := fmt.Sprintf("%x", hash)
@@ -210,6 +226,21 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 	}
 
 	return docs, deleted, nil
+}
+
+// isBinary returns true if the content appears to be binary by checking for
+// null bytes in the first 8KB.
+func isBinary(content []byte) bool {
+	check := content
+	if len(check) > 8192 {
+		check = check[:8192]
+	}
+	for _, b := range check {
+		if b == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // gitMetadata attempts to extract the last commit time and author for a file

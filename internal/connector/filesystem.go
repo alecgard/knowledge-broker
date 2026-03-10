@@ -18,8 +18,8 @@ import (
 // maxFileSize is the maximum file size (1 MB) that the scanner will read.
 const maxFileSize = 1 << 20
 
-// skipDirs contains directory names that should be skipped during scanning.
-var skipDirs = map[string]bool{
+// SkipDirs contains directory names that should be skipped during scanning.
+var SkipDirs = map[string]bool{
 	"node_modules": true,
 	"vendor":       true,
 	".git":         true,
@@ -137,7 +137,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			if strings.HasPrefix(name, ".") && path != root {
 				return fs.SkipDir
 			}
-			if skipDirs[name] && path != root {
+			if SkipDirs[name] && path != root {
 				return fs.SkipDir
 			}
 			return nil

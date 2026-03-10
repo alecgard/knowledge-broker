@@ -117,8 +117,16 @@ func ingestCmd() *cobra.Command {
 			remote, _ := cmd.Flags().GetString("remote")
 			all, _ := cmd.Flags().GetBool("all")
 
+			watchMode, _ := cmd.Flags().GetBool("watch")
+
 			if all && remote != "" {
 				return fmt.Errorf("--all and --remote cannot be combined")
+			}
+			if watchMode && remote != "" {
+				return fmt.Errorf("--watch and --remote cannot be combined")
+			}
+			if watchMode && all {
+				return fmt.Errorf("--watch and --all cannot be combined")
 			}
 
 			s, err := openStore(cfg)
@@ -266,6 +274,22 @@ func ingestCmd() *cobra.Command {
 					logger.Warn("failed to register source", "error", regErr)
 				}
 			}
+
+			// Enter watch mode if requested.
+			if watchMode {
+				if len(gitURLs) > 0 {
+					return fmt.Errorf("--watch is only supported for local filesystem sources, not --git")
+				}
+				// Resolve watch paths: use explicit --source paths or default to ".".
+				watchPaths := sourcePaths
+				if len(watchPaths) == 0 {
+					watchPaths = []string{"."}
+				}
+				fmt.Fprintln(os.Stderr, "Watching for changes... (press Ctrl+C to stop)")
+				watcher := ingest.NewWatcher(pipeline, logger)
+				return watcher.Watch(ctx, watchPaths)
+			}
+
 			return nil
 		},
 	}
@@ -274,6 +298,7 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
+	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
 	return cmd
 }
 

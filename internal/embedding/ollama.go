@@ -63,6 +63,26 @@ func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient *http.Cl
 	}
 }
 
+// CheckHealth verifies that Ollama is reachable by sending a GET request to its
+// base URL. It uses a short timeout so callers get a fast, clear error instead
+// of waiting for the full HTTP client timeout.
+func (o *OllamaEmbedder) CheckHealth(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.baseURL, nil)
+	if err != nil {
+		return fmt.Errorf("Ollama not reachable at %s — is it running? Start it with: ollama serve", o.baseURL)
+	}
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("Ollama not reachable at %s — is it running? Start it with: ollama serve", o.baseURL)
+	}
+	resp.Body.Close()
+	return nil
+}
+
 // ollamaEmbedRequest is the JSON body sent to /api/embed.
 type ollamaEmbedRequest struct {
 	Model string `json:"model"`

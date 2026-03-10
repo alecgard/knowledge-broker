@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -298,5 +299,37 @@ func TestEmbedConnectionError(t *testing.T) {
 	_, err := e.Embed(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected error for connection refused")
+	}
+}
+
+func TestCheckHealth_OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Ollama is running"))
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 0, nil)
+	err := e.CheckHealth(context.Background())
+	if err != nil {
+		t.Fatalf("CheckHealth() returned unexpected error: %v", err)
+	}
+}
+
+func TestCheckHealth_Unreachable(t *testing.T) {
+	e := NewOllamaEmbedder("http://127.0.0.1:1", "", 0, nil)
+	err := e.CheckHealth(context.Background())
+	if err == nil {
+		t.Fatal("CheckHealth() should return error for unreachable server")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Ollama not reachable") {
+		t.Errorf("error should mention 'Ollama not reachable', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "http://127.0.0.1:1") {
+		t.Errorf("error should contain the URL, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "ollama serve") {
+		t.Errorf("error should contain 'ollama serve' hint, got: %s", errMsg)
 	}
 }

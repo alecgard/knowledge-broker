@@ -135,6 +135,9 @@ func ingestCmd() *cobra.Command {
 			// --all: re-ingest all registered local sources.
 			if all {
 				emb := newEmbedder(cfg, client)
+				if err := emb.CheckHealth(ctx); err != nil {
+					return err
+				}
 				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
 				sources, err := s.ListSources(ctx)
@@ -235,6 +238,9 @@ func ingestCmd() *cobra.Command {
 
 			// Local ingests run sequentially (shared SQLite writer).
 			emb := newEmbedder(cfg, client)
+			if err := emb.CheckHealth(ctx); err != nil {
+				return err
+			}
 			pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
 			for _, conn := range connectors {
@@ -463,6 +469,10 @@ func queryCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
+			if err := emb.CheckHealth(ctx); err != nil {
+				return err
+			}
+
 			if rawMode {
 				return queryRaw(ctx, engine, req)
 			}
@@ -556,11 +566,16 @@ func serveCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
-			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
-			engine := query.NewEngine(s, emb, claude, cfg.DefaultLimit)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
+
+			if err := emb.CheckHealth(ctx); err != nil {
+				return err
+			}
+
+			claude := llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+			engine := query.NewEngine(s, emb, claude, cfg.DefaultLimit)
 
 			httpServer := server.NewHTTPServer(engine, emb, s, logger)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
@@ -589,6 +604,9 @@ func mcpCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
+			if err := emb.CheckHealth(context.Background()); err != nil {
+				return err
+			}
 
 			// LLM is optional for MCP — raw mode works without it.
 			var llmClient query.LLM

@@ -20,6 +20,9 @@ import (
 //go:embed migrations/001_initial.sql
 var migrationSQL string
 
+//go:embed migrations/002_knowledge_units.sql
+var migration002SQL string
+
 // SQLiteStore implements Store using SQLite and sqlite-vec.
 type SQLiteStore struct {
 	db           *sql.DB
@@ -43,6 +46,10 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	if _, err := db.Exec(migration002SQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("run migration 002: %w", err)
+	}
 
 	// Create the sqlite-vec virtual table.
 	vtableSQL := fmt.Sprintf(
@@ -53,6 +60,17 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 	if _, err := db.Exec(vtableSQL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create vec0 virtual table: %w", err)
+	}
+
+	// Create the sqlite-vec virtual table for knowledge unit centroids.
+	unitVtableSQL := fmt.Sprintf(
+		`CREATE VIRTUAL TABLE IF NOT EXISTS unit_embeddings USING vec0(
+			unit_id TEXT PRIMARY KEY,
+			embedding float[%d]
+		);`, embeddingDim)
+	if _, err := db.Exec(unitVtableSQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create unit vec0 virtual table: %w", err)
 	}
 
 	// Validate or store embedding dimension in metadata.
@@ -541,6 +559,230 @@ func (s *SQLiteStore) DeleteSource(ctx context.Context, sourceType, sourceName s
 		return fmt.Errorf("delete source: %w", err)
 	}
 	return nil
+}
+
+// UpsertKnowledgeUnit inserts or replaces a knowledge unit, its fragment
+// associations, and its centroid embedding.
+func (s *SQLiteStore) UpsertKnowledgeUnit(ctx context.Context, unit model.KnowledgeUnit) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT OR REPLACE INTO knowledge_units
+			(id, topic, summary, confidence_freshness, confidence_corroboration,
+			 confidence_consistency, confidence_authority, last_computed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, unit.ID, unit.Topic, unit.Summary,
+		unit.Confidence.Freshness, unit.Confidence.Corroboration,
+		unit.Confidence.Consistency, unit.Confidence.Authority,
+		unit.LastComputed.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("upsert knowledge unit: %w", err)
+	}
+
+	// Replace fragment associations.
+	if _, err := tx.ExecContext(ctx, "DELETE FROM knowledge_unit_fragments WHERE unit_id = ?", unit.ID); err != nil {
+		return fmt.Errorf("delete unit fragments: %w", err)
+	}
+	if len(unit.FragmentIDs) > 0 {
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO knowledge_unit_fragments (unit_id, fragment_id) VALUES (?, ?)")
+		if err != nil {
+			return fmt.Errorf("prepare unit fragment stmt: %w", err)
+		}
+		defer stmt.Close()
+		for _, fid := range unit.FragmentIDs {
+			if _, err := stmt.ExecContext(ctx, unit.ID, fid); err != nil {
+				return fmt.Errorf("insert unit fragment: %w", err)
+			}
+		}
+	}
+
+	// Upsert centroid embedding.
+	if len(unit.Centroid) > 0 {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM unit_embeddings WHERE unit_id = ?", unit.ID); err != nil {
+			return fmt.Errorf("delete old unit embedding: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO unit_embeddings (unit_id, embedding) VALUES (?, ?)",
+			unit.ID, serializeEmbedding(unit.Centroid)); err != nil {
+			return fmt.Errorf("insert unit embedding: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+// ListKnowledgeUnits returns all knowledge units with their fragment IDs.
+func (s *SQLiteStore) ListKnowledgeUnits(ctx context.Context) ([]model.KnowledgeUnit, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, topic, summary,
+		       confidence_freshness, confidence_corroboration,
+		       confidence_consistency, confidence_authority,
+		       last_computed
+		FROM knowledge_units
+		ORDER BY topic
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list knowledge units: %w", err)
+	}
+	defer rows.Close()
+
+	var units []model.KnowledgeUnit
+	for rows.Next() {
+		u, err := scanKnowledgeUnit(rows)
+		if err != nil {
+			return nil, err
+		}
+		units = append(units, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load fragment IDs for each unit.
+	for i := range units {
+		fids, err := s.loadUnitFragmentIDs(ctx, units[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		units[i].FragmentIDs = fids
+	}
+
+	return units, nil
+}
+
+// GetKnowledgeUnit retrieves a single knowledge unit by ID.
+func (s *SQLiteStore) GetKnowledgeUnit(ctx context.Context, id string) (*model.KnowledgeUnit, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, topic, summary,
+		       confidence_freshness, confidence_corroboration,
+		       confidence_consistency, confidence_authority,
+		       last_computed
+		FROM knowledge_units WHERE id = ?
+	`, id)
+
+	u, err := scanKnowledgeUnit(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get knowledge unit: %w", err)
+	}
+
+	u.FragmentIDs, err = s.loadUnitFragmentIDs(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+// SearchKnowledgeUnits finds the nearest knowledge units by centroid embedding.
+func (s *SQLiteStore) SearchKnowledgeUnits(ctx context.Context, embedding []float32, limit int) ([]model.KnowledgeUnit, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ku.id, ku.topic, ku.summary,
+		       ku.confidence_freshness, ku.confidence_corroboration,
+		       ku.confidence_consistency, ku.confidence_authority,
+		       ku.last_computed, ue.distance
+		FROM unit_embeddings ue
+		INNER JOIN knowledge_units ku ON ku.id = ue.unit_id
+		WHERE ue.embedding MATCH ? AND k = ?
+		ORDER BY ue.distance
+	`, serializeEmbedding(embedding), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search knowledge units: %w", err)
+	}
+	defer rows.Close()
+
+	var units []model.KnowledgeUnit
+	for rows.Next() {
+		var distance float64
+		u, err := scanKnowledgeUnitExtra(rows, &distance)
+		if err != nil {
+			return nil, err
+		}
+		units = append(units, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load fragment IDs for each unit.
+	for i := range units {
+		fids, err := s.loadUnitFragmentIDs(ctx, units[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		units[i].FragmentIDs = fids
+	}
+
+	return units, nil
+}
+
+// DeleteAllKnowledgeUnits removes all knowledge units, their fragment
+// associations, and their centroid embeddings.
+func (s *SQLiteStore) DeleteAllKnowledgeUnits(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM knowledge_unit_fragments"); err != nil {
+		return fmt.Errorf("delete unit fragments: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM unit_embeddings"); err != nil {
+		return fmt.Errorf("delete unit embeddings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM knowledge_units"); err != nil {
+		return fmt.Errorf("delete knowledge units: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// scanKnowledgeUnit scans a knowledge unit row (without extra columns).
+func scanKnowledgeUnit(scanner interface{ Scan(...any) error }) (model.KnowledgeUnit, error) {
+	return scanKnowledgeUnitExtra(scanner)
+}
+
+// scanKnowledgeUnitExtra scans a knowledge unit row with optional extra columns.
+func scanKnowledgeUnitExtra(scanner interface{ Scan(...any) error }, extra ...any) (model.KnowledgeUnit, error) {
+	var u model.KnowledgeUnit
+	var lastComputed string
+	dest := []any{
+		&u.ID, &u.Topic, &u.Summary,
+		&u.Confidence.Freshness, &u.Confidence.Corroboration,
+		&u.Confidence.Consistency, &u.Confidence.Authority,
+		&lastComputed,
+	}
+	dest = append(dest, extra...)
+	if err := scanner.Scan(dest...); err != nil {
+		return model.KnowledgeUnit{}, err
+	}
+	u.LastComputed, _ = time.Parse(time.RFC3339, lastComputed)
+	return u, nil
+}
+
+// loadUnitFragmentIDs returns fragment IDs associated with a knowledge unit.
+func (s *SQLiteStore) loadUnitFragmentIDs(ctx context.Context, unitID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT fragment_id FROM knowledge_unit_fragments WHERE unit_id = ? ORDER BY fragment_id", unitID)
+	if err != nil {
+		return nil, fmt.Errorf("load unit fragment ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan fragment id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // Close releases the database connection.

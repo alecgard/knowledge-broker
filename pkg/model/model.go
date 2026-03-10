@@ -157,6 +157,18 @@ type Contradiction struct {
 	Explanation string      `json:"explanation"`
 }
 
+// KnowledgeUnit groups related fragments into a coherent topic with
+// pre-computed confidence signals and a centroid embedding.
+type KnowledgeUnit struct {
+	ID           string            `json:"id"`
+	Topic        string            `json:"topic"`
+	Summary      string            `json:"summary"`
+	FragmentIDs  []string          `json:"fragment_ids"`
+	Confidence   ConfidenceSignals `json:"confidence"`
+	Centroid     []float32         `json:"-"`
+	LastComputed time.Time         `json:"last_computed"`
+}
+
 // RawFragment is a single fragment returned by raw retrieval mode.
 type RawFragment struct {
 	FragmentID   string           `json:"fragment_id"`
@@ -171,9 +183,19 @@ type RawFragment struct {
 	Confidence   ConfidenceSignals `json:"confidence"`
 }
 
+// RawKnowledgeUnit is a knowledge unit returned in raw retrieval results.
+type RawKnowledgeUnit struct {
+	ID          string            `json:"id"`
+	Topic       string            `json:"topic"`
+	Summary     string            `json:"summary"`
+	Confidence  ConfidenceSignals `json:"confidence"`
+	FragmentIDs []string          `json:"fragment_ids"`
+}
+
 // RawResult is the response from raw retrieval mode (no LLM synthesis).
 type RawResult struct {
-	Fragments      []RawFragment  `json:"fragments"`
-	Contradictions []Contradiction `json:"contradictions,omitempty"`
+	Fragments      []RawFragment      `json:"fragments"`
+	KnowledgeUnits []RawKnowledgeUnit `json:"knowledge_units,omitempty"`
+	Contradictions []Contradiction    `json:"contradictions,omitempty"`
 }
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/knowledge-broker/knowledge-broker/internal/cluster"
 	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/debug"
@@ -55,6 +56,7 @@ func main() {
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
+	root.AddCommand(clusterCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -896,6 +898,48 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per question")
 	cmd.Flags().Bool("ingest", false, "Ingest the eval corpus before running evaluation")
 	cmd.Flags().Bool("json", false, "Output results as JSON")
+	return cmd
+}
+
+func clusterCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cluster",
+		Short: "Group fragments into knowledge units via k-means clustering",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.Default()
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			k, _ := cmd.Flags().GetInt("k")
+
+			eng := cluster.NewEngine(s)
+
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			fmt.Fprintln(os.Stderr, "Clustering fragments into knowledge units...")
+			result, err := eng.ComputeUnits(ctx, k)
+			if err != nil {
+				return fmt.Errorf("compute units: %w", err)
+			}
+
+			if result.Units == 0 {
+				fmt.Fprintln(os.Stderr, "No fragments with embeddings found. Run ingest first.")
+				return nil
+			}
+
+			fmt.Fprintf(os.Stderr, "Created %d knowledge units (avg %.1f fragments, min %d, max %d)\n",
+				result.Units, result.AvgClusterSize, result.MinClusterSize, result.MaxClusterSize)
+			return nil
+		},
+	}
+	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().Int("k", 0, "Number of clusters (0 = auto: sqrt(n/2))")
 	return cmd
 }
 

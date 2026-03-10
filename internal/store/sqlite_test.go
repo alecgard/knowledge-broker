@@ -171,6 +171,80 @@ func TestSearchByVector(t *testing.T) {
 	}
 }
 
+func TestSearchByVectorFiltered(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "f1", Content: "alpha", SourceType: "git", SourceName: "org/repo-a",
+			SourcePath: "/1", SourceURI: "g:///1",
+			LastModified: now, FileType: "txt", Checksum: "a",
+			Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "f2", Content: "beta", SourceType: "git", SourceName: "org/repo-b",
+			SourcePath: "/2", SourceURI: "g:///2",
+			LastModified: now, FileType: "txt", Checksum: "b",
+			Embedding: []float32{0.9, 0.1, 0, 0},
+		},
+		{
+			ID: "f3", Content: "gamma", SourceType: "git", SourceName: "org/repo-c",
+			SourcePath: "/3", SourceURI: "g:///3",
+			LastModified: now, FileType: "txt", Checksum: "c",
+			Embedding: []float32{0.8, 0.2, 0, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter to repo-b only — should return only f2.
+	results, err := s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-b"})
+	if err != nil {
+		t.Fatalf("SearchByVectorFiltered: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].ID != "f2" {
+		t.Errorf("expected f2, got %s", results[0].ID)
+	}
+
+	// Filter to repo-a and repo-c — should return f1 and f3.
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo-a", "org/repo-c"})
+	if err != nil {
+		t.Fatalf("SearchByVectorFiltered: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	// f1 should be closest (embedding [1,0,0,0]).
+	if results[0].ID != "f1" {
+		t.Errorf("expected f1 first, got %s", results[0].ID)
+	}
+
+	// Empty source names — should delegate to SearchByVector (return all 3).
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, nil)
+	if err != nil {
+		t.Fatalf("SearchByVectorFiltered empty: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results with no filter, got %d", len(results))
+	}
+
+	// Filter to non-existent source — should return empty.
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"no/such-repo"})
+	if err != nil {
+		t.Fatalf("SearchByVectorFiltered no match: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for unknown source, got %d", len(results))
+	}
+}
+
 func TestGetChecksums(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

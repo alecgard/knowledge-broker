@@ -14,6 +14,10 @@ type Store interface {
 	// SearchByVector finds the nearest fragments to the given embedding.
 	SearchByVector(ctx context.Context, embedding []float32, limit int) ([]model.SourceFragment, error)
 
+	// SearchByVectorFiltered finds the nearest fragments filtered by source names.
+	// If sourceNames is empty, it behaves identically to SearchByVector.
+	SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string) ([]model.SourceFragment, error)
+
 	// GetFragments retrieves fragments by ID.
 	GetFragments(ctx context.Context, ids []string) ([]model.SourceFragment, error)
 

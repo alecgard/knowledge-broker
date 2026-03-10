@@ -456,6 +456,8 @@ func queryCmd() *cobra.Command {
 				}
 			}
 
+			sources, _ := cmd.Flags().GetStringArray("source")
+
 			question := strings.Join(args, " ")
 			req := model.QueryRequest{
 				Messages: []model.Message{
@@ -464,6 +466,7 @@ func queryCmd() *cobra.Command {
 				Limit:   limit,
 				Concise: !human,
 				Topics:  topics,
+				Sources: sources,
 			}
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -487,6 +490,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
+	cmd.Flags().StringArray("source", nil, "Filter results to this source name (repeatable, e.g., --source owner/repo)")
 	return cmd
 }
 

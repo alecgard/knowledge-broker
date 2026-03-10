@@ -206,6 +206,60 @@ func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, l
 	return results, rows.Err()
 }
 
+// SearchByVectorFiltered finds the nearest fragments filtered by source names.
+// If sourceNames is empty, it delegates to SearchByVector.
+// Since sqlite-vec doesn't support WHERE clauses on joined columns in the
+// virtual table query, we over-fetch from the vector index and post-filter.
+func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string) ([]model.SourceFragment, error) {
+	if len(sourceNames) == 0 {
+		return s.SearchByVector(ctx, embedding, limit)
+	}
+
+	// Over-fetch to account for filtering. We fetch limit*5 candidates from
+	// the vector index and then filter by source_name.
+	overFetch := limit * 5
+	if overFetch < 50 {
+		overFetch = 50
+	}
+
+	placeholders := make([]string, len(sourceNames))
+	args := []interface{}{serializeEmbedding(embedding), overFetch}
+	for i, name := range sourceNames {
+		placeholders[i] = "?"
+		args = append(args, name)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
+		       fe.distance
+		FROM fragment_embeddings fe
+		INNER JOIN fragments f ON f.id = fe.fragment_id
+		WHERE fe.embedding MATCH ? AND k = ?
+		  AND f.source_name IN (%s)
+		ORDER BY fe.distance
+		LIMIT ?
+	`, strings.Join(placeholders, ","))
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search by vector filtered: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.SourceFragment
+	for rows.Next() {
+		var distance float64
+		f, err := scanFragment(rows, &distance)
+		if err != nil {
+			return nil, fmt.Errorf("scan fragment: %w", err)
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
 // GetFragments retrieves fragments by their IDs.
 func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.SourceFragment, error) {
 	if len(ids) == 0 {

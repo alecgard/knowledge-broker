@@ -5,6 +5,7 @@ package connector
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/connector"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
@@ -34,4 +35,13 @@ func FromSource(src model.Source) (Connector, error) {
 		return nil, fmt.Errorf("unknown source type: %s", src.SourceType)
 	}
 	return factory(src.Config)
+}
+
+// envOrFallback returns the value of the primary env var, falling back to the
+// secondary if the primary is not set. Returns empty string if neither is set.
+func envOrFallback(primary, fallback string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	return os.Getenv(fallback)
 }

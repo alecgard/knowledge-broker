@@ -135,13 +135,13 @@ func (c *GitConnector) authenticatedURL(ctx context.Context) (string, error) {
 // Returns empty string if no token is available (public repo access).
 func (c *GitConnector) resolveToken(ctx context.Context) string {
 	// Check explicit env vars.
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" && c.isGitHub() {
+	if token := envOrFallback("KB_GITHUB_TOKEN", "GITHUB_TOKEN"); token != "" && c.isGitHub() {
 		return token
 	}
-	if token := os.Getenv("GITLAB_TOKEN"); token != "" && c.isGitLab() {
+	if token := envOrFallback("KB_GITLAB_TOKEN", "GITLAB_TOKEN"); token != "" && c.isGitLab() {
 		return token
 	}
-	if token := os.Getenv("GIT_TOKEN"); token != "" {
+	if token := envOrFallback("KB_GIT_TOKEN", "GIT_TOKEN"); token != "" {
 		return token
 	}
 

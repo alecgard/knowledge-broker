@@ -177,7 +177,7 @@ func (c *GitHubWikiConnector) authenticatedURL(ctx context.Context) (string, err
 
 // resolveToken attempts to find a GitHub token.
 func (c *GitHubWikiConnector) resolveToken(ctx context.Context) string {
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := envOrFallback("KB_GITHUB_TOKEN", "GITHUB_TOKEN"); token != "" {
 		return token
 	}
 

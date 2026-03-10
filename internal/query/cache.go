@@ -145,18 +145,29 @@ func (c *Cache) PutFastPath(query string, concise bool, answer *model.Answer) {
 	}
 }
 
-func (c *Cache) evictOldestFast() {
+// evictOldestFrom removes the oldest entry (by createdAt) from a map.
+// getTime extracts the creation time from a value. Must be called with lock held.
+func evictOldestFrom[V any](m map[string]V, getTime func(V) time.Time) {
 	var oldestKey string
 	var oldestTime time.Time
-	for k, e := range c.fastEntries {
-		if oldestKey == "" || e.createdAt.Before(oldestTime) {
+	for k, v := range m {
+		t := getTime(v)
+		if oldestKey == "" || t.Before(oldestTime) {
 			oldestKey = k
-			oldestTime = e.createdAt
+			oldestTime = t
 		}
 	}
 	if oldestKey != "" {
-		delete(c.fastEntries, oldestKey)
+		delete(m, oldestKey)
 	}
+}
+
+func (c *Cache) evictOldestFast() {
+	evictOldestFrom(c.fastEntries, func(e fastCacheEntry) time.Time { return e.createdAt })
+}
+
+func (c *Cache) evictOldest() {
+	evictOldestFrom(c.entries, func(e cacheEntry) time.Time { return e.createdAt })
 }
 
 // Clear removes all cached entries.
@@ -165,20 +176,4 @@ func (c *Cache) Clear() {
 	defer c.mu.Unlock()
 	c.entries = make(map[string]cacheEntry, c.maxSize)
 	c.fastEntries = make(map[string]fastCacheEntry, c.maxSize)
-}
-
-func (c *Cache) evictOldest() {
-	var oldestKey string
-	var oldestTime time.Time
-
-	for k, e := range c.entries {
-		if oldestKey == "" || e.createdAt.Before(oldestTime) {
-			oldestKey = k
-			oldestTime = e.createdAt
-		}
-	}
-
-	if oldestKey != "" {
-		delete(c.entries, oldestKey)
-	}
 }

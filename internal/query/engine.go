@@ -42,16 +42,10 @@ func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int) *
 	}
 }
 
-// Query processes a query request and streams the answer.
-// onText is called with each text chunk as it arrives from the LLM.
-// Returns the complete Answer after streaming finishes.
-// If req.Concise is true, the LLM produces terse, agent-friendly output.
-func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
-	if e.llm == nil {
-		return nil, fmt.Errorf("LLM client not configured")
-	}
+// embedAndSearch validates the request, embeds the query, and searches for fragments.
+func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (model.Message, []model.SourceFragment, error) {
 	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("no messages in query request")
+		return model.Message{}, nil, fmt.Errorf("no messages in query request")
 	}
 
 	limit := req.Limit
@@ -59,18 +53,9 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		limit = e.limit
 	}
 
-	// Get the latest user message for embedding.
 	lastMsg := req.Messages[len(req.Messages)-1]
-	if lastMsg.Role != "user" {
-		return nil, fmt.Errorf("last message must be from user")
-	}
-
-	// Fast-path: exact match, skip embedding + search + LLM entirely.
-	if cached := e.cache.GetFastPath(lastMsg.Content, req.Concise); cached != nil {
-		if onText != nil {
-			onText(cached.Content)
-		}
-		return cached, nil
+	if lastMsg.Role != model.RoleUser {
+		return model.Message{}, nil, fmt.Errorf("last message must be from user")
 	}
 
 	// Embed the query (and topics if present) in a single batch call.
@@ -79,21 +64,50 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		topicsText := strings.Join(req.Topics, " ")
 		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
 		if err != nil {
-			return nil, fmt.Errorf("embed query+topics: %w", err)
+			return model.Message{}, nil, fmt.Errorf("embed query+topics: %w", err)
 		}
 		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
 	} else {
 		var err error
 		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
 		if err != nil {
-			return nil, fmt.Errorf("embed query: %w", err)
+			return model.Message{}, nil, fmt.Errorf("embed query: %w", err)
 		}
 	}
 
-	// Search for relevant fragments.
 	fragments, err := e.store.SearchByVector(ctx, queryEmb, limit)
 	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+		return model.Message{}, nil, fmt.Errorf("search: %w", err)
+	}
+
+	return lastMsg, fragments, nil
+}
+
+// Query processes a query request and streams the answer.
+// onText is called with each text chunk as it arrives from the LLM.
+// Returns the complete Answer after streaming finishes.
+// If req.Concise is true, the LLM produces terse, agent-friendly output.
+func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	if e.llm == nil {
+		return nil, fmt.Errorf("LLM client not configured")
+	}
+
+	// Fast-path: exact match, skip embedding + search + LLM entirely.
+	if len(req.Messages) > 0 {
+		lastMsg := req.Messages[len(req.Messages)-1]
+		if lastMsg.Role == model.RoleUser {
+			if cached := e.cache.GetFastPath(lastMsg.Content, req.Concise); cached != nil {
+				if onText != nil {
+					onText(cached.Content)
+				}
+				return cached, nil
+			}
+		}
+	}
+
+	lastMsg, fragments, err := e.embedAndSearch(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(fragments) == 0 {
@@ -215,41 +229,9 @@ func combineEmbeddings(a, b []float32, weight float64) []float32 {
 // QueryRaw performs raw retrieval: embed, search, compute local confidence signals,
 // and return fragments directly without LLM synthesis.
 func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("no messages in query request")
-	}
-
-	limit := req.Limit
-	if limit <= 0 {
-		limit = e.limit
-	}
-
-	lastMsg := req.Messages[len(req.Messages)-1]
-	if lastMsg.Role != "user" {
-		return nil, fmt.Errorf("last message must be from user")
-	}
-
-	// Embed the query (and topics if present).
-	var queryEmb []float32
-	if len(req.Topics) > 0 {
-		topicsText := strings.Join(req.Topics, " ")
-		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
-		if err != nil {
-			return nil, fmt.Errorf("embed query+topics: %w", err)
-		}
-		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
-	} else {
-		var err error
-		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
-		if err != nil {
-			return nil, fmt.Errorf("embed query: %w", err)
-		}
-	}
-
-	// Search for relevant fragments.
-	fragments, err := e.store.SearchByVector(ctx, queryEmb, limit)
+	_, fragments, err := e.embedAndSearch(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+		return nil, err
 	}
 
 	// Count distinct source names for corroboration.

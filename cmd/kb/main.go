@@ -453,7 +453,7 @@ func queryCmd() *cobra.Command {
 			question := strings.Join(args, " ")
 			req := model.QueryRequest{
 				Messages: []model.Message{
-					{Role: "user", Content: question},
+					{Role: model.RoleUser, Content: question},
 				},
 				Limit:   limit,
 				Concise: !human,
@@ -482,10 +482,7 @@ func queryCmd() *cobra.Command {
 
 // queryCompact outputs a single JSON object — optimised for AI consumption.
 func queryCompact(ctx context.Context, engine *query.Engine, req model.QueryRequest) error {
-	var fullText string
-	answer, err := engine.Query(ctx, req, func(text string) {
-		fullText += text
-	})
+	answer, err := engine.Query(ctx, req, nil)
 	if err != nil {
 		return err
 	}

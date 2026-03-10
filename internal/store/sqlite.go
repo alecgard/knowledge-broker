@@ -98,6 +98,26 @@ func deserializeEmbedding(b []byte) []float32 {
 	return out
 }
 
+// scanFragment scans a fragment row from the standard column set:
+// id, content, source_type, source_name, source_path, source_uri,
+// last_modified, author, file_type, checksum, confidence_adj.
+// Additional columns (e.g., distance, embedding) must be handled by the caller
+// via the extra parameter.
+func scanFragment(scanner interface{ Scan(...any) error }, extra ...any) (model.SourceFragment, error) {
+	var f model.SourceFragment
+	var lastMod string
+	dest := []any{
+		&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
+		&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
+	}
+	dest = append(dest, extra...)
+	if err := scanner.Scan(dest...); err != nil {
+		return model.SourceFragment{}, err
+	}
+	f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
+	return f, nil
+}
+
 // UpsertFragments inserts or replaces fragments and their embeddings.
 func (s *SQLiteStore) UpsertFragments(ctx context.Context, fragments []model.SourceFragment) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -176,18 +196,11 @@ func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, l
 
 	var results []model.SourceFragment
 	for rows.Next() {
-		var f model.SourceFragment
-		var lastMod string
 		var distance float64
-		err := rows.Scan(
-			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
-			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
-			&distance,
-		)
+		f, err := scanFragment(rows, &distance)
 		if err != nil {
 			return nil, fmt.Errorf("scan fragment: %w", err)
 		}
-		f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
 		results = append(results, f)
 	}
 	return results, rows.Err()
@@ -221,16 +234,10 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 
 	var results []model.SourceFragment
 	for rows.Next() {
-		var f model.SourceFragment
-		var lastMod string
-		err := rows.Scan(
-			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
-			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
-		)
+		f, err := scanFragment(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan fragment: %w", err)
 		}
-		f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
 		results = append(results, f)
 	}
 	return results, rows.Err()
@@ -328,18 +335,11 @@ func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragme
 
 	var results []model.SourceFragment
 	for rows.Next() {
-		var f model.SourceFragment
-		var lastMod string
 		var embBytes []byte
-		err := rows.Scan(
-			&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
-			&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
-			&embBytes,
-		)
+		f, err := scanFragment(rows, &embBytes)
 		if err != nil {
 			return nil, fmt.Errorf("scan fragment: %w", err)
 		}
-		f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
 		f.Embedding = deserializeEmbedding(embBytes)
 		results = append(results, f)
 	}

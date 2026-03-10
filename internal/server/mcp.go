@@ -101,7 +101,7 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 
 	req := model.QueryRequest{
 		Messages: []model.Message{
-			{Role: "user", Content: question},
+			{Role: model.RoleUser, Content: question},
 		},
 		Limit:   limit,
 		Concise: true,

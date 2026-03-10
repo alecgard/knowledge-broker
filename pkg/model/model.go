@@ -15,6 +15,17 @@ const (
 	SourceTypeGit        = "git"
 )
 
+// Message role constants.
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Query mode constants.
+const (
+	ModeRaw = "raw"
+)
+
 // FragmentID generates a deterministic fragment ID from the source type,
 // source path, and chunk index: sha256(sourceType:sourcePath:index)[:16].
 func FragmentID(sourceType, sourcePath string, index int) string {

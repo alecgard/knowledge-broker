@@ -91,11 +91,11 @@ func convertMessages(messages []model.Message) []anthropic.MessageParam {
 	result := make([]anthropic.MessageParam, 0, len(messages))
 	for _, msg := range messages {
 		switch msg.Role {
-		case "user":
+		case model.RoleUser:
 			result = append(result, anthropic.NewUserMessage(
 				anthropic.NewTextBlock(msg.Content),
 			))
-		case "assistant":
+		case model.RoleAssistant:
 			result = append(result, anthropic.NewAssistantMessage(
 				anthropic.NewTextBlock(msg.Content),
 			))

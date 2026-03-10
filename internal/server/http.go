@@ -70,7 +70,7 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Raw retrieval mode: no LLM needed.
-	if req.Mode == "raw" {
+	if req.Mode == model.ModeRaw {
 		s.handleQueryRaw(w, r, req)
 		return
 	}

@@ -51,17 +51,14 @@ func NewOllamaEmbedder(baseURL, model string, dimension int, httpClient *http.Cl
 	if dimension == 0 {
 		dimension = defaultOllamaDimension
 	}
-	var client *http.Client
-	if httpClient != nil {
-		client = httpClient
-	} else {
-		client = &http.Client{}
+	if httpClient == nil {
+		httpClient = &http.Client{}
 	}
 	return &OllamaEmbedder{
 		baseURL:    baseURL,
 		model:      model,
 		dimension:  dimension,
-		httpClient: client,
+		httpClient: httpClient,
 		cache:      make(map[string]embCacheEntry, embCacheMaxSize),
 	}
 }

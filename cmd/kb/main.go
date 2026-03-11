@@ -57,6 +57,7 @@ func main() {
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
 	root.AddCommand(clusterCmd())
+	root.AddCommand(setupCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

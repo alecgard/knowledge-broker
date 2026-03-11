@@ -9,3 +9,4 @@ tensors.tsv
 tmp/
 .claude/worktrees/
 clusters.html
+.mcp.json

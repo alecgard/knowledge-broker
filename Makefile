@@ -10,7 +10,29 @@ build:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go build $(LDFLAGS) -o $(BINARY) ./cmd/kb
 
 install:
-	go install $(LDFLAGS) ./cmd/kb
+	CGO_CFLAGS="-Wno-deprecated-declarations" go install $(LDFLAGS) ./cmd/kb
+	@if ! command -v kb >/dev/null 2>&1; then \
+		GOBIN=$$(go env GOPATH)/bin; \
+		LINE="export PATH=\"$$GOBIN:\$$PATH\""; \
+		case "$$SHELL" in \
+			*/zsh)  RC=~/.zshrc ;; \
+			*/bash) RC=~/.bashrc ;; \
+			*/fish) RC=~/.config/fish/config.fish; LINE="fish_add_path $$GOBIN" ;; \
+			*)      RC="" ;; \
+		esac; \
+		if [ -n "$$RC" ] && ! grep -qF "$$GOBIN" "$$RC" 2>/dev/null; then \
+			printf "kb is not on your PATH. Add to $$RC? [Y/n] "; \
+			read ans; \
+			case "$$ans" in \
+				[nN]*) echo "Skipped. Add manually: $$LINE" ;; \
+				*)     echo "" >> "$$RC"; echo "$$LINE" >> "$$RC"; \
+				       echo "Added to $$RC — restart your shell or run: source $$RC" ;; \
+			esac; \
+		elif [ -z "$$RC" ]; then \
+			echo "kb installed to $$GOBIN/kb but is not on your PATH."; \
+			echo "Add to your shell profile: $$LINE"; \
+		fi; \
+	fi
 
 clean:
 	rm -f $(BINARY)

@@ -46,34 +46,10 @@ See [docs/mcp.md](docs/mcp.md) for full setup and tool reference.
 
 ## Quick start
 
-### Docker (recommended)
-
-```bash
-docker compose up -d
-
-# Ingest a local directory into the server
-kb ingest --source ./my-repo --remote http://localhost:8080
-
-# Query via HTTP API
-curl -s -X POST localhost:8080/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
-```
-
-For LLM-synthesised answers, add your API key to `.env` before starting:
-
-```bash
-cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY
-docker compose up -d
-```
-
-### From source
-
 **Prerequisites:** Go 1.24+, [Ollama](https://ollama.com) running locally
 
 ```bash
-make build
+make install
 ollama pull nomic-embed-text
 
 # Ingest a local directory
@@ -82,11 +58,22 @@ kb ingest --source ./my-repo
 # Ingest a Git repo by URL
 kb ingest --git https://github.com/owner/repo
 
-# Synthesised answer (set ANTHROPIC_API_KEY in .env)
+# Synthesised answer (requires ANTHROPIC_API_KEY in .env)
 kb query "how does retry logic work?"
 
 # Raw retrieval — ranked fragments, no API key needed
 kb query --raw "how does retry logic work?"
+
+# or expose via HTTP
+kb serve
+
+curl -s -X POST localhost:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does retry logic work?"}]}'
+
+curl -s -X POST localhost:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does retry logic work?"}],"mode":"raw"}'
 ```
 
 ### Running without an API key

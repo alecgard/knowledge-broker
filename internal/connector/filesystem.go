@@ -129,6 +129,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 	seen := make(map[string]bool, len(known))
 
 	var docs []model.RawDocument
+	var skipped int
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -199,6 +200,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 
 		// Skip unchanged files.
 		if prev, ok := known[path]; ok && prev == checksum {
+			skipped++
 			return nil
 		}
 
@@ -229,6 +231,10 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 
 	if walkErr != nil {
 		return nil, nil, fmt.Errorf("walking directory: %w", walkErr)
+	}
+
+	if skipped > 0 {
+		log.Printf("skipped %d unchanged file(s)", skipped)
 	}
 
 	// Detect deleted paths: paths in known that were not seen during the walk.

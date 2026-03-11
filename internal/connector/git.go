@@ -88,11 +88,27 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		return nil, nil, fmt.Errorf("git clone: %w", err)
 	}
 
+	// Rewrite known keys from relative paths to absolute (matching filesystem walk).
+	if len(opts.Known) > 0 {
+		abs := make(map[string]string, len(opts.Known))
+		for rel, checksum := range opts.Known {
+			abs[filepath.Join(tmpDir, rel)] = checksum
+		}
+		opts.Known = abs
+	}
+
 	// Delegate to filesystem connector.
 	fs := NewFilesystemConnector(tmpDir)
 	docs, deleted, err := fs.Scan(ctx, opts)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Convert deleted paths back to relative (fs.Scan returns absolute temp paths).
+	for i := range deleted {
+		if rel, err := filepath.Rel(tmpDir, deleted[i]); err == nil {
+			deleted[i] = rel
+		}
 	}
 
 	// Rewrite source metadata to reflect the git remote, not the temp dir.

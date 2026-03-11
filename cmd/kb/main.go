@@ -191,22 +191,51 @@ func ingestCmd() *cobra.Command {
 				if len(localSources) == 0 {
 					return fmt.Errorf("no local sources registered; use --source or --git to ingest first")
 				}
+				type reIngestResult struct {
+					src    model.Source
+					result *ingest.Result
+					err    error
+				}
+
+				resultCh := make(chan reIngestResult, len(localSources))
+				var wg sync.WaitGroup
+
 				for _, src := range localSources {
-					conn, err := connector.FromSource(src)
-					if err != nil {
-						return fmt.Errorf("reconstruct %s/%s: %w", src.SourceType, src.SourceName, err)
+					wg.Add(1)
+					go func(src model.Source) {
+						defer wg.Done()
+						conn, err := connector.FromSource(src)
+						if err != nil {
+							resultCh <- reIngestResult{src: src, err: fmt.Errorf("reconstruct %s/%s: %w", src.SourceType, src.SourceName, err)}
+							return
+						}
+						fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
+						r, err := pipeline.Run(ctx, conn)
+						resultCh <- reIngestResult{src: src, result: r, err: err}
+					}(src)
+				}
+
+				go func() {
+					wg.Wait()
+					close(resultCh)
+				}()
+
+				var errs []string
+				for ir := range resultCh {
+					if ir.err != nil {
+						errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", ir.src.SourceType, ir.src.SourceName, ir.err))
+						continue
 					}
-					fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
-					result, err := pipeline.Run(ctx, conn)
-					if err != nil {
-						return fmt.Errorf("ingest %s/%s: %w", src.SourceType, src.SourceName, err)
-					}
-					src.LastIngest = time.Now()
-					if regErr := s.RegisterSource(ctx, src); regErr != nil {
+					ir.src.LastIngest = time.Now()
+					if regErr := s.RegisterSource(ctx, ir.src); regErr != nil {
 						logger.Warn("failed to update source timestamp", "error", regErr)
 					}
 					fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
-						src.SourceType, src.SourceName, result.Added, result.Deleted, result.Skipped, result.Errors)
+						ir.src.SourceType, ir.src.SourceName, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
+				}
+
+				if len(errs) > 0 {
+					return fmt.Errorf("%s", strings.Join(errs, "; "))
 				}
 				return nil
 			}
@@ -297,35 +326,71 @@ func ingestCmd() *cobra.Command {
 				return nil
 			}
 
-			// Local ingests run sequentially (shared SQLite writer).
+			// Local ingests run in parallel — SQLite WAL mode handles concurrent writes.
 			emb := newEmbedder(cfg, client)
 			if err := emb.CheckHealth(ctx); err != nil {
 				return err
 			}
 			pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
-			for _, conn := range connectors {
-				name := conn.SourceName()
-				fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+			type ingestResult struct {
+				name       string
+				connType   string
+				config     map[string]string
+				result     *ingest.Result
+				err        error
+			}
 
-				result, err := pipeline.Run(ctx, conn)
-				if err != nil {
-					return fmt.Errorf("ingest %s: %w", name, err)
+			resultCh := make(chan ingestResult, len(connectors))
+			var wg sync.WaitGroup
+
+			for _, conn := range connectors {
+				wg.Add(1)
+				go func(conn connector.Connector) {
+					defer wg.Done()
+					name := conn.SourceName()
+					fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+
+					r, err := pipeline.Run(ctx, conn)
+					srcConfig := conn.Config(model.SourceModeLocal)
+					srcConfig["mode"] = model.SourceModeLocal
+					resultCh <- ingestResult{
+						name:     name,
+						connType: conn.Name(),
+						config:   srcConfig,
+						result:   r,
+						err:      err,
+					}
+				}(conn)
+			}
+
+			go func() {
+				wg.Wait()
+				close(resultCh)
+			}()
+
+			var errs []string
+			for ir := range resultCh {
+				if ir.err != nil {
+					errs = append(errs, fmt.Sprintf("ingest %s: %v", ir.name, ir.err))
+					continue
 				}
 
-				srcConfig := conn.Config(model.SourceModeLocal)
-				srcConfig["mode"] = model.SourceModeLocal
 				fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
-					name, result.Added, result.Deleted, result.Skipped, result.Errors)
+					ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
 
 				if regErr := s.RegisterSource(ctx, model.Source{
-					SourceType: conn.Name(),
-					SourceName: name,
-					Config:     srcConfig,
+					SourceType: ir.connType,
+					SourceName: ir.name,
+					Config:     ir.config,
 					LastIngest: time.Now(),
 				}); regErr != nil {
 					logger.Warn("failed to register source", "error", regErr)
 				}
+			}
+
+			if len(errs) > 0 {
+				return fmt.Errorf("%s", strings.Join(errs, "; "))
 			}
 
 			// Enter watch mode if requested.

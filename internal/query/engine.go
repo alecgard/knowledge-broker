@@ -48,9 +48,10 @@ func (e *Engine) HasLLM() bool {
 }
 
 // embedAndSearch validates the request, embeds the query, and searches for fragments.
-func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (model.Message, []model.SourceFragment, error) {
+// Returns the last user message, the query embedding, and matching fragments.
+func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (model.Message, []float32, []model.SourceFragment, error) {
 	if len(req.Messages) == 0 {
-		return model.Message{}, nil, fmt.Errorf("no messages in query request")
+		return model.Message{}, nil, nil, fmt.Errorf("no messages in query request")
 	}
 
 	limit := req.Limit
@@ -60,7 +61,7 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 
 	lastMsg := req.Messages[len(req.Messages)-1]
 	if lastMsg.Role != model.RoleUser {
-		return model.Message{}, nil, fmt.Errorf("last message must be from user")
+		return model.Message{}, nil, nil, fmt.Errorf("last message must be from user")
 	}
 
 	// Embed the query (and topics if present) in a single batch call.
@@ -69,14 +70,14 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		topicsText := strings.Join(req.Topics, " ")
 		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
 		if err != nil {
-			return model.Message{}, nil, fmt.Errorf("embed query+topics: %w", err)
+			return model.Message{}, nil, nil, fmt.Errorf("embed query+topics: %w", err)
 		}
 		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
 	} else {
 		var err error
 		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
 		if err != nil {
-			return model.Message{}, nil, fmt.Errorf("embed query: %w", err)
+			return model.Message{}, nil, nil, fmt.Errorf("embed query: %w", err)
 		}
 	}
 
@@ -90,10 +91,10 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		fragments, searchErr = e.store.SearchByVector(ctx, queryEmb, limit)
 	}
 	if searchErr != nil {
-		return model.Message{}, nil, fmt.Errorf("search: %w", searchErr)
+		return model.Message{}, nil, nil, fmt.Errorf("search: %w", searchErr)
 	}
 
-	return lastMsg, fragments, nil
+	return lastMsg, queryEmb, fragments, nil
 }
 
 // Query processes a query request and streams the answer.
@@ -118,7 +119,7 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		}
 	}
 
-	lastMsg, fragments, err := e.embedAndSearch(ctx, req)
+	lastMsg, _, fragments, err := e.embedAndSearch(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +243,7 @@ func combineEmbeddings(a, b []float32, weight float64) []float32 {
 // QueryRaw performs raw retrieval: embed, search, compute local confidence signals,
 // and return fragments directly without LLM synthesis.
 func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error) {
-	_, fragments, err := e.embedAndSearch(ctx, req)
+	_, queryEmb, fragments, err := e.embedAndSearch(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -281,23 +282,20 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	}
 
 	// Search knowledge units if any exist (best-effort; ignore errors).
-	if len(fragments) > 0 {
-		queryEmb, _ := e.embedder.Embed(ctx, req.Messages[len(req.Messages)-1].Content)
-		if queryEmb != nil {
-			units, err := e.store.SearchKnowledgeUnits(ctx, queryEmb, 5)
-			if err == nil && len(units) > 0 {
-				rawUnits := make([]model.RawKnowledgeUnit, len(units))
-				for i, u := range units {
-					rawUnits[i] = model.RawKnowledgeUnit{
-						ID:          u.ID,
-						Topic:       u.Topic,
-						Summary:     u.Summary,
-						Confidence:  u.Confidence,
-						FragmentIDs: u.FragmentIDs,
-					}
+	if len(fragments) > 0 && queryEmb != nil {
+		units, err := e.store.SearchKnowledgeUnits(ctx, queryEmb, 5)
+		if err == nil && len(units) > 0 {
+			rawUnits := make([]model.RawKnowledgeUnit, len(units))
+			for i, u := range units {
+				rawUnits[i] = model.RawKnowledgeUnit{
+					ID:          u.ID,
+					Topic:       u.Topic,
+					Summary:     u.Summary,
+					Confidence:  u.Confidence,
+					FragmentIDs: u.FragmentIDs,
 				}
-				result.KnowledgeUnits = rawUnits
 			}
+			result.KnowledgeUnits = rawUnits
 		}
 	}
 

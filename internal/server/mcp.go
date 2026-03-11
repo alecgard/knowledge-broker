@@ -61,7 +61,7 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 			mcp.Description("Optional comma-separated source names to filter results (e.g., 'owner/repo,other/repo')"),
 		),
 		mcp.WithString("source_types",
-			mcp.Description("Optional comma-separated source types to filter results (e.g., 'git,confluence')"),
+			mcp.Description("Optional comma-separated source types to filter results. Valid types: filesystem, git, confluence, slack, github_wiki"),
 		),
 	), s.handleQuery)
 
@@ -141,40 +141,15 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		return mcp.NewToolResultError("query is required"), nil
 	}
 
-	var topics []string
-	if topicsRaw, ok := args["topics"].(string); ok && topicsRaw != "" {
-		for _, t := range strings.Split(topicsRaw, ",") {
-			t = strings.TrimSpace(t)
-			if t != "" {
-				topics = append(topics, t)
-			}
-		}
-	}
+	topics := splitCSV(args, "topics")
 
 	limit := 20
 	if limitRaw, ok := args["limit"].(float64); ok && limitRaw > 0 {
 		limit = int(limitRaw)
 	}
 
-	var sources []string
-	if sourcesRaw, ok := args["sources"].(string); ok && sourcesRaw != "" {
-		for _, s := range strings.Split(sourcesRaw, ",") {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				sources = append(sources, s)
-			}
-		}
-	}
-
-	var sourceTypes []string
-	if typesRaw, ok := args["source_types"].(string); ok && typesRaw != "" {
-		for _, t := range strings.Split(typesRaw, ",") {
-			t = strings.TrimSpace(t)
-			if t != "" {
-				sourceTypes = append(sourceTypes, t)
-			}
-		}
-	}
+	sources := splitCSV(args, "sources")
+	sourceTypes := splitCSV(args, "source_types")
 
 	// Default to synthesis mode (rawMode=false) unless explicitly set to true.
 	rawMode := false
@@ -225,6 +200,22 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	return mcp.NewToolResultText(string(jsonBytes)), nil
+}
+
+// splitCSV extracts a comma-separated string argument and returns the trimmed, non-empty parts.
+func splitCSV(args map[string]interface{}, key string) []string {
+	raw, ok := args[key].(string)
+	if !ok || raw == "" {
+		return nil
+	}
+	var result []string
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

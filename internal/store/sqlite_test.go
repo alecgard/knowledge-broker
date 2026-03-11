@@ -246,6 +246,72 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	}
 }
 
+func TestSearchByVectorFilteredBySourceType(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "t1", Content: "alpha", SourceType: "git", SourceName: "org/repo",
+			SourcePath: "/1", SourceURI: "g:///1",
+			LastModified: now, FileType: "txt", Checksum: "a",
+			Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "t2", Content: "beta", SourceType: "confluence", SourceName: "ENGINEERING",
+			SourcePath: "/2", SourceURI: "c:///2",
+			LastModified: now, FileType: "txt", Checksum: "b",
+			Embedding: []float32{0.9, 0.1, 0, 0},
+		},
+		{
+			ID: "t3", Content: "gamma", SourceType: "filesystem", SourceName: "/tmp/docs",
+			SourcePath: "/3", SourceURI: "f:///3",
+			LastModified: now, FileType: "txt", Checksum: "c",
+			Embedding: []float32{0.8, 0.2, 0, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by source type only — git should return t1.
+	results, err := s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, nil, []string{"git"})
+	if err != nil {
+		t.Fatalf("filter by type: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "t1" {
+		t.Fatalf("expected [t1], got %v", ids(results))
+	}
+
+	// Filter by multiple source types — git + confluence should return t1, t2.
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, nil, []string{"git", "confluence"})
+	if err != nil {
+		t.Fatalf("filter by multiple types: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// Filter by both source name and source type — should intersect.
+	results, err = s.SearchByVectorFiltered(ctx, []float32{1, 0, 0, 0}, 10, []string{"org/repo"}, []string{"confluence"})
+	if err != nil {
+		t.Fatalf("filter by name+type: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results (name AND type don't overlap), got %d", len(results))
+	}
+}
+
+func ids(frags []model.SourceFragment) []string {
+	out := make([]string, len(frags))
+	for i, f := range frags {
+		out[i] = f.ID
+	}
+	return out
+}
+
 func TestGetChecksums(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

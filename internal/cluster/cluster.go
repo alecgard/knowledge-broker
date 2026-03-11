@@ -29,23 +29,31 @@ func NewEngine(s store.Store) *Engine {
 
 // Result summarises a clustering run.
 type Result struct {
-	Units           int     // number of knowledge units created
-	AvgClusterSize  float64 // average fragments per unit
-	MaxClusterSize  int
-	MinClusterSize  int
+	Units          int     // number of knowledge units created
+	AvgClusterSize float64 // average fragments per unit
+	MaxClusterSize int
+	MinClusterSize int
 }
 
-// ComputeUnits clusters all fragments with embeddings into knowledge units,
-// computes centroids and confidence signals, and persists them. If k is 0,
+// ClusterInfo describes a single cluster from RunClustering.
+type ClusterInfo struct {
+	Index      int
+	Members    []model.SourceFragment
+	Topic      string
+	Confidence model.Confidence
+}
+
+// RunClustering clusters all fragments with embeddings using k-means and
+// returns cluster information without persisting anything. If k is 0,
 // sqrt(n/2) is used as a default.
-func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
-	fragments, err := e.store.ExportFragments(ctx)
+func RunClustering(ctx context.Context, s store.Store, k int) ([]ClusterInfo, error) {
+	fragments, err := s.ExportFragments(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("export fragments: %w", err)
 	}
 
 	if len(fragments) == 0 {
-		return &Result{}, nil
+		return nil, nil
 	}
 
 	// Filter fragments that actually have embeddings.
@@ -56,7 +64,7 @@ func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
 		}
 	}
 	if len(withEmb) == 0 {
-		return &Result{}, nil
+		return nil, nil
 	}
 
 	// Determine k.
@@ -80,9 +88,49 @@ func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
 	assignments := KMeans(embeddings, k, 100)
 
 	// Group fragments by cluster.
-	clusters := make(map[int][]int) // cluster index -> fragment indices
+	grouped := make(map[int][]int) // cluster index -> fragment indices
 	for i, c := range assignments {
-		clusters[c] = append(clusters[c], i)
+		grouped[c] = append(grouped[c], i)
+	}
+
+	var clusters []ClusterInfo
+	for clusterIdx, memberIdxs := range grouped {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		members := make([]model.SourceFragment, len(memberIdxs))
+		for i, idx := range memberIdxs {
+			members[i] = withEmb[idx]
+		}
+
+		clusters = append(clusters, ClusterInfo{
+			Index:      clusterIdx,
+			Members:    members,
+			Topic:      deriveTopic(members),
+			Confidence: aggregateConfidence(members),
+		})
+	}
+
+	// Sort by index for deterministic output.
+	sort.Slice(clusters, func(i, j int) bool {
+		return clusters[i].Index < clusters[j].Index
+	})
+
+	return clusters, nil
+}
+
+// ComputeUnits clusters all fragments with embeddings into knowledge units,
+// computes centroids and confidence signals, and persists them. If k is 0,
+// sqrt(n/2) is used as a default.
+func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
+	clusters, err := RunClustering(ctx, e.store, k)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(clusters) == 0 {
+		return &Result{}, nil
 	}
 
 	// Clear existing knowledge units.
@@ -91,36 +139,31 @@ func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
 	}
 
 	now := time.Now()
+	totalFragments := 0
 	result := &Result{
 		Units:          len(clusters),
-		MinClusterSize: len(withEmb), // will be reduced
+		MinClusterSize: len(clusters[0].Members), // will be reduced
 	}
 
-	for clusterIdx, memberIdxs := range clusters {
+	for _, ci := range clusters {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 
-		members := make([]model.SourceFragment, len(memberIdxs))
-		memberEmbeddings := make([][]float32, len(memberIdxs))
-		for i, idx := range memberIdxs {
-			members[i] = withEmb[idx]
-			memberEmbeddings[i] = withEmb[idx].Embedding
+		memberEmbeddings := make([][]float32, len(ci.Members))
+		for i, m := range ci.Members {
+			memberEmbeddings[i] = m.Embedding
 		}
 
 		centroid := computeCentroid(memberEmbeddings)
-		topic := deriveTopic(members)
-		confidence := aggregateConfidence(members)
-
-		// Generate deterministic ID from cluster index and member IDs.
-		unitID := computeUnitID(clusterIdx, members)
+		unitID := computeUnitID(ci.Index, ci.Members)
 
 		unit := model.KnowledgeUnit{
 			ID:           unitID,
-			Topic:        topic,
-			Summary:      buildSummary(members),
-			FragmentIDs:  fragmentIDs(members),
-			Confidence:   confidence,
+			Topic:        ci.Topic,
+			Summary:      buildSummary(ci.Members),
+			FragmentIDs:  fragmentIDs(ci.Members),
+			Confidence:   ci.Confidence,
 			Centroid:     centroid,
 			LastComputed: now,
 		}
@@ -129,7 +172,8 @@ func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
 			return nil, fmt.Errorf("upsert unit %s: %w", unitID, err)
 		}
 
-		size := len(members)
+		size := len(ci.Members)
+		totalFragments += size
 		if size > result.MaxClusterSize {
 			result.MaxClusterSize = size
 		}
@@ -139,7 +183,7 @@ func (e *Engine) ComputeUnits(ctx context.Context, k int) (*Result, error) {
 	}
 
 	if result.Units > 0 {
-		result.AvgClusterSize = float64(len(withEmb)) / float64(result.Units)
+		result.AvgClusterSize = float64(totalFragments) / float64(result.Units)
 	}
 
 	return result, nil
@@ -182,15 +226,16 @@ func computeCentroid(embeddings [][]float32) []float32 {
 	return centroid
 }
 
-// deriveTopic produces a short topic label from the members' source paths.
-// It finds the longest common path prefix and uses the most common directory
-// or file name as the topic.
+// deriveTopic produces a descriptive topic label from the members' source
+// paths. It picks the most common directory (keeping up to 2 path levels),
+// then disambiguates with the dominant file extension when the directory
+// alone is too generic.
 func deriveTopic(members []model.SourceFragment) string {
 	if len(members) == 0 {
 		return "unknown"
 	}
 
-	// Collect directory paths.
+	// Count full directory paths.
 	dirs := make(map[string]int)
 	for _, m := range members {
 		dir := path.Dir(m.SourcePath)
@@ -207,21 +252,91 @@ func deriveTopic(members []model.SourceFragment) string {
 		}
 	}
 
-	// Use the last component of the most common directory, or the common prefix.
-	if bestDir == "." || bestDir == "" || bestDir == "/" {
-		// Fall back to common prefix of source paths.
-		paths := make([]string, len(members))
-		for i, m := range members {
-			paths[i] = m.SourcePath
+	// Determine source prefix if the cluster spans a single source.
+	sourcePrefix := dominantSourceLabel(members)
+
+	if bestDir == "" || bestDir == "." || bestDir == "/" {
+		// Root-level files — use dominant extension.
+		ext := dominantExtension(members)
+		topic := "root"
+		if ext != "" {
+			topic += " " + ext
 		}
-		prefix := commonPrefix(paths)
-		if prefix != "" && prefix != "/" && prefix != "." {
-			return path.Base(prefix)
+		if sourcePrefix != "" {
+			return sourcePrefix + ": " + topic
 		}
-		return "general"
+		return topic
 	}
 
-	return path.Base(bestDir)
+	// Keep last 2 path components for specificity.
+	topic := compactPath(bestDir, 2)
+
+	// If the topic is only 1 level and the dominant dir covers less than 70%
+	// of members, append the dominant extension to differentiate.
+	parts := strings.Split(topic, "/")
+	if len(parts) == 1 && bestCount < (len(members)*7/10) {
+		ext := dominantExtension(members)
+		if ext != "" {
+			topic += " " + ext
+		}
+	}
+
+	if sourcePrefix != "" {
+		return sourcePrefix + ": " + topic
+	}
+	return topic
+}
+
+// compactPath returns the last n path components of p.
+func compactPath(p string, n int) string {
+	if p == "" || p == "." || p == "/" {
+		return p
+	}
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) <= n {
+		return strings.Join(parts, "/")
+	}
+	return strings.Join(parts[len(parts)-n:], "/")
+}
+
+// dominantSourceLabel returns the source name if a clear majority (>=70%) of
+// members come from one source. Returns "" if the cluster is mixed across
+// many sources (the source column in the table already covers that case).
+func dominantSourceLabel(members []model.SourceFragment) string {
+	counts := make(map[string]int)
+	for _, m := range members {
+		counts[m.SourceName]++
+	}
+	best, bestCount := "", 0
+	for s, c := range counts {
+		if c > bestCount || (c == bestCount && s < best) {
+			best = s
+			bestCount = c
+		}
+	}
+	if len(counts) == 1 || bestCount >= (len(members)*7/10) {
+		return best
+	}
+	return ""
+}
+
+// dominantExtension returns the most common file extension among members.
+func dominantExtension(members []model.SourceFragment) string {
+	counts := make(map[string]int)
+	for _, m := range members {
+		ext := strings.ToLower(path.Ext(m.SourcePath))
+		if ext != "" {
+			counts[ext]++
+		}
+	}
+	best, bestCount := "", 0
+	for e, c := range counts {
+		if c > bestCount || (c == bestCount && e < best) {
+			best = e
+			bestCount = c
+		}
+	}
+	return best
 }
 
 // commonPrefix returns the longest common directory prefix of a set of paths.

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Knowledge Broker — Cluster Visualization</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; }
+  #plot { width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<div id="plot"></div>
+<script>
+var data = {{.PointsJSON}};
+
+// Group points by cluster.
+var clusters = {};
+data.forEach(function(p) {
+  if (!clusters[p.cluster]) {
+    clusters[p.cluster] = { x: [], y: [], z: [], text: [], ids: [], topic: p.topic };
+  }
+  var c = clusters[p.cluster];
+  c.x.push(p.x);
+  c.y.push(p.y);
+  c.z.push(p.z);
+  c.ids.push(p.id);
+  var snippet = p.snippet.length > 80 ? p.snippet.substring(0, 80) + '…' : p.snippet;
+  c.text.push('<b>' + p.id + '</b><br>' + p.source + '<br>' + p.path + '<br><i>' + snippet + '</i>');
+});
+
+// Assign a stable color per unique topic so same-topic clusters share a color.
+var topicSet = [];
+var clusterKeys = Object.keys(clusters).sort(function(a, b) { return a - b; });
+clusterKeys.forEach(function(k) {
+  var t = clusters[k].topic;
+  if (topicSet.indexOf(t) === -1) topicSet.push(t);
+});
+var palette = [
+  '#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52',
+  '#1F77B4','#FF7F0E','#2CA02C','#D62728','#9467BD',
+  '#8C564B','#E377C2','#7F7F7F','#BCBD22','#17BECF'
+];
+function topicColor(topic) {
+  return palette[topicSet.indexOf(topic) % palette.length];
+}
+
+// Count how many clusters share each topic (for labelling).
+var topicClusterCount = {};
+clusterKeys.forEach(function(k) {
+  var t = clusters[k].topic;
+  topicClusterCount[t] = (topicClusterCount[t] || 0) + 1;
+});
+var topicClusterSeen = {};
+
+var traces = [];
+clusterKeys.forEach(function(k) {
+  var c = clusters[k];
+  var t = c.topic;
+  topicClusterSeen[t] = (topicClusterSeen[t] || 0) + 1;
+  var label = t;
+  if (topicClusterCount[t] > 1) {
+    label = t + ' #' + topicClusterSeen[t];
+  }
+  traces.push({
+    x: c.x,
+    y: c.y,
+    z: c.z,
+    text: c.text,
+    mode: 'markers',
+    type: 'scatter3d',
+    name: label + ' (' + c.x.length + ')',
+    hoverinfo: 'text',
+    marker: { size: 4, opacity: 0.85, color: topicColor(t) },
+    legendgroup: t
+  });
+});
+
+Plotly.newPlot('plot', traces, {
+  title: 'Cluster Visualization (PCA 3D)',
+  paper_bgcolor: '#1a1a2e',
+  font: { color: '#eee' },
+  scene: {
+    xaxis: { title: 'PC1', gridcolor: '#2a2a4a', backgroundcolor: '#16213e' },
+    yaxis: { title: 'PC2', gridcolor: '#2a2a4a', backgroundcolor: '#16213e' },
+    zaxis: { title: 'PC3', gridcolor: '#2a2a4a', backgroundcolor: '#16213e' }
+  },
+  legend: { bgcolor: 'rgba(0,0,0,0.3)' },
+  hovermode: 'closest'
+}, { responsive: true });
+</script>
+</body>
+</html>

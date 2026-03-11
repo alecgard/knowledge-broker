@@ -123,8 +123,8 @@ func TestDeriveTopic(t *testing.T) {
 	}
 
 	topic := deriveTopic(members)
-	if topic != "store" {
-		t.Errorf("expected topic 'store', got %q", topic)
+	if topic != "internal/store" {
+		t.Errorf("expected topic 'internal/store', got %q", topic)
 	}
 }
 

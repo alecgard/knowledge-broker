@@ -61,10 +61,11 @@ const (
 
 // Source represents a registered ingestion source.
 type Source struct {
-	SourceType string            `json:"source_type"`
-	SourceName string            `json:"source_name"`
-	Config     map[string]string `json:"config"`
-	LastIngest time.Time         `json:"last_ingest"`
+	SourceType  string            `json:"source_type"`
+	SourceName  string            `json:"source_name"`
+	Description string            `json:"description,omitempty"`
+	Config      map[string]string `json:"config"`
+	LastIngest  time.Time         `json:"last_ingest"`
 }
 
 // RawDocument is the output of a connector before extraction.

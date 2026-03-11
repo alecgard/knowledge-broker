@@ -66,7 +66,20 @@ Query the knowledge base and get an answer.
 
 List all ingested sources with fragment counts and last sync time. Takes no parameters.
 
-Returns an array of sources with `source_type`, `source_name`, `fragment_count`, and `last_ingest`.
+Returns an array of sources with `source_type`, `source_name`, `description`, `fragment_count`, and `last_ingest`.
+
+## Prompts
+
+### kb-instructions
+
+A prompt that returns instructions teaching the agent when and how to use the knowledge base. Takes no arguments.
+
+The response includes:
+- When to query the knowledge base (missing context, unfamiliar patterns, before making assumptions)
+- A dynamically generated list of available sources with descriptions and fragment counts
+- Tips for using synthesis vs raw mode, topics, and source filtering
+
+MCP clients that support prompts will show this in their prompt list. Use it to bootstrap agent context without manually writing instructions.
 
 ## Environment variables
 

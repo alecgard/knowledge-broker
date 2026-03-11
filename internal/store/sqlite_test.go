@@ -665,6 +665,73 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 // Ensure the interface is satisfied at compile time.
 var _ Store = (*SQLiteStore)(nil)
 
+func TestSourceDescription(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Register source with description.
+	err := s.RegisterSource(ctx, model.Source{
+		SourceType:  "git",
+		SourceName:  "owner/repo",
+		Description: "Payment processing service",
+		Config:      map[string]string{"mode": "local"},
+		LastIngest:  time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	sources, err := s.ListSources(ctx)
+	if err != nil {
+		t.Fatalf("ListSources: %v", err)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources))
+	}
+	if sources[0].Description != "Payment processing service" {
+		t.Errorf("expected description %q, got %q", "Payment processing service", sources[0].Description)
+	}
+
+	// Re-register without description — should preserve existing.
+	err = s.RegisterSource(ctx, model.Source{
+		SourceType: "git",
+		SourceName: "owner/repo",
+		Config:     map[string]string{"mode": "local"},
+		LastIngest: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource (no desc): %v", err)
+	}
+
+	sources, err = s.ListSources(ctx)
+	if err != nil {
+		t.Fatalf("ListSources: %v", err)
+	}
+	if sources[0].Description != "Payment processing service" {
+		t.Errorf("description should be preserved, got %q", sources[0].Description)
+	}
+
+	// Re-register with new description — should update.
+	err = s.RegisterSource(ctx, model.Source{
+		SourceType:  "git",
+		SourceName:  "owner/repo",
+		Description: "Updated description",
+		Config:      map[string]string{"mode": "local"},
+		LastIngest:  time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource (new desc): %v", err)
+	}
+
+	sources, err = s.ListSources(ctx)
+	if err != nil {
+		t.Fatalf("ListSources: %v", err)
+	}
+	if sources[0].Description != "Updated description" {
+		t.Errorf("expected updated description, got %q", sources[0].Description)
+	}
+}
+
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }

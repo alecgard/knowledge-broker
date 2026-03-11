@@ -46,6 +46,8 @@ Raw mode is also available for cases where you want fragments without synthesis 
 
 See [docs/mcp.md](docs/mcp.md) for full setup and tool reference.
 
+KB also exposes a `kb-instructions` prompt that teaches agents when and how to query it — including a dynamically generated list of available sources with descriptions. MCP clients that support prompts will pick this up automatically.
+
 Knowledge Broker can also expose an **HTTP server** for HTTP API access - expose via `kb serve`. 
 
 ## Quick start
@@ -124,15 +126,18 @@ Agents can use the overall score to decide how to proceed — for example, answe
 Ingest documents from a source into the knowledge base.
 
 ```bash
-kb ingest --source ./path/to/dir              # local directory
-kb ingest --git https://github.com/owner/repo  # Git repo by URL
-kb ingest --source ./repo-a --source ./repo-b  # multiple sources
-kb ingest --all                                # re-ingest all registered local sources
+kb ingest --source ./path/to/dir                                          # local directory
+kb ingest --git https://github.com/owner/repo                             # Git repo by URL
+kb ingest --source ./repo --description "Payment processing microservice" # with description for agents
+kb ingest --source ./repo-a --source ./repo-b                             # multiple sources
+kb ingest --all                                                           # re-ingest all registered local sources
 ```
 
 Connectors are also available for Confluence, Slack, and GitHub Wiki. See [docs/connectors.md](docs/connectors.md) for setup instructions.
 
 Ingestion is incremental — unchanged files are skipped based on checksums.
+
+Use `--description` to give agents context about what a source contains. Descriptions appear in `list-sources` results and in the `kb-instructions` prompt. When omitted, a label is derived from the source type and name (e.g. "Git repository: owner/repo").
 
 #### Remote ingestion
 

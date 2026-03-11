@@ -3,8 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
@@ -109,5 +112,69 @@ func TestMCPNilLLMQueryReturnsError(t *testing.T) {
 	}
 	if err.Error() != "LLM client not configured" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMCPKBInstructionsPrompt(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+
+	ctx := context.Background()
+
+	// Register sources with descriptions.
+	if err := st.RegisterSource(ctx, model.Source{
+		SourceType:  "git",
+		SourceName:  "owner/repo",
+		Description: "Payment processing service",
+		Config:      map[string]string{"mode": "local"},
+		LastIngest:  time.Now(),
+	}); err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+	if err := st.RegisterSource(ctx, model.Source{
+		SourceType: "filesystem",
+		SourceName: "docs",
+		Config:     map[string]string{"mode": "local"},
+		LastIngest: time.Now(),
+	}); err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	engine := query.NewEngine(st, emb, nil, 20)
+	mcpSrv := NewMCPServer(engine, st, nil)
+
+	// Call the handler directly.
+	result, err := mcpSrv.handleKBInstructions(ctx, mcp.GetPromptRequest{})
+	if err != nil {
+		t.Fatalf("handleKBInstructions: %v", err)
+	}
+
+	if len(result.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result.Messages))
+	}
+
+	content, ok := result.Messages[0].Content.(mcp.TextContent)
+	if !ok {
+		t.Fatal("expected TextContent")
+	}
+
+	text := content.Text
+
+	// Should contain source with description.
+	if !strings.Contains(text, "Payment processing service") {
+		t.Error("expected prompt to contain source description")
+	}
+
+	// Should contain derived label for source without description.
+	if !strings.Contains(text, "Local directory: docs") {
+		t.Error("expected prompt to contain derived label for filesystem source")
+	}
+
+	// Should contain usage tips.
+	if !strings.Contains(text, "query") {
+		t.Error("expected prompt to mention query tool")
+	}
+	if !strings.Contains(text, "raw=true") {
+		t.Error("expected prompt to mention raw mode")
 	}
 }

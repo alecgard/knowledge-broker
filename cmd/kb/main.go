@@ -151,6 +151,7 @@ func ingestCmd() *cobra.Command {
 			parallel, _ := cmd.Flags().GetBool("parallel")
 
 			watchMode, _ := cmd.Flags().GetBool("watch")
+			description, _ := cmd.Flags().GetString("description")
 
 			if all && remote != "" {
 				return fmt.Errorf("--all and --remote cannot be combined")
@@ -338,10 +339,11 @@ func ingestCmd() *cobra.Command {
 							srcConfig := conn.Config(model.SourceModePush)
 							srcConfig["mode"] = model.SourceModePush
 							if regErr := s.RegisterSource(ctx, model.Source{
-								SourceType: conn.Name(),
-								SourceName: name,
-								Config:     srcConfig,
-								LastIngest: time.Now(),
+								SourceType:  conn.Name(),
+								SourceName:  name,
+								Description: description,
+								Config:      srcConfig,
+								LastIngest:  time.Now(),
 							}); regErr != nil {
 								logger.Warn("failed to register source", "error", regErr)
 							}
@@ -367,10 +369,11 @@ func ingestCmd() *cobra.Command {
 						srcConfig := conn.Config(model.SourceModePush)
 						srcConfig["mode"] = model.SourceModePush
 						if regErr := s.RegisterSource(ctx, model.Source{
-							SourceType: conn.Name(),
-							SourceName: name,
-							Config:     srcConfig,
-							LastIngest: time.Now(),
+							SourceType:  conn.Name(),
+							SourceName:  name,
+							Description: description,
+							Config:      srcConfig,
+							LastIngest:  time.Now(),
 						}); regErr != nil {
 							logger.Warn("failed to register source", "error", regErr)
 						}
@@ -393,11 +396,12 @@ func ingestCmd() *cobra.Command {
 
 			if parallel {
 				type ingestResult struct {
-					name     string
-					connType string
-					config   map[string]string
-					result   *ingest.Result
-					err      error
+					name        string
+					connType    string
+					description string
+					config      map[string]string
+					result      *ingest.Result
+					err         error
 				}
 
 				resultCh := make(chan ingestResult, len(connectors))
@@ -418,11 +422,12 @@ func ingestCmd() *cobra.Command {
 						srcConfig := conn.Config(model.SourceModeLocal)
 						srcConfig["mode"] = model.SourceModeLocal
 						resultCh <- ingestResult{
-							name:     name,
-							connType: conn.Name(),
-							config:   srcConfig,
-							result:   r,
-							err:      err,
+							name:        name,
+							connType:    conn.Name(),
+							description: description,
+							config:      srcConfig,
+							result:      r,
+							err:         err,
 						}
 					}(conn)
 				}
@@ -442,10 +447,11 @@ func ingestCmd() *cobra.Command {
 						ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
 
 					if regErr := s.RegisterSource(ctx, model.Source{
-						SourceType: ir.connType,
-						SourceName: ir.name,
-						Config:     ir.config,
-						LastIngest: time.Now(),
+						SourceType:  ir.connType,
+						SourceName:  ir.name,
+						Description: ir.description,
+						Config:      ir.config,
+						LastIngest:  time.Now(),
 					}); regErr != nil {
 						logger.Warn("failed to register source", "error", regErr)
 					}
@@ -471,10 +477,11 @@ func ingestCmd() *cobra.Command {
 					srcConfig := conn.Config(model.SourceModeLocal)
 					srcConfig["mode"] = model.SourceModeLocal
 					if regErr := s.RegisterSource(ctx, model.Source{
-						SourceType: conn.Name(),
-						SourceName: name,
-						Config:     srcConfig,
-						LastIngest: time.Now(),
+						SourceType:  conn.Name(),
+						SourceName:  name,
+						Description: description,
+						Config:      srcConfig,
+						LastIngest:  time.Now(),
 					}); regErr != nil {
 						logger.Warn("failed to register source", "error", regErr)
 					}
@@ -514,6 +521,7 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
 	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
 	cmd.Flags().Bool("parallel", false, "Ingest multiple sources in parallel (default: sequential)")
+	cmd.Flags().String("description", "", "Human-readable description of this source (shown to agents via MCP)")
 	return cmd
 }
 

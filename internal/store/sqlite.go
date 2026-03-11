@@ -481,10 +481,24 @@ func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) erro
 	if err != nil {
 		return fmt.Errorf("marshal source config: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO sources (source_type, source_name, config, last_ingest)
-		VALUES (?, ?, ?, ?)
-	`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339))
+	if src.Description != "" {
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO sources (source_type, source_name, config, last_ingest, description)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(source_type, source_name) DO UPDATE SET
+				config = excluded.config,
+				last_ingest = excluded.last_ingest,
+				description = excluded.description
+		`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339), src.Description)
+	} else {
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO sources (source_type, source_name, config, last_ingest)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(source_type, source_name) DO UPDATE SET
+				config = excluded.config,
+				last_ingest = excluded.last_ingest
+		`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339))
+	}
 	if err != nil {
 		return fmt.Errorf("register source: %w", err)
 	}
@@ -494,7 +508,7 @@ func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) erro
 // ListSources returns all registered sources.
 func (s *SQLiteStore) ListSources(ctx context.Context) ([]model.Source, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT source_type, source_name, config, last_ingest FROM sources ORDER BY source_type, source_name")
+		"SELECT source_type, source_name, config, last_ingest, description FROM sources ORDER BY source_type, source_name")
 	if err != nil {
 		return nil, fmt.Errorf("list sources: %w", err)
 	}
@@ -505,7 +519,7 @@ func (s *SQLiteStore) ListSources(ctx context.Context) ([]model.Source, error) {
 		var src model.Source
 		var configJSON string
 		var lastIngest sql.NullString
-		if err := rows.Scan(&src.SourceType, &src.SourceName, &configJSON, &lastIngest); err != nil {
+		if err := rows.Scan(&src.SourceType, &src.SourceName, &configJSON, &lastIngest, &src.Description); err != nil {
 			return nil, fmt.Errorf("scan source: %w", err)
 		}
 		if err := json.Unmarshal([]byte(configJSON), &src.Config); err != nil {

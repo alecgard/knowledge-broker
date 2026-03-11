@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 CREATE TABLE IF NOT EXISTS sources (
     source_type TEXT NOT NULL,
     source_name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     config      TEXT NOT NULL DEFAULT '{}',
     last_ingest DATETIME,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,

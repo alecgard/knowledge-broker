@@ -40,10 +40,11 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 		"knowledge-broker",
 		"0.1.0",
 		server.WithToolCapabilities(true),
+		server.WithPromptCapabilities(false),
 	)
 
 	s.server.AddTool(mcp.NewTool("query",
-		mcp.WithDescription("Ask a question and get an answer from the knowledge base. By default uses synthesis mode (LLM-synthesised answers with confidence signals). Set raw=true for raw fragment retrieval without LLM."),
+		mcp.WithDescription("Search the organization's knowledge base for answers. Use this whenever you need context about codebases, architecture, APIs, project decisions, or documentation that you don't already have. Returns synthesized answers with confidence signals and source citations by default. Set raw=true for raw fragments."),
 		mcp.WithString("query",
 			mcp.Description("The query to search for"),
 			mcp.Required(),
@@ -66,8 +67,12 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 	), s.handleQuery)
 
 	s.server.AddTool(mcp.NewTool("list-sources",
-		mcp.WithDescription("List all registered knowledge sources with their fragment counts and last ingestion time."),
+		mcp.WithDescription("List all knowledge sources available for querying — shows what documentation, repos, and systems have been indexed, with fragment counts and last sync times. Call this to understand what knowledge is available."),
 	), s.handleListSources)
+
+	s.server.AddPrompt(mcp.NewPrompt("kb-instructions",
+		mcp.WithPromptDescription("Instructions for using the Knowledge Broker knowledge base"),
+	), s.handleKBInstructions)
 
 	return s
 }
@@ -232,6 +237,7 @@ func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolR
 	type sourceInfo struct {
 		SourceType    string `json:"source_type"`
 		SourceName    string `json:"source_name"`
+		Description   string `json:"description,omitempty"`
 		FragmentCount int    `json:"fragment_count"`
 		LastIngest    string `json:"last_ingest,omitempty"`
 	}
@@ -242,6 +248,7 @@ func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolR
 		info := sourceInfo{
 			SourceType:    src.SourceType,
 			SourceName:    src.SourceName,
+			Description:   src.Description,
 			FragmentCount: counts[key],
 		}
 		if !src.LastIngest.IsZero() {
@@ -256,4 +263,75 @@ func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolR
 	}
 
 	return mcp.NewToolResultText(string(jsonBytes)), nil
+}
+
+func (s *MCPServer) handleKBInstructions(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	sources, err := s.store.ListSources(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list sources: %w", err)
+	}
+
+	counts, err := s.store.CountFragmentsBySource(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count fragments: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(`You have access to a knowledge base via the "query" and "list-sources" tools.
+
+When to use it:
+- When you need context about the codebase, architecture, or project decisions
+- When the user asks questions you don't have full context for
+- When you're unsure about conventions, patterns, or how something works
+- Before making assumptions — check the knowledge base first
+
+`)
+
+	if len(sources) > 0 {
+		sb.WriteString("Available sources:\n")
+		for _, src := range sources {
+			key := src.SourceType + "/" + src.SourceName
+			count := counts[key]
+			desc := src.Description
+			if desc == "" {
+				desc = deriveSourceLabel(src.SourceType, src.SourceName)
+			}
+			fmt.Fprintf(&sb, "- %s/%s: %q (%d fragments)\n", src.SourceType, src.SourceName, desc, count)
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(`Tips:
+- Default synthesis mode gives you a direct answer with confidence signals
+- Use raw=true for underlying fragments when you need to examine sources yourself
+- Use topics parameter to boost relevance for specific domains
+- Use sources/source_types to narrow results`)
+
+	return &mcp.GetPromptResult{
+		Description: "Instructions for using the Knowledge Broker knowledge base",
+		Messages: []mcp.PromptMessage{
+			{
+				Role:    mcp.RoleUser,
+				Content: mcp.NewTextContent(sb.String()),
+			},
+		},
+	}, nil
+}
+
+// deriveSourceLabel creates a human-readable label from source type and name.
+func deriveSourceLabel(sourceType, sourceName string) string {
+	switch sourceType {
+	case "git":
+		return "Git repository: " + sourceName
+	case "filesystem":
+		return "Local directory: " + sourceName
+	case "confluence":
+		return "Confluence space: " + sourceName
+	case "slack":
+		return "Slack channels: " + sourceName
+	case "github_wiki":
+		return "GitHub wiki: " + sourceName
+	default:
+		return sourceType + ": " + sourceName
+	}
 }

@@ -20,6 +20,11 @@ import (
 // total number of documents to process.
 type ProgressFunc func(completed, total int)
 
+// BatchFunc is called after each batch is committed to the store.
+// batch is 1-indexed, totalBatches is the total number of batches,
+// and added is the number of fragments stored in this batch.
+type BatchFunc func(batch, totalBatches, added int)
+
 // Pipeline orchestrates the ingestion of documents.
 type Pipeline struct {
 	store       store.Store
@@ -28,6 +33,8 @@ type Pipeline struct {
 	workers     int
 	logger      *slog.Logger
 	OnProgress  ProgressFunc
+	OnBatchDone BatchFunc
+	BatchSize   int
 }
 
 // NewPipeline creates an ingestion pipeline.
@@ -44,6 +51,7 @@ func NewPipeline(s store.Store, e embedding.Embedder, r *extractor.Registry, wor
 		extractors: r,
 		workers:    workers,
 		logger:     logger,
+		BatchSize:  50,
 	}
 }
 
@@ -82,20 +90,38 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 
 	result.Skipped = len(known) - len(deleted) - countOverlap(known, docs)
 
-	// Process new/changed documents through extract → embed → store.
-	fragments, errs := p.processDocuments(ctx, docs)
-	result.Errors = errs
-
-	if len(fragments) == 0 {
-		p.logger.Info("ingestion complete", "added", 0, "deleted", result.Deleted, "skipped", result.Skipped)
-		return result, nil
+	// Process and store documents in batches so that completed batches
+	// survive cancellation and are skipped on re-run.
+	batchSize := p.BatchSize
+	if batchSize <= 0 {
+		batchSize = len(docs)
 	}
+	batches := batchSlice(docs, batchSize)
+	progressOffset := 0
+	totalDocs := len(docs)
 
-	// Store fragments.
-	if err := p.store.UpsertFragments(ctx, fragments); err != nil {
-		return nil, fmt.Errorf("upsert fragments: %w", err)
+	for batchIdx, batch := range batches {
+		if ctx.Err() != nil {
+			p.logger.Info("ingestion interrupted, partial result committed",
+				"added", result.Added, "errors", result.Errors)
+			return result, ctx.Err()
+		}
+
+		fragments, errs := p.processDocuments(ctx, batch, progressOffset, totalDocs)
+		progressOffset += len(batch)
+		result.Errors += errs
+
+		if len(fragments) > 0 {
+			if err := p.store.UpsertFragments(ctx, fragments); err != nil {
+				return result, fmt.Errorf("upsert fragments: %w", err)
+			}
+			result.Added += len(fragments)
+		}
+
+		if p.OnBatchDone != nil {
+			p.OnBatchDone(batchIdx+1, len(batches), len(fragments))
+		}
 	}
-	result.Added = len(fragments)
 
 	p.logger.Info("ingestion complete",
 		"added", result.Added,
@@ -107,7 +133,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 	return result, nil
 }
 
-func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocument) ([]model.SourceFragment, int) {
+func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocument, progressOffset, progressTotal int) ([]model.SourceFragment, int) {
 	type fragmentResult struct {
 		fragments []model.SourceFragment
 		err       error
@@ -136,7 +162,6 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 
 	var allFragments []model.SourceFragment
 	var completed atomic.Int64
-	total := len(docs)
 	errCount := 0
 	for r := range results {
 		if r.err != nil {
@@ -147,7 +172,7 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 		}
 		n := int(completed.Add(1))
 		if p.OnProgress != nil {
-			p.OnProgress(n, total)
+			p.OnProgress(progressOffset+n, progressTotal)
 		}
 	}
 
@@ -212,6 +237,18 @@ func ExtractChunks(doc model.RawDocument, reg *extractor.Registry) ([]model.Chun
 		return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
 	}
 	return chunks, nil
+}
+
+func batchSlice[T any](items []T, size int) [][]T {
+	var batches [][]T
+	for i := 0; i < len(items); i += size {
+		end := i + size
+		if end > len(items) {
+			end = len(items)
+		}
+		batches = append(batches, items[i:end])
+	}
+	return batches
 }
 
 func countOverlap(known map[string]string, docs []model.RawDocument) int {

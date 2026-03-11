@@ -218,6 +218,7 @@ func ingestCmd() *cobra.Command {
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+							pipeline.OnBatchDone = makeBatchFunc()
 							r, err := pipeline.Run(ctx, conn)
 							resultCh <- reIngestResult{src: src, result: r, err: err}
 						}(src)
@@ -251,6 +252,7 @@ func ingestCmd() *cobra.Command {
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
+						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
 						if err != nil {
 							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
@@ -411,6 +413,7 @@ func ingestCmd() *cobra.Command {
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
 						srcConfig := conn.Config(model.SourceModeLocal)
 						srcConfig["mode"] = model.SourceModeLocal
@@ -455,6 +458,7 @@ func ingestCmd() *cobra.Command {
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
+					pipeline.OnBatchDone = makeBatchFunc()
 					r, err := pipeline.Run(ctx, conn)
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("ingest %s: %v", name, err))
@@ -531,6 +535,12 @@ func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
 		if completed == total {
 			fmt.Fprintln(os.Stderr)
 		}
+	}
+}
+
+func makeBatchFunc() ingest.BatchFunc {
+	return func(batch, totalBatches, added int) {
+		fmt.Fprintf(os.Stderr, "\r  Stored batch %d/%d (%d fragments)\n", batch, totalBatches, added)
 	}
 }
 

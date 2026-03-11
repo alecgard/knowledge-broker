@@ -2,7 +2,7 @@
 
 A knowledge engine that gives AI agents reliable, structured access to your team's knowledge. Connect it to your repos, docs, and knowledge bases — agents can query it over MCP or HTTP and get back answers with confidence signals, so they know when to act, when to hedge, and when to escalate.
 
-Works equally well as a human-facing CLI tool.
+Works equally well as a human-facing tool.
 
 ```jsonc
 $ kb query "What database does the inventory service use and what port does it run on?"

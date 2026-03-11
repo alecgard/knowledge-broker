@@ -1,15 +1,15 @@
 # Knowledge Broker
 
-A knowledge engine that ingests documents from multiple sources, embeds them for semantic retrieval, and answers questions with confidence signals.
+A knowledge engine that gives AI agents reliable, structured access to your team's knowledge. Connect it to your repos, docs, and knowledge bases — agents can query it over MCP or HTTP and get back answers with confidence signals, so they know when to act, when to hedge, and when to escalate.
 
-Connect it to your repos, docs, and knowledge bases and then ask it questions. Returns both the answer, and how much to trust it.
+Works equally well as a human-facing CLI tool.
 
 ```jsonc
 $ kb query "What database does the inventory service use and what port does it run on?"
 {
-  "answer": "The inventory service (inventory-service) runs on port 8081 and uses PostgreSQL as its primary database, along with Kafka and Redis. The PostgreSQL instance is version 16 on RDS with Multi-AZ deployment (r6g.2xlarge). Each service has a separate database instance.",
+  "answer": "The inventory service runs on port 8081 and uses PostgreSQL as its primary database, along with Kafka and Redis. The PostgreSQL instance is version 16 on RDS with Multi-AZ deployment (r6g.2xlarge). Each service has a separate database instance.",
   "confidence": {
-    "overall": 0.93,
+    "overall": 0.93,          // agents can branch on this — e.g. < 0.7 triggers clarification
     "breakdown": {
       "freshness": 0.94,
       "corroboration": 0.85,
@@ -21,11 +21,28 @@ $ kb query "What database does the inventory service use and what port does it r
     { "source_type": "confluence", "source_name": "ACME", "source_path": "Internal Services & Infrastructure" },
     { "source_type": "slack", "source_name": "acme-haf5895", "source_path": "#platform-engineering/2026-03-06" }
   ],
-  "contradictions": []
+  "contradictions": []        // surfaced explicitly rather than silently resolved
 }
 ```
 
-The answer is synthesised from Confluence docs and Slack history, with confidence signals indicating how much to trust it. 
+The answer is synthesised from Confluence docs and Slack history. Contradictions between sources are flagged rather than hidden — agents can decide what to do with ambiguity rather than receiving false certainty.
+
+## Agent integration
+
+Knowledge Broker exposes an **MCP server** for direct integration with Claude, Cursor, and any MCP-compatible agent runtime:
+
+```bash
+kb mcp                  # stdio + SSE on :8082
+kb mcp --addr :9090     # custom port
+```
+
+The SSE endpoint is at `http://<addr>/sse`. Exposed tools: `query`, `list-sources`.
+
+Agents receive the same structured JSON response shown above — a synthesised answer with confidence scores, source attribution, and any contradictions — so they can reason about reliability rather than treating all retrieved knowledge as equally trustworthy.
+
+Raw mode is also available for cases where you want fragments without synthesis — useful for debugging retrieval, feeding a separate pipeline, or when no API key is configured. Pass `raw=true` to the `query` tool, or use `--raw` on the CLI.
+
+See [docs/mcp.md](docs/mcp.md) for full setup and tool reference.
 
 ## Quick start
 
@@ -74,7 +91,7 @@ kb query --raw "how does retry logic work?"
 
 ### Running without an API key
 
-Raw mode (`--raw`) handles the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed. Useful when the calling LLM handles its own synthesis.
+Raw mode (`--raw`) runs the full retrieval pipeline — embedding, vector search, confidence scoring — using only Ollama. No Anthropic API key is needed.
 
 ```bash
 kb query --raw "how does auth work?"
@@ -105,7 +122,9 @@ Every result includes a composite **overall** trust score and four independent c
 
 The **overall** score is a weighted composite: `freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25`.
 
-In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are flagged rather than hidden.
+In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are flagged rather than resolved silently.
+
+Agents can use the overall score to decide how to proceed — for example, answering confidently above 0.85, hedging between 0.6–0.85, or surfacing the contradiction to the user below 0.6.
 
 ## Commands
 
@@ -150,7 +169,7 @@ kb query --human "how does auth work?"    # streamed, human-readable
 kb query --raw --source-type git "deployment process"
 ```
 
-Raw mode (`--raw`) returns full fragments as JSON with per-fragment confidence signals and source metadata.
+Raw mode (`--raw`) returns full fragments as JSON with per-fragment confidence signals and source metadata. Useful for debugging retrieval, feeding a separate pipeline, or when no API key is available.
 
 ### `kb serve`
 
@@ -168,7 +187,7 @@ Endpoints:
 
 ### `kb mcp`
 
-Start an MCP (Model Context Protocol) server. Both stdio and HTTP/SSE transports run simultaneously, sharing the same server instance.
+Start an MCP server. Both stdio and HTTP/SSE transports run simultaneously, sharing the same server instance.
 
 ```bash
 kb mcp                  # stdio + SSE on :8082
@@ -182,7 +201,7 @@ kb mcp --addr :9090     # stdio + SSE on custom port
 
 The SSE endpoint is available at `http://<addr>/sse` and accepts messages at `http://<addr>/message`.
 
-Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
+Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM synthesis. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
 
 ### `kb sources list`
 

@@ -532,6 +532,7 @@ func queryCmd() *cobra.Command {
 				limit = cfg.DefaultLimit
 			}
 			engine := query.NewEngine(s, emb, llmClient, limit, logger)
+			engine.SetDiskCache(s)
 
 			topicsRaw, _ := cmd.Flags().GetString("topics")
 			var topics []string
@@ -673,6 +674,7 @@ func serveCmd() *cobra.Command {
 
 			llmClient := newLLMClient(cfg, "", client, logger)
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
+			engine.SetDiskCache(s)
 
 			httpServer := server.NewHTTPServer(engine, emb, s, logger)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
@@ -709,6 +711,7 @@ func mcpCmd() *cobra.Command {
 			// LLM client — synthesis is the default; raw mode is opt-in via raw=true parameter.
 			llmClient := newLLMClient(cfg, "", client, logger)
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
+			engine.SetDiskCache(s)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()

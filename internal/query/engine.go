@@ -49,6 +49,13 @@ func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int, l
 	}
 }
 
+// SetDiskCache configures a persistent disk backend for the query cache.
+// The existing in-memory cache settings (maxAge, maxSize) are preserved.
+func (e *Engine) SetDiskCache(disk DiskStore) {
+	e.cache = NewCache(e.cache.maxAge, e.cache.maxSize, disk)
+	e.cache.SetLogger(e.logger)
+}
+
 // HasLLM reports whether an LLM client is configured for synthesis.
 func (e *Engine) HasLLM() bool {
 	return e.llm != nil
@@ -151,7 +158,7 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 	}
 
 	// Check cache — exact query match with same underlying fragments.
-	if cached := e.cache.Get(lastMsg.Content, req.Concise, fragments); cached != nil {
+	if cached := e.cache.Get(lastMsg.Content, req.Concise, fragments, ctx); cached != nil {
 		// Promote to fast-path cache so future identical queries skip embedding.
 		e.cache.PutFastPath(lastMsg.Content, req.Concise, cached)
 		if onText != nil {
@@ -180,7 +187,7 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 	answer := parseResponse(fullResponse, fragments)
 
 	// Cache the result.
-	e.cache.Put(lastMsg.Content, req.Concise, fragments, answer)
+	e.cache.Put(lastMsg.Content, req.Concise, fragments, answer, ctx)
 	e.cache.PutFastPath(lastMsg.Content, req.Concise, answer)
 
 	return answer, nil

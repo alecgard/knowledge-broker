@@ -20,9 +20,6 @@ import (
 //go:embed migrations/001_initial.sql
 var migrationSQL string
 
-//go:embed migrations/002_knowledge_units.sql
-var migration002SQL string
-
 // SQLiteStore implements Store using SQLite and sqlite-vec.
 type SQLiteStore struct {
 	db           *sql.DB
@@ -58,9 +55,6 @@ func initSchema(db *sql.DB, embeddingDim int) error {
 	// Run schema migrations.
 	if _, err := db.Exec(migrationSQL); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
-	}
-	if _, err := db.Exec(migration002SQL); err != nil {
-		return fmt.Errorf("run migration 002: %w", err)
 	}
 
 	// Create the sqlite-vec virtual table.

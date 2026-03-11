@@ -2,9 +2,17 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
+
+// CachedAnswer is a query result retrieved from the disk cache.
+type CachedAnswer struct {
+	AnswerJSON   []byte
+	FragmentSigs string
+	CreatedAt    time.Time
+}
 
 // Store persists and retrieves source fragments.
 type Store interface {
@@ -59,6 +67,15 @@ type Store interface {
 
 	// DeleteAllKnowledgeUnits removes all knowledge units and their associations.
 	DeleteAllKnowledgeUnits(ctx context.Context) error
+
+	// GetCachedAnswer retrieves a cached answer by cache key. Returns nil if not found or expired.
+	GetCachedAnswer(ctx context.Context, cacheKey string, maxAge time.Duration) (*CachedAnswer, error)
+
+	// PutCachedAnswer stores a query answer in the disk cache.
+	PutCachedAnswer(ctx context.Context, cacheKey, queryText string, concise bool, fragmentSigs string, answer []byte) error
+
+	// PruneCacheEntries deletes entries older than maxAge. Called opportunistically.
+	PruneCacheEntries(ctx context.Context, maxAge time.Duration) error
 
 	// Close releases resources.
 	Close() error

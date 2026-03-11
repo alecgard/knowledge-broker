@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/knowledge-broker/knowledge-broker/internal/store"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
@@ -105,6 +106,18 @@ func (m *mockStore) SearchKnowledgeUnits(ctx context.Context, embedding []float3
 }
 
 func (m *mockStore) DeleteAllKnowledgeUnits(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockStore) GetCachedAnswer(ctx context.Context, cacheKey string, maxAge time.Duration) (*store.CachedAnswer, error) {
+	return nil, nil
+}
+
+func (m *mockStore) PutCachedAnswer(ctx context.Context, cacheKey, queryText string, concise bool, fragmentSigs string, answer []byte) error {
+	return nil
+}
+
+func (m *mockStore) PruneCacheEntries(ctx context.Context, maxAge time.Duration) error {
 	return nil
 }
 

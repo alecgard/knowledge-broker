@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
@@ -14,6 +15,11 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
+// ProgressFunc is called during document processing to report progress.
+// completed is the number of documents processed so far, total is the
+// total number of documents to process.
+type ProgressFunc func(completed, total int)
+
 // Pipeline orchestrates the ingestion of documents.
 type Pipeline struct {
 	store       store.Store
@@ -21,6 +27,7 @@ type Pipeline struct {
 	extractors  *extractor.Registry
 	workers     int
 	logger      *slog.Logger
+	OnProgress  ProgressFunc
 }
 
 // NewPipeline creates an ingestion pipeline.
@@ -128,14 +135,20 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 	}()
 
 	var allFragments []model.SourceFragment
+	var completed atomic.Int64
+	total := len(docs)
 	errCount := 0
 	for r := range results {
 		if r.err != nil {
 			p.logger.Warn("failed to process document", "error", r.err)
 			errCount++
-			continue
+		} else {
+			allFragments = append(allFragments, r.fragments...)
 		}
-		allFragments = append(allFragments, r.fragments...)
+		n := int(completed.Add(1))
+		if p.OnProgress != nil {
+			p.OnProgress(n, total)
+		}
 	}
 
 	return allFragments, errCount

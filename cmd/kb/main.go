@@ -148,6 +148,7 @@ func ingestCmd() *cobra.Command {
 			client := httpClient(logger, debugMode)
 			remote, _ := cmd.Flags().GetString("remote")
 			all, _ := cmd.Flags().GetBool("all")
+			parallel, _ := cmd.Flags().GetBool("parallel")
 
 			watchMode, _ := cmd.Flags().GetBool("watch")
 
@@ -178,7 +179,6 @@ func ingestCmd() *cobra.Command {
 				if err := emb.CheckHealth(ctx); err != nil {
 					return err
 				}
-				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
 				sources, err := s.ListSources(ctx)
 				if err != nil {
@@ -193,47 +193,76 @@ func ingestCmd() *cobra.Command {
 				if len(localSources) == 0 {
 					return fmt.Errorf("no local sources registered; use --source or --git to ingest first")
 				}
-				type reIngestResult struct {
-					src    model.Source
-					result *ingest.Result
-					err    error
-				}
+				var errs []string
 
-				resultCh := make(chan reIngestResult, len(localSources))
-				var wg sync.WaitGroup
+				if parallel {
+					type reIngestResult struct {
+						src    model.Source
+						result *ingest.Result
+						err    error
+					}
 
-				for _, src := range localSources {
-					wg.Add(1)
-					go func(src model.Source) {
-						defer wg.Done()
+					resultCh := make(chan reIngestResult, len(localSources))
+					var wg sync.WaitGroup
+
+					for _, src := range localSources {
+						wg.Add(1)
+						go func(src model.Source) {
+							defer wg.Done()
+							conn, err := connector.FromSource(src)
+							if err != nil {
+								resultCh <- reIngestResult{src: src, err: fmt.Errorf("reconstruct %s/%s: %w", src.SourceType, src.SourceName, err)}
+								return
+							}
+							fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
+							srcLabel := src.SourceType + "/" + src.SourceName
+							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+							r, err := pipeline.Run(ctx, conn)
+							resultCh <- reIngestResult{src: src, result: r, err: err}
+						}(src)
+					}
+
+					go func() {
+						wg.Wait()
+						close(resultCh)
+					}()
+
+					for ir := range resultCh {
+						if ir.err != nil {
+							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", ir.src.SourceType, ir.src.SourceName, ir.err))
+							continue
+						}
+						ir.src.LastIngest = time.Now()
+						if regErr := s.RegisterSource(ctx, ir.src); regErr != nil {
+							logger.Warn("failed to update source timestamp", "error", regErr)
+						}
+						fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
+							ir.src.SourceType, ir.src.SourceName, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
+					}
+				} else {
+					for _, src := range localSources {
 						conn, err := connector.FromSource(src)
 						if err != nil {
-							resultCh <- reIngestResult{src: src, err: fmt.Errorf("reconstruct %s/%s: %w", src.SourceType, src.SourceName, err)}
-							return
+							errs = append(errs, fmt.Sprintf("reconstruct %s/%s: %v", src.SourceType, src.SourceName, err))
+							continue
 						}
 						fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
+						srcLabel := src.SourceType + "/" + src.SourceName
+						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						r, err := pipeline.Run(ctx, conn)
-						resultCh <- reIngestResult{src: src, result: r, err: err}
-					}(src)
-				}
-
-				go func() {
-					wg.Wait()
-					close(resultCh)
-				}()
-
-				var errs []string
-				for ir := range resultCh {
-					if ir.err != nil {
-						errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", ir.src.SourceType, ir.src.SourceName, ir.err))
-						continue
+						if err != nil {
+							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
+							continue
+						}
+						src.LastIngest = time.Now()
+						if regErr := s.RegisterSource(ctx, src); regErr != nil {
+							logger.Warn("failed to update source timestamp", "error", regErr)
+						}
+						fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
+							src.SourceType, src.SourceName, r.Added, r.Deleted, r.Skipped, r.Errors)
 					}
-					ir.src.LastIngest = time.Now()
-					if regErr := s.RegisterSource(ctx, ir.src); regErr != nil {
-						logger.Warn("failed to update source timestamp", "error", regErr)
-					}
-					fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
-						ir.src.SourceType, ir.src.SourceName, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
 				}
 
 				if len(errs) > 0 {
@@ -286,20 +315,51 @@ func ingestCmd() *cobra.Command {
 			remote = strings.TrimRight(remote, "/")
 
 			if remote != "" {
-				// Remote ingests run in parallel — each scans independently and POSTs to the server.
-				var wg sync.WaitGroup
-				errCh := make(chan error, len(connectors))
+				var errs []string
 
-				for _, conn := range connectors {
-					wg.Add(1)
-					go func(conn connector.Connector) {
-						defer wg.Done()
+				if parallel {
+					var wg sync.WaitGroup
+					errCh := make(chan error, len(connectors))
+
+					for _, conn := range connectors {
+						wg.Add(1)
+						go func(conn connector.Connector) {
+							defer wg.Done()
+							name := conn.SourceName()
+							fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+
+							if err := remoteIngest(ctx, conn, remote, s, reg, logger, client); err != nil {
+								errCh <- fmt.Errorf("ingest %s: %w", name, err)
+								return
+							}
+
+							srcConfig := conn.Config(model.SourceModePush)
+							srcConfig["mode"] = model.SourceModePush
+							if regErr := s.RegisterSource(ctx, model.Source{
+								SourceType: conn.Name(),
+								SourceName: name,
+								Config:     srcConfig,
+								LastIngest: time.Now(),
+							}); regErr != nil {
+								logger.Warn("failed to register source", "error", regErr)
+							}
+						}(conn)
+					}
+
+					wg.Wait()
+					close(errCh)
+
+					for err := range errCh {
+						errs = append(errs, err.Error())
+					}
+				} else {
+					for _, conn := range connectors {
 						name := conn.SourceName()
 						fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
 
 						if err := remoteIngest(ctx, conn, remote, s, reg, logger, client); err != nil {
-							errCh <- fmt.Errorf("ingest %s: %w", name, err)
-							return
+							errs = append(errs, fmt.Sprintf("ingest %s: %v", name, err))
+							continue
 						}
 
 						srcConfig := conn.Config(model.SourceModePush)
@@ -312,82 +372,108 @@ func ingestCmd() *cobra.Command {
 						}); regErr != nil {
 							logger.Warn("failed to register source", "error", regErr)
 						}
-					}(conn)
+					}
 				}
 
-				wg.Wait()
-				close(errCh)
-
-				var errs []string
-				for err := range errCh {
-					errs = append(errs, err.Error())
-				}
 				if len(errs) > 0 {
 					return fmt.Errorf("%s", strings.Join(errs, "; "))
 				}
 				return nil
 			}
 
-			// Local ingests run in parallel — SQLite WAL mode handles concurrent writes.
+			// Local ingestion — sequential by default, parallel with --parallel.
 			emb := newEmbedder(cfg, client)
 			if err := emb.CheckHealth(ctx); err != nil {
 				return err
 			}
-			pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 
-			type ingestResult struct {
-				name       string
-				connType   string
-				config     map[string]string
-				result     *ingest.Result
-				err        error
-			}
+			var errs []string
 
-			resultCh := make(chan ingestResult, len(connectors))
-			var wg sync.WaitGroup
+			if parallel {
+				type ingestResult struct {
+					name     string
+					connType string
+					config   map[string]string
+					result   *ingest.Result
+					err      error
+				}
 
-			for _, conn := range connectors {
-				wg.Add(1)
-				go func(conn connector.Connector) {
-					defer wg.Done()
+				resultCh := make(chan ingestResult, len(connectors))
+				var wg sync.WaitGroup
+
+				for _, conn := range connectors {
+					wg.Add(1)
+					go func(conn connector.Connector) {
+						defer wg.Done()
+						name := conn.SourceName()
+						fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
+
+						srcLabel := conn.Name() + "/" + name
+						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+						r, err := pipeline.Run(ctx, conn)
+						srcConfig := conn.Config(model.SourceModeLocal)
+						srcConfig["mode"] = model.SourceModeLocal
+						resultCh <- ingestResult{
+							name:     name,
+							connType: conn.Name(),
+							config:   srcConfig,
+							result:   r,
+							err:      err,
+						}
+					}(conn)
+				}
+
+				go func() {
+					wg.Wait()
+					close(resultCh)
+				}()
+
+				for ir := range resultCh {
+					if ir.err != nil {
+						errs = append(errs, fmt.Sprintf("ingest %s: %v", ir.name, ir.err))
+						continue
+					}
+
+					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
+						ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
+
+					if regErr := s.RegisterSource(ctx, model.Source{
+						SourceType: ir.connType,
+						SourceName: ir.name,
+						Config:     ir.config,
+						LastIngest: time.Now(),
+					}); regErr != nil {
+						logger.Warn("failed to register source", "error", regErr)
+					}
+				}
+			} else {
+				for _, conn := range connectors {
 					name := conn.SourceName()
 					fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
 
+					srcLabel := conn.Name() + "/" + name
+					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					r, err := pipeline.Run(ctx, conn)
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("ingest %s: %v", name, err))
+						continue
+					}
+
+					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
+						name, r.Added, r.Deleted, r.Skipped, r.Errors)
+
 					srcConfig := conn.Config(model.SourceModeLocal)
 					srcConfig["mode"] = model.SourceModeLocal
-					resultCh <- ingestResult{
-						name:     name,
-						connType: conn.Name(),
-						config:   srcConfig,
-						result:   r,
-						err:      err,
+					if regErr := s.RegisterSource(ctx, model.Source{
+						SourceType: conn.Name(),
+						SourceName: name,
+						Config:     srcConfig,
+						LastIngest: time.Now(),
+					}); regErr != nil {
+						logger.Warn("failed to register source", "error", regErr)
 					}
-				}(conn)
-			}
-
-			go func() {
-				wg.Wait()
-				close(resultCh)
-			}()
-
-			var errs []string
-			for ir := range resultCh {
-				if ir.err != nil {
-					errs = append(errs, fmt.Sprintf("ingest %s: %v", ir.name, ir.err))
-					continue
-				}
-
-				fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
-					ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
-
-				if regErr := s.RegisterSource(ctx, model.Source{
-					SourceType: ir.connType,
-					SourceName: ir.name,
-					Config:     ir.config,
-					LastIngest: time.Now(),
-				}); regErr != nil {
-					logger.Warn("failed to register source", "error", regErr)
 				}
 			}
 
@@ -406,7 +492,8 @@ func ingestCmd() *cobra.Command {
 					watchPaths = []string{"."}
 				}
 				fmt.Fprintln(os.Stderr, "Watching for changes... (press Ctrl+C to stop)")
-				watcher := ingest.NewWatcher(pipeline, logger)
+				watchPipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+				watcher := ingest.NewWatcher(watchPipeline, logger)
 				return watcher.Watch(ctx, watchPaths)
 			}
 
@@ -422,7 +509,29 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
 	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
+	cmd.Flags().Bool("parallel", false, "Ingest multiple sources in parallel (default: sequential)")
 	return cmd
+}
+
+// makeProgressFunc returns a progress callback that writes an in-place
+// progress line to stderr. When prefixed is true (multiple sources running
+// in parallel), the source label is included so the user can tell which
+// source each line belongs to.
+func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
+	return func(completed, total int) {
+		pct := 0
+		if total > 0 {
+			pct = completed * 100 / total
+		}
+		if prefixed {
+			fmt.Fprintf(os.Stderr, "\r  [%s] Embedding: %d/%d docs (%d%%)", label, completed, total, pct)
+		} else {
+			fmt.Fprintf(os.Stderr, "\r  Embedding: %d/%d docs (%d%%)", completed, total, pct)
+		}
+		if completed == total {
+			fmt.Fprintln(os.Stderr)
+		}
+	}
 }
 
 // remoteIngest pushes extracted fragments to a remote KB server and tracks

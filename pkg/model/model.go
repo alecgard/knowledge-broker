@@ -122,14 +122,38 @@ type QueryRequest struct {
 
 // Answer is the response from the query engine.
 type Answer struct {
-	Content        string            `json:"content"`
-	Confidence     ConfidenceSignals `json:"confidence"`
-	Sources        []SourceRef       `json:"sources"`
-	Contradictions []Contradiction   `json:"contradictions,omitempty"`
+	Content        string          `json:"content"`
+	Confidence     Confidence      `json:"confidence"`
+	Sources        []SourceRef     `json:"sources"`
+	Contradictions []Contradiction `json:"contradictions,omitempty"`
 }
 
-// ConfidenceSignals tracks four independent confidence dimensions.
-type ConfidenceSignals struct {
+// TrustWeights holds the relative weights for computing a composite trust score.
+type TrustWeights struct {
+	Freshness     float64
+	Corroboration float64
+	Consistency   float64
+	Authority     float64
+}
+
+// DefaultTrustWeights returns the default weights for composite trust scoring.
+func DefaultTrustWeights() TrustWeights {
+	return TrustWeights{
+		Freshness:     0.20,
+		Corroboration: 0.25,
+		Consistency:   0.30,
+		Authority:     0.25,
+	}
+}
+
+// Confidence wraps an overall composite score with a per-dimension breakdown.
+type Confidence struct {
+	Overall   float64             `json:"overall"`
+	Breakdown ConfidenceBreakdown `json:"breakdown"`
+}
+
+// ConfidenceBreakdown tracks four independent confidence dimensions.
+type ConfidenceBreakdown struct {
 	Freshness     float64 `json:"freshness"`
 	Corroboration float64 `json:"corroboration"`
 	Consistency   float64 `json:"consistency"`
@@ -159,8 +183,8 @@ type KnowledgeUnit struct {
 	Topic        string            `json:"topic"`
 	Summary      string            `json:"summary"`
 	FragmentIDs  []string          `json:"fragment_ids"`
-	Confidence   ConfidenceSignals `json:"confidence"`
-	Centroid     []float32         `json:"-"`
+	Confidence   Confidence `json:"confidence"`
+	Centroid     []float32 `json:"-"`
 	LastComputed time.Time         `json:"last_computed"`
 }
 
@@ -175,15 +199,15 @@ type RawFragment struct {
 	FileType     string           `json:"file_type"`
 	LastModified time.Time        `json:"last_modified"`
 	Author       string           `json:"author"`
-	Confidence   ConfidenceSignals `json:"confidence"`
+	Confidence   Confidence `json:"confidence"`
 }
 
 // RawKnowledgeUnit is a knowledge unit returned in raw retrieval results.
 type RawKnowledgeUnit struct {
-	ID          string            `json:"id"`
-	Topic       string            `json:"topic"`
-	Summary     string            `json:"summary"`
-	Confidence  ConfidenceSignals `json:"confidence"`
+	ID          string     `json:"id"`
+	Topic       string     `json:"topic"`
+	Summary     string     `json:"summary"`
+	Confidence  Confidence `json:"confidence"`
 	FragmentIDs []string          `json:"fragment_ids"`
 }
 

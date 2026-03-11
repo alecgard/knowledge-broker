@@ -127,11 +127,14 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 	if len(fragments) == 0 {
 		answer := &model.Answer{
 			Content: "I don't have any relevant information to answer this question.",
-			Confidence: model.ConfidenceSignals{
-				Freshness:     0,
-				Corroboration: 0,
-				Consistency:   0,
-				Authority:     0,
+			Confidence: model.Confidence{
+				Overall:   0,
+				Breakdown: model.ConfidenceBreakdown{
+					Freshness:     0,
+					Corroboration: 0,
+					Consistency:   0,
+					Authority:     0,
+				},
 			},
 		}
 		if onText != nil {
@@ -188,9 +191,9 @@ func parseResponse(response string, fragments []model.SourceFragment) *model.Ans
 		answer.Content = strings.TrimSpace(response[:startIdx])
 
 		var meta struct {
-			Confidence     model.ConfidenceSignals `json:"confidence"`
-			Sources        []model.SourceRef       `json:"sources"`
-			Contradictions []model.Contradiction   `json:"contradictions"`
+			Confidence     model.Confidence      `json:"confidence"`
+			Sources        []model.SourceRef     `json:"sources"`
+			Contradictions []model.Contradiction `json:"contradictions"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &meta); err == nil {
 			answer.Confidence = meta.Confidence
@@ -258,6 +261,12 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	// Build raw fragments with per-fragment confidence signals.
 	rawFragments := make([]model.RawFragment, len(fragments))
 	for i, f := range fragments {
+		breakdown := model.ConfidenceBreakdown{
+			Freshness:     computeFreshness(f.LastModified),
+			Corroboration: corroboration,
+			Consistency:   computeConsistency(f.ConfidenceAdj),
+			Authority:     computeAuthority(f.FileType),
+		}
 		rawFragments[i] = model.RawFragment{
 			FragmentID:   f.ID,
 			Content:      f.Content,
@@ -268,11 +277,9 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 			FileType:     f.FileType,
 			LastModified: f.LastModified,
 			Author:       f.Author,
-			Confidence: model.ConfidenceSignals{
-				Freshness:     computeFreshness(f.LastModified),
-				Corroboration: corroboration,
-				Consistency:   computeConsistency(f.ConfidenceAdj),
-				Authority:     computeAuthority(f.FileType),
+			Confidence: model.Confidence{
+				Overall:   computeOverallTrust(breakdown, model.DefaultTrustWeights()),
+				Breakdown: breakdown,
 			},
 		}
 	}
@@ -300,6 +307,12 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	}
 
 	return result, nil
+}
+
+// computeOverallTrust computes a weighted composite trust score from the breakdown.
+func computeOverallTrust(b model.ConfidenceBreakdown, w model.TrustWeights) float64 {
+	score := b.Freshness*w.Freshness + b.Corroboration*w.Corroboration + b.Consistency*w.Consistency + b.Authority*w.Authority
+	return math.Round(score*100) / 100
 }
 
 // computeFreshness returns a score from 0 to 1 based on how recent the document is.

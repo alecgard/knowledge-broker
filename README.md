@@ -9,10 +9,13 @@ $ kb query "What database does the inventory service use and what port does it r
 {
   "answer": "The inventory service (inventory-service) runs on port 8081 and uses PostgreSQL as its primary database, along with Kafka and Redis. The PostgreSQL instance is version 16 on RDS with Multi-AZ deployment (r6g.2xlarge). Each service has a separate database instance.",
   "confidence": {
-    "freshness": 0.94,
-    "corroboration": 0.85,
-    "consistency": 1.00,
-    "authority": 0.95
+    "overall": 0.93,
+    "breakdown": {
+      "freshness": 0.94,
+      "corroboration": 0.85,
+      "consistency": 1.00,
+      "authority": 0.95
+    }
   },
   "sources": [
     { "source_type": "confluence", "source_name": "ACME", "source_path": "Internal Services & Infrastructure" },
@@ -91,14 +94,16 @@ curl -X POST localhost:8080/v1/query \
 
 ## Confidence signals
 
-Every result includes four independent confidence scores (0.0–1.0):
+Every result includes a composite **overall** trust score and four independent confidence dimensions (0.0–1.0):
 
-| Signal | What it measures |
-|--------|-----------------|
-| **Freshness** | How recently were the sources modified, relative to the corpus |
-| **Corroboration** | How many independent sources support the answer |
-| **Consistency** | Do the sources agree, or are there contradictions |
-| **Authority** | How authoritative are the source types for this kind of query |
+| Signal | Weight | What it measures |
+|--------|--------|-----------------|
+| **Freshness** | 0.20 | How recently were the sources modified, relative to the corpus |
+| **Corroboration** | 0.25 | How many independent sources support the answer |
+| **Consistency** | 0.30 | Do the sources agree, or are there contradictions |
+| **Authority** | 0.25 | How authoritative are the source types for this kind of query |
+
+The **overall** score is a weighted composite: `freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25`.
 
 In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are flagged rather than hidden.
 

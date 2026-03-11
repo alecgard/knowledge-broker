@@ -26,10 +26,10 @@ RULES:
 Emit metadata after your answer:
 
 ---KB_META---
-{"confidence":{"freshness":0.0,"corroboration":0.0,"consistency":0.0,"authority":0.0},"sources":[{"fragment_id":"...","source_uri":"...","source_path":"..."}],"contradictions":[]}
+{"confidence":{"overall":0.0,"breakdown":{"freshness":0.0,"corroboration":0.0,"consistency":0.0,"authority":0.0}},"sources":[{"fragment_id":"...","source_uri":"...","source_path":"..."}],"contradictions":[]}
 ---KB_META_END---
 
-Confidence: freshness=recency relative to corpus, corroboration=number of independent sources (1=0.3,2-3=0.6,4+=0.9), consistency=agreement between sources, authority=source type fitness (code>docs>config>commits).
+Confidence breakdown: freshness=recency relative to corpus, corroboration=number of independent sources (1=0.3,2-3=0.6,4+=0.9), consistency=agreement between sources, authority=source type fitness (code>docs>config>commits). Compute overall as a weighted composite: freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25.
 Only include fragments you used in sources. No text after ---KB_META_END---. No code fences around the metadata block.
 
 If fragments come from multiple unrelated projects, answer based on the most relevant project and note which project you're answering about. Do not blend information from unrelated projects into a single answer.
@@ -61,9 +61,10 @@ First, write your answer in natural language. Be direct and concise. Cite source
 Then, on a new line, emit a metadata block in exactly this format:
 
 ---KB_META---
-{"confidence":{"freshness":0.0,"corroboration":0.0,"consistency":0.0,"authority":0.0},"sources":[{"fragment_id":"...","source_uri":"...","source_path":"..."}],"contradictions":[]}
+{"confidence":{"overall":0.0,"breakdown":{"freshness":0.0,"corroboration":0.0,"consistency":0.0,"authority":0.0}},"sources":[{"fragment_id":"...","source_uri":"...","source_path":"..."}],"contradictions":[]}
 ---KB_META_END---
 
+The "overall" score is a weighted composite: freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25.
 The sources array should include only the fragments you actually used in your answer.
 If there are contradictions, include them with claim, sources, and explanation fields.
 Do NOT include any text after the ---KB_META_END--- marker.

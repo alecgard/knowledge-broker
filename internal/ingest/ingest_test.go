@@ -155,10 +155,13 @@ a configurable maximum number of attempts.
 ---KB_META---
 {
   "confidence": {
-    "freshness": 0.9,
-    "corroboration": 0.8,
-    "consistency": 0.95,
-    "authority": 0.7
+    "overall": 0.84,
+    "breakdown": {
+      "freshness": 0.9,
+      "corroboration": 0.8,
+      "consistency": 0.95,
+      "authority": 0.7
+    }
   },
   "sources": [],
   "contradictions": []
@@ -327,13 +330,17 @@ func RetryWithBackoff(attempts int, fn func() error) error {
 	if streamed == "" {
 		t.Fatal("expected streamed text, got empty string")
 	}
-	if answer.Confidence.Freshness == 0 && answer.Confidence.Consistency == 0 {
+	if answer.Confidence.Breakdown.Freshness == 0 && answer.Confidence.Breakdown.Consistency == 0 {
 		t.Fatal("expected confidence signals to be parsed from KB_META block")
 	}
+	if answer.Confidence.Overall == 0 {
+		t.Fatal("expected overall confidence to be parsed from KB_META block")
+	}
 	t.Logf("Answer (first 100 chars): %.100s", answer.Content)
-	t.Logf("Confidence: freshness=%.2f corroboration=%.2f consistency=%.2f authority=%.2f",
-		answer.Confidence.Freshness, answer.Confidence.Corroboration,
-		answer.Confidence.Consistency, answer.Confidence.Authority)
+	t.Logf("Confidence: overall=%.2f freshness=%.2f corroboration=%.2f consistency=%.2f authority=%.2f",
+		answer.Confidence.Overall,
+		answer.Confidence.Breakdown.Freshness, answer.Confidence.Breakdown.Corroboration,
+		answer.Confidence.Breakdown.Consistency, answer.Confidence.Breakdown.Authority)
 }
 
 func TestIncrementalIngestion(t *testing.T) {

@@ -604,10 +604,11 @@ func queryHuman(ctx context.Context, engine *query.Engine, req model.QueryReques
 	fmt.Println()
 
 	fmt.Fprintf(os.Stderr, "\n--- Confidence ---\n")
-	fmt.Fprintf(os.Stderr, "Freshness:     %.2f\n", answer.Confidence.Freshness)
-	fmt.Fprintf(os.Stderr, "Corroboration: %.2f\n", answer.Confidence.Corroboration)
-	fmt.Fprintf(os.Stderr, "Consistency:   %.2f\n", answer.Confidence.Consistency)
-	fmt.Fprintf(os.Stderr, "Authority:     %.2f\n", answer.Confidence.Authority)
+	fmt.Fprintf(os.Stderr, "Overall:       %.2f\n", answer.Confidence.Overall)
+	fmt.Fprintf(os.Stderr, "Freshness:     %.2f\n", answer.Confidence.Breakdown.Freshness)
+	fmt.Fprintf(os.Stderr, "Corroboration: %.2f\n", answer.Confidence.Breakdown.Corroboration)
+	fmt.Fprintf(os.Stderr, "Consistency:   %.2f\n", answer.Confidence.Breakdown.Consistency)
+	fmt.Fprintf(os.Stderr, "Authority:     %.2f\n", answer.Confidence.Breakdown.Authority)
 
 	if len(answer.Sources) > 0 {
 		fmt.Fprintf(os.Stderr, "\n--- Sources ---\n")

@@ -157,17 +157,20 @@ func TestAggregateConfidence(t *testing.T) {
 
 	conf := aggregateConfidence(members)
 
-	if conf.Freshness <= 0 || conf.Freshness > 1 {
-		t.Errorf("freshness out of range: %f", conf.Freshness)
+	if conf.Breakdown.Freshness <= 0 || conf.Breakdown.Freshness > 1 {
+		t.Errorf("freshness out of range: %f", conf.Breakdown.Freshness)
 	}
-	if conf.Corroboration != 0.6 {
-		t.Errorf("expected corroboration 0.6 for 2 sources, got %f", conf.Corroboration)
+	if conf.Breakdown.Corroboration != 0.6 {
+		t.Errorf("expected corroboration 0.6 for 2 sources, got %f", conf.Breakdown.Corroboration)
 	}
-	if conf.Consistency != 0.5 {
-		t.Errorf("expected consistency 0.5 (no adjustment), got %f", conf.Consistency)
+	if conf.Breakdown.Consistency != 0.5 {
+		t.Errorf("expected consistency 0.5 (no adjustment), got %f", conf.Breakdown.Consistency)
 	}
-	if conf.Authority <= 0 || conf.Authority > 1 {
-		t.Errorf("authority out of range: %f", conf.Authority)
+	if conf.Breakdown.Authority <= 0 || conf.Breakdown.Authority > 1 {
+		t.Errorf("authority out of range: %f", conf.Breakdown.Authority)
+	}
+	if conf.Overall <= 0 || conf.Overall > 1 {
+		t.Errorf("overall out of range: %f", conf.Overall)
 	}
 }
 

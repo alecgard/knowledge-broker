@@ -81,11 +81,14 @@ func TestMCPQueryRaw(t *testing.T) {
 
 	// Verify confidence signals are populated.
 	for _, f := range decoded.Fragments {
-		if f.Confidence.Freshness <= 0 {
-			t.Errorf("expected positive freshness for fragment %s, got %f", f.FragmentID, f.Confidence.Freshness)
+		if f.Confidence.Breakdown.Freshness <= 0 {
+			t.Errorf("expected positive freshness for fragment %s, got %f", f.FragmentID, f.Confidence.Breakdown.Freshness)
 		}
-		if f.Confidence.Authority <= 0 {
-			t.Errorf("expected positive authority for fragment %s, got %f", f.FragmentID, f.Confidence.Authority)
+		if f.Confidence.Breakdown.Authority <= 0 {
+			t.Errorf("expected positive authority for fragment %s, got %f", f.FragmentID, f.Confidence.Breakdown.Authority)
+		}
+		if f.Confidence.Overall <= 0 {
+			t.Errorf("expected positive overall for fragment %s, got %f", f.FragmentID, f.Confidence.Overall)
 		}
 	}
 }

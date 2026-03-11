@@ -602,8 +602,8 @@ func (s *SQLiteStore) UpsertKnowledgeUnit(ctx context.Context, unit model.Knowle
 			 confidence_consistency, confidence_authority, last_computed)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, unit.ID, unit.Topic, unit.Summary,
-		unit.Confidence.Freshness, unit.Confidence.Corroboration,
-		unit.Confidence.Consistency, unit.Confidence.Authority,
+		unit.Confidence.Breakdown.Freshness, unit.Confidence.Breakdown.Corroboration,
+		unit.Confidence.Breakdown.Consistency, unit.Confidence.Breakdown.Authority,
 		unit.LastComputed.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upsert knowledge unit: %w", err)
@@ -779,8 +779,8 @@ func scanKnowledgeUnitExtra(scanner interface{ Scan(...any) error }, extra ...an
 	var lastComputed string
 	dest := []any{
 		&u.ID, &u.Topic, &u.Summary,
-		&u.Confidence.Freshness, &u.Confidence.Corroboration,
-		&u.Confidence.Consistency, &u.Confidence.Authority,
+		&u.Confidence.Breakdown.Freshness, &u.Confidence.Breakdown.Corroboration,
+		&u.Confidence.Breakdown.Consistency, &u.Confidence.Breakdown.Authority,
 		&lastComputed,
 	}
 	dest = append(dest, extra...)

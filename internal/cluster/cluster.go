@@ -243,9 +243,17 @@ func commonPrefix(paths []string) string {
 
 // aggregateConfidence computes aggregate confidence signals for a cluster of
 // fragments.
-func aggregateConfidence(members []model.SourceFragment) model.ConfidenceSignals {
+func aggregateConfidence(members []model.SourceFragment) model.Confidence {
 	if len(members) == 0 {
-		return model.ConfidenceSignals{}
+		return model.Confidence{
+			Overall: 0,
+			Breakdown: model.ConfidenceBreakdown{
+				Freshness:     0,
+				Corroboration: 0,
+				Consistency:   0,
+				Authority:     0,
+			},
+		}
 	}
 
 	var freshSum, consistSum, authSum float64
@@ -259,12 +267,22 @@ func aggregateConfidence(members []model.SourceFragment) model.ConfidenceSignals
 	}
 
 	n := float64(len(members))
-	return model.ConfidenceSignals{
+	breakdown := model.ConfidenceBreakdown{
 		Freshness:     round2(freshSum / n),
 		Corroboration: computeCorroboration(len(sourceNames)),
 		Consistency:   round2(consistSum / n),
 		Authority:     round2(authSum / n),
 	}
+	return model.Confidence{
+		Overall:   computeOverallTrust(breakdown, model.DefaultTrustWeights()),
+		Breakdown: breakdown,
+	}
+}
+
+// computeOverallTrust computes a weighted composite trust score from the breakdown.
+func computeOverallTrust(b model.ConfidenceBreakdown, w model.TrustWeights) float64 {
+	score := b.Freshness*w.Freshness + b.Corroboration*w.Corroboration + b.Consistency*w.Consistency + b.Authority*w.Authority
+	return round2(score)
 }
 
 // buildSummary constructs a brief summary listing the source paths in the

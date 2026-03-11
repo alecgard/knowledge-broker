@@ -3,8 +3,10 @@ package llm
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -18,13 +20,14 @@ const defaultMaxTokens = 4096
 type ClaudeClient struct {
 	client anthropic.Client
 	model  string
+	logger *slog.Logger
 }
 
 // NewClaudeClient creates a new Claude API client.
 // If apiKey is empty, the SDK reads ANTHROPIC_API_KEY from the environment.
 // If model is empty, it defaults to claude-sonnet-4-20250514.
 // If httpClient is provided, it is used for all API requests (useful for debug logging).
-func NewClaudeClient(apiKey string, model string, httpClient *http.Client) *ClaudeClient {
+func NewClaudeClient(apiKey string, model string, httpClient *http.Client, logger *slog.Logger) *ClaudeClient {
 	if model == "" {
 		model = defaultModel
 	}
@@ -42,6 +45,7 @@ func NewClaudeClient(apiKey string, model string, httpClient *http.Client) *Clau
 	return &ClaudeClient{
 		client: client,
 		model:  model,
+		logger: logger,
 	}
 }
 
@@ -60,6 +64,7 @@ func (c *ClaudeClient) StreamAnswer(ctx context.Context, systemPrompt string, me
 		Messages: anthropicMsgs,
 	}
 
+	start := time.Now()
 	stream := c.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
@@ -81,6 +86,13 @@ func (c *ClaudeClient) StreamAnswer(ctx context.Context, systemPrompt string, me
 
 	if err := stream.Err(); err != nil {
 		return fullText.String(), fmt.Errorf("claude stream error: %w", err)
+	}
+
+	if c.logger != nil {
+		c.logger.LogAttrs(ctx, slog.LevelDebug, "Claude stream complete",
+			slog.Duration("duration", time.Since(start)),
+			slog.String("resp_size", fmt.Sprintf("%d chars", fullText.Len())),
+		)
 	}
 
 	return fullText.String(), nil

@@ -69,7 +69,7 @@ func Default() Config {
 		MaxChunkSize:    envOrInt("KB_MAX_CHUNK_SIZE", 2000),
 		ChunkOverlap:    envOrInt("KB_CHUNK_OVERLAP", 150),
 		WorkerCount:     envOrInt("KB_WORKERS", 4),
-		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 20),
+		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 5),
 		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
 	}
 }

@@ -79,14 +79,14 @@ func TestConvertMessages_SkipsUnknownRoles(t *testing.T) {
 }
 
 func TestNewClaudeClient_Defaults(t *testing.T) {
-	client := NewClaudeClient("", "", nil)
+	client := NewClaudeClient("", "", nil, nil)
 	if client.model != defaultModel {
 		t.Errorf("expected default model %q, got %q", defaultModel, client.model)
 	}
 }
 
 func TestNewClaudeClient_CustomModel(t *testing.T) {
-	client := NewClaudeClient("", "claude-opus-4-5", nil)
+	client := NewClaudeClient("", "claude-opus-4-5", nil, nil)
 	if client.model != "claude-opus-4-5" {
 		t.Errorf("expected model claude-opus-4-5, got %q", client.model)
 	}

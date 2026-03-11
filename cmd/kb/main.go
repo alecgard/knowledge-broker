@@ -100,7 +100,11 @@ func newEmbedder(cfg config.Config, client *http.Client) *embedding.OllamaEmbedd
 // newLLMClient creates the appropriate LLM client based on the configured provider.
 // If provider is empty, it defaults to "claude". Returns nil if the provider
 // requires an API key that is not set (allowing raw mode to work without one).
-func newLLMClient(cfg config.Config, provider string, client *http.Client) query.LLM {
+func newLLMClient(cfg config.Config, provider string, client *http.Client, logger ...*slog.Logger) query.LLM {
+	var lg *slog.Logger
+	if len(logger) > 0 {
+		lg = logger[0]
+	}
 	if provider == "" {
 		provider = cfg.LLMProvider
 	}
@@ -116,7 +120,7 @@ func newLLMClient(cfg config.Config, provider string, client *http.Client) query
 		if cfg.AnthropicAPIKey == "" {
 			return nil
 		}
-		return llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client)
+		return llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client, lg)
 	}
 }
 
@@ -517,14 +521,17 @@ func queryCmd() *cobra.Command {
 			// When --raw is set, LLM is not needed.
 			var llmClient query.LLM
 			if !rawMode {
-				llmClient = newLLMClient(cfg, llmFlag, client)
+				llmClient = newLLMClient(cfg, llmFlag, client, logger)
 				if llmClient == nil {
 					return fmt.Errorf("synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use --raw for retrieval without LLM")
 				}
 			}
 
 			limit, _ := cmd.Flags().GetInt("limit")
-			engine := query.NewEngine(s, emb, llmClient, limit)
+			if limit <= 0 {
+				limit = cfg.DefaultLimit
+			}
+			engine := query.NewEngine(s, emb, llmClient, limit, logger)
 
 			topicsRaw, _ := cmd.Flags().GetString("topics")
 			var topics []string
@@ -569,7 +576,7 @@ func queryCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
-	cmd.Flags().Int("limit", 20, "Max fragments to retrieve")
+	cmd.Flags().Int("limit", 0, "Max fragments to retrieve (default from KB_DEFAULT_LIMIT)")
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,octroi')")
@@ -664,8 +671,8 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 
-			llmClient := newLLMClient(cfg, "", client)
-			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
+			llmClient := newLLMClient(cfg, "", client, logger)
+			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
 
 			httpServer := server.NewHTTPServer(engine, emb, s, logger)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
@@ -700,8 +707,8 @@ func mcpCmd() *cobra.Command {
 			}
 
 			// LLM client — synthesis is the default; raw mode is opt-in via raw=true parameter.
-			llmClient := newLLMClient(cfg, "", client)
-			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit)
+			llmClient := newLLMClient(cfg, "", client, logger)
+			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()

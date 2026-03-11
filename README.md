@@ -29,7 +29,7 @@ The answer is synthesised from Confluence docs and Slack history. Contradictions
 
 ## Agent integration
 
-Knowledge Broker exposes an **MCP server** for direct integration with Claude, Cursor, and any MCP-compatible agent runtime:
+Knowledge Broker exposes an **MCP server** for direct integration with any MCP-compatible agent runtime:
 
 ```bash
 kb mcp                  # stdio + SSE on :8082
@@ -43,6 +43,8 @@ Agents receive the same structured JSON response shown above — a synthesised a
 Raw mode is also available for cases where you want fragments without synthesis — useful for debugging retrieval, feeding a separate pipeline, or when no API key is configured. Pass `raw=true` to the `query` tool, or use `--raw` on the CLI.
 
 See [docs/mcp.md](docs/mcp.md) for full setup and tool reference.
+
+Knowledge Broker can also expose an **HTTP server** for HTTP API access - expose via `kb serve`. 
 
 ## Quick start
 
@@ -239,7 +241,7 @@ Copy `.env.example` to `.env` and fill in your values. Environment variables als
 | `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
 | `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
-| `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
+| `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
 
 Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [docs/connectors.md](docs/connectors.md).
 

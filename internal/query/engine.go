@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
@@ -26,12 +27,17 @@ type Engine struct {
 	llm      LLM
 	limit    int
 	cache    *Cache
+	logger   *slog.Logger
 }
 
 // NewEngine creates a query engine.
-func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int) *Engine {
+func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int, logger ...*slog.Logger) *Engine {
 	if defaultLimit <= 0 {
 		defaultLimit = 20
+	}
+	var lg *slog.Logger
+	if len(logger) > 0 {
+		lg = logger[0]
 	}
 	return &Engine{
 		store:    s,
@@ -39,6 +45,7 @@ func NewEngine(s store.Store, e embedding.Embedder, llm LLM, defaultLimit int) *
 		llm:      llm,
 		limit:    defaultLimit,
 		cache:    NewCache(0, 0), // defaults: 10min TTL, 256 entries
+		logger:   lg,
 	}
 }
 
@@ -155,6 +162,13 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 
 	// Build the system prompt with fragment context.
 	systemPrompt := BuildSystemPrompt(fragments, req.Concise)
+
+	if e.logger != nil {
+		e.logger.LogAttrs(ctx, slog.LevelDebug, "LLM synthesis",
+			slog.Int("fragments", len(fragments)),
+			slog.Int("prompt_chars", len(systemPrompt)),
+		)
+	}
 
 	// Stream the LLM response.
 	fullResponse, err := e.llm.StreamAnswer(ctx, systemPrompt, req.Messages, onText)

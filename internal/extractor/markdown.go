@@ -25,7 +25,7 @@ func (m *MarkdownExtractor) FileTypes() []string {
 	return []string{".md"}
 }
 
-func (m *MarkdownExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
+func (m *MarkdownExtractor) Extract(content []byte, opts ExtractOptions) (*ExtractResult, error) {
 	text := string(content)
 
 	// Strip frontmatter (--- delimited block at the start).
@@ -80,7 +80,7 @@ func (m *MarkdownExtractor) Extract(content []byte, opts ExtractOptions) ([]mode
 		})
 	}
 
-	return chunks, nil
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 type markdownSection struct {

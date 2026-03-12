@@ -32,10 +32,10 @@ func (p *PlaintextExtractor) FileTypes() []string {
 	}
 }
 
-func (p *PlaintextExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
+func (p *PlaintextExtractor) Extract(content []byte, opts ExtractOptions) (*ExtractResult, error) {
 	text := string(content)
 	if strings.TrimSpace(text) == "" {
-		return []model.Chunk{{Content: "", Metadata: map[string]string{"offset": "0"}}}, nil
+		return &ExtractResult{Chunks: []model.Chunk{{Content: "", Metadata: map[string]string{"offset": "0"}}}}, nil
 	}
 
 	// Try splitting at paragraph boundaries first.
@@ -106,7 +106,7 @@ func (p *PlaintextExtractor) Extract(content []byte, opts ExtractOptions) ([]mod
 				}
 			}
 		}
-		return result, nil
+		return &ExtractResult{Chunks: result}, nil
 	}
 
 	// No paragraph boundaries; use fixed-size splitting.
@@ -127,7 +127,7 @@ func (p *PlaintextExtractor) Extract(content []byte, opts ExtractOptions) ([]mod
 	if len(chunks) == 0 {
 		chunks = append(chunks, model.Chunk{Content: "", Metadata: map[string]string{"offset": "0"}})
 	}
-	return chunks, nil
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 // splitParagraphs splits text at double-newline boundaries.

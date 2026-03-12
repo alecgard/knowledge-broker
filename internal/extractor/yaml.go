@@ -29,28 +29,34 @@ func (y *YAMLExtractor) FileTypes() []string {
 	return []string{".yaml", ".yml", ".toml", ".json", ".ini", ".conf", ".env", ".properties"}
 }
 
-func (y *YAMLExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
+func (y *YAMLExtractor) Extract(content []byte, opts ExtractOptions) (*ExtractResult, error) {
 	text := strings.TrimSpace(string(content))
 	if text == "" {
-		return []model.Chunk{{Content: "", Metadata: map[string]string{"key": ""}}}, nil
+		return &ExtractResult{Chunks: []model.Chunk{{Content: "", Metadata: map[string]string{"key": ""}}}}, nil
 	}
 
 	ext := strings.ToLower(extFromPath(opts.Path))
 
+	var chunks []model.Chunk
+	var err error
 	switch ext {
 	case ".yaml", ".yml":
-		return y.extractYAML(content)
+		chunks, err = y.extractYAML(content)
 	case ".json":
-		return y.extractJSON(content)
+		chunks, err = y.extractJSON(content)
 	case ".toml":
-		return y.extractTOML(text)
+		chunks, err = y.extractTOML(text)
 	case ".ini", ".conf":
-		return y.extractINI(text)
+		chunks, err = y.extractINI(text)
 	case ".env", ".properties":
-		return y.extractKeyValue(text)
+		chunks, err = y.extractKeyValue(text)
 	default:
-		return y.extractYAML(content)
+		chunks, err = y.extractYAML(content)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 // extractYAML parses YAML and chunks by top-level keys.

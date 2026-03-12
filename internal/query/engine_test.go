@@ -45,12 +45,12 @@ func TestComputeOverallTrust(t *testing.T) {
 		Authority:     0.95,
 	}
 	w := model.DefaultTrustWeights()
-	got := computeOverallTrust(b, w)
+	got := ComputeOverallTrust(b, w)
 	// 0.94*0.20 + 0.85*0.25 + 1.00*0.30 + 0.95*0.25
 	// = 0.188 + 0.2125 + 0.30 + 0.2375 = 0.938 → rounded to 0.94
 	want := 0.94
 	if got != want {
-		t.Errorf("computeOverallTrust() = %v, want %v", got, want)
+		t.Errorf("ComputeOverallTrust() = %v, want %v", got, want)
 	}
 }
 

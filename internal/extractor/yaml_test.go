@@ -21,10 +21,11 @@ logging:
   format: json
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(yamlContent), ExtractOptions{Path: "config.yaml"})
+	result, err := ext.Extract([]byte(yamlContent), ExtractOptions{Path: "config.yaml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) != 3 {
 		t.Fatalf("expected 3 chunks (one per top-level key), got %d", len(chunks))
@@ -59,10 +60,11 @@ func TestYAMLExtractYML(t *testing.T) {
 version: 1.0
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(yml), ExtractOptions{Path: "config.yml"})
+	result, err := ext.Extract([]byte(yml), ExtractOptions{Path: "config.yml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
@@ -82,10 +84,11 @@ func TestJSONExtractTopLevelKeys(t *testing.T) {
   }
 }`
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(jsonContent), ExtractOptions{Path: "package.json"})
+	result, err := ext.Extract([]byte(jsonContent), ExtractOptions{Path: "package.json"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) != 4 {
 		t.Fatalf("expected 4 chunks, got %d", len(chunks))
@@ -105,10 +108,11 @@ func TestJSONExtractTopLevelKeys(t *testing.T) {
 func TestJSONArrayFallback(t *testing.T) {
 	jsonArray := `[1, 2, 3, 4, 5]`
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(jsonArray), ExtractOptions{Path: "data.json"})
+	result, err := ext.Extract([]byte(jsonArray), ExtractOptions{Path: "data.json"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	// Non-object JSON falls back to line-based chunking.
 	if len(chunks) == 0 {
 		t.Fatal("expected at least 1 chunk")
@@ -129,10 +133,11 @@ host = "0.0.0.0"
 port = 8080
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(toml), ExtractOptions{Path: "config.toml"})
+	result, err := ext.Extract([]byte(toml), ExtractOptions{Path: "config.toml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// Expect: global section + database + server = 3 chunks.
 	if len(chunks) != 3 {
@@ -162,10 +167,11 @@ host = localhost
 port = 5432
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(ini), ExtractOptions{Path: "config.ini"})
+	result, err := ext.Extract([]byte(ini), ExtractOptions{Path: "config.ini"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
@@ -194,10 +200,11 @@ SERVER_HOST=0.0.0.0
 SERVER_PORT=8080
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(env), ExtractOptions{Path: ".env"})
+	result, err := ext.Extract([]byte(env), ExtractOptions{Path: ".env"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks (2 groups), got %d", len(chunks))
@@ -219,10 +226,11 @@ db.host=localhost
 db.port=5432
 `
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(props), ExtractOptions{Path: "app.properties"})
+	result, err := ext.Extract([]byte(props), ExtractOptions{Path: "app.properties"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
@@ -231,10 +239,11 @@ db.port=5432
 
 func TestYAMLEmptyContent(t *testing.T) {
 	ext := NewYAMLExtractor(2000)
-	chunks, err := ext.Extract([]byte(""), ExtractOptions{Path: "empty.yaml"})
+	result, err := ext.Extract([]byte(""), ExtractOptions{Path: "empty.yaml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk for empty content, got %d", len(chunks))
 	}
@@ -245,10 +254,11 @@ func TestYAMLLargeValue(t *testing.T) {
 	largeValue := strings.Repeat("x", 300)
 	yaml := "small: value\nlarge: " + largeValue + "\n"
 	ext := NewYAMLExtractor(200)
-	chunks, err := ext.Extract([]byte(yaml), ExtractOptions{Path: "big.yaml"})
+	result, err := ext.Extract([]byte(yaml), ExtractOptions{Path: "big.yaml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// Should have at least 3 chunks: small key + large key split into parts.
 	if len(chunks) < 3 {

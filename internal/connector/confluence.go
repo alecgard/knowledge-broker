@@ -147,7 +147,7 @@ func (c *ConfluenceConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			docs = append(docs, model.RawDocument{
 				Path:         path,
 				Content:      []byte(content),
-				LastModified: lastModified,
+				ContentDate: lastModified,
 				Author:       page.Version.By.DisplayName,
 				SourceURI:    sourceURI,
 				SourceType:   SourceTypeConfluence,

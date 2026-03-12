@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
@@ -180,21 +181,29 @@ func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocumen
 }
 
 func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) ([]model.SourceFragment, error) {
-	chunks, err := ExtractChunks(doc, p.extractors)
+	result, err := ExtractChunks(doc, p.extractors)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(chunks) == 0 {
+	if len(result.Chunks) == 0 {
 		return nil, nil
 	}
 
 	// Derive file type from path extension.
 	fileType := filepath.Ext(doc.Path)
 
+	// Determine content date: extractor metadata overrides connector date.
+	contentDate := doc.ContentDate
+	if dateStr, ok := result.Metadata["content_date"]; ok && dateStr != "" {
+		if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+			contentDate = t
+		}
+	}
+
 	// Embed chunks.
-	texts := make([]string, len(chunks))
-	for i, c := range chunks {
+	texts := make([]string, len(result.Chunks))
+	for i, c := range result.Chunks {
 		texts[i] = c.Content
 	}
 	embeddings, err := p.embedder.EmbedBatch(ctx, texts)
@@ -204,24 +213,24 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 
 	// Build fragments, skipping any chunks whose embedding failed (nil).
 	var fragments []model.SourceFragment
-	for i, chunk := range chunks {
+	for i, chunk := range result.Chunks {
 		if embeddings[i] == nil {
 			p.logger.Warn("skipping chunk with nil embedding",
 				"path", doc.Path, "chunk_index", i, "chunk_length", len(chunk.Content))
 			continue
 		}
 		fragments = append(fragments, model.SourceFragment{
-			ID:           model.FragmentID(doc.SourceType, doc.Path, i),
-			Content:      chunk.Content,
-			SourceType:   doc.SourceType,
-			SourceName:   doc.SourceName,
-			SourcePath:   doc.Path,
-			SourceURI:    doc.SourceURI,
-			LastModified: doc.LastModified,
-			Author:       doc.Author,
-			FileType:     fileType,
-			Checksum:     doc.Checksum,
-			Embedding:    embeddings[i],
+			ID:          model.FragmentID(doc.SourceType, doc.Path, i),
+			Content:     chunk.Content,
+			SourceType:  doc.SourceType,
+			SourceName:  doc.SourceName,
+			SourcePath:  doc.Path,
+			SourceURI:   doc.SourceURI,
+			ContentDate: contentDate,
+			Author:      doc.Author,
+			FileType:    fileType,
+			Checksum:    doc.Checksum,
+			Embedding:   embeddings[i],
 		})
 	}
 
@@ -230,18 +239,18 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 
 // ExtractChunks extracts chunks from a single document using the extractor
 // registry. It handles pre-chunked documents and extractor lookup. Returns
-// nil chunks (not an error) when the document yields no content.
-func ExtractChunks(doc model.RawDocument, reg *extractor.Registry) ([]model.Chunk, error) {
+// an ExtractResult with nil/empty chunks (not an error) when the document yields no content.
+func ExtractChunks(doc model.RawDocument, reg *extractor.Registry) (*extractor.ExtractResult, error) {
 	if len(doc.Chunks) > 0 {
-		return doc.Chunks, nil
+		return &extractor.ExtractResult{Chunks: doc.Chunks}, nil
 	}
 	ext := filepath.Ext(doc.Path)
 	e := reg.Get(ext)
-	chunks, err := e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
+	result, err := e.Extract(doc.Content, extractor.ExtractOptions{Path: doc.Path})
 	if err != nil {
 		return nil, fmt.Errorf("extract %s: %w", doc.Path, err)
 	}
-	return chunks, nil
+	return result, nil
 }
 
 func batchSlice[T any](items []T, size int) [][]T {

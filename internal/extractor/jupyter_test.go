@@ -32,10 +32,11 @@ func TestJupyterBasicNotebook(t *testing.T) {
 }`
 
 	ext := NewJupyterExtractor(2000)
-	chunks, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "analysis.ipynb"})
+	result, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "analysis.ipynb"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// Should have chunks for markdown and code cells but not raw.
 	// Small consecutive cells of the same type may be merged.
@@ -79,10 +80,11 @@ func TestJupyterBasicNotebook(t *testing.T) {
 func TestJupyterEmptyNotebook(t *testing.T) {
 	notebook := `{"cells": []}`
 	ext := NewJupyterExtractor(2000)
-	chunks, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "empty.ipynb"})
+	result, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "empty.ipynb"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 empty chunk, got %d", len(chunks))
 	}
@@ -96,10 +98,11 @@ func TestJupyterEmptyCells(t *testing.T) {
   ]
 }`
 	ext := NewJupyterExtractor(2000)
-	chunks, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "blank.ipynb"})
+	result, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "blank.ipynb"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	// Empty/whitespace cells should be skipped, returning a single empty chunk.
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 empty chunk, got %d", len(chunks))
@@ -115,10 +118,11 @@ func TestJupyterLargeCell(t *testing.T) {
   ]
 }`
 	ext := NewJupyterExtractor(100)
-	chunks, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "big.ipynb"})
+	result, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "big.ipynb"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks for large cell, got %d", len(chunks))
@@ -143,10 +147,11 @@ func TestJupyterMergeSmallCells(t *testing.T) {
   ]
 }`
 	ext := NewJupyterExtractor(2000)
-	chunks, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "small.ipynb"})
+	result, err := ext.Extract([]byte(notebook), ExtractOptions{Path: "small.ipynb"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// The 3 small markdown cells should be merged into 1, plus 1 code cell = 2.
 	if len(chunks) != 2 {

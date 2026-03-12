@@ -11,11 +11,18 @@ type ExtractOptions struct {
 	Path string
 }
 
+// ExtractResult holds the output of an Extract call: chunks and optional
+// document-level metadata (e.g., "content_date" from PDF info dictionaries).
+type ExtractResult struct {
+	Chunks   []model.Chunk
+	Metadata map[string]string
+}
+
 // Extractor turns raw file content into chunks.
 type Extractor interface {
 	// FileTypes returns the file extensions this extractor handles (e.g., ".md", ".go").
 	FileTypes() []string
 
-	// Extract splits content into chunks.
-	Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error)
+	// Extract splits content into chunks and returns optional document metadata.
+	Extract(content []byte, opts ExtractOptions) (*ExtractResult, error)
 }

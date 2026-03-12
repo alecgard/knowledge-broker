@@ -5,12 +5,12 @@ CREATE TABLE IF NOT EXISTS fragments (
     source_name   TEXT DEFAULT '',
     source_path   TEXT NOT NULL,
     source_uri    TEXT NOT NULL,
-    last_modified DATETIME NOT NULL,
+    content_date  DATETIME NOT NULL,
     author        TEXT DEFAULT '',
     file_type     TEXT NOT NULL,
     checksum      TEXT NOT NULL,
     confidence_adj REAL DEFAULT 0.0,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ingested_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

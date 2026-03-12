@@ -207,7 +207,7 @@ func makeDoc(path, content, checksum string) model.RawDocument {
 	return model.RawDocument{
 		Path:         path,
 		Content:      []byte(content),
-		LastModified: time.Now().UTC(),
+		ContentDate: time.Now().UTC(),
 		Author:       "test-author",
 		SourceURI:    "file://" + path,
 		SourceType:   "mock",
@@ -542,16 +542,16 @@ func Bad() {
 
 	// Extract chunks to find one to fail on.
 	doc := conn.Docs[0]
-	chunks, err := ingest.ExtractChunks(doc, registry)
+	extractResult, err := ingest.ExtractChunks(doc, registry)
 	if err != nil {
 		t.Fatalf("ExtractChunks: %v", err)
 	}
-	if len(chunks) < 2 {
-		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
+	if len(extractResult.Chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks, got %d", len(extractResult.Chunks))
 	}
 
 	// Pick the second chunk's content to fail.
-	failContent := chunks[1].Content
+	failContent := extractResult.Chunks[1].Content
 	embedder2 := NewMockEmbedder(embeddingDim)
 	embedder2.FailTexts = map[string]bool{failContent: true}
 

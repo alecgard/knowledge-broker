@@ -35,7 +35,7 @@ func TestBuildSystemPrompt_WithFragments(t *testing.T) {
 			SourceType:    "filesystem",
 			SourcePath:    "/docs/readme.md",
 			SourceURI:     "file:///docs/readme.md",
-			LastModified:  now.Add(-24 * time.Hour),
+			ContentDate:  now.Add(-24 * time.Hour),
 			Author:        "alice",
 			FileType:      "markdown",
 			ConfidenceAdj: 0.1,
@@ -46,7 +46,7 @@ func TestBuildSystemPrompt_WithFragments(t *testing.T) {
 			SourceType:   "github",
 			SourcePath:   "repo/src/main.go",
 			SourceURI:    "https://github.com/org/repo/blob/main/src/main.go",
-			LastModified: now.Add(-48 * time.Hour),
+			ContentDate: now.Add(-48 * time.Hour),
 			FileType:     "go",
 		},
 	}
@@ -139,7 +139,7 @@ func TestBuildSystemPrompt_AgeFormatting(t *testing.T) {
 					ID:           "test-frag",
 					Content:      "test",
 					SourcePath:   "/test",
-					LastModified: tt.modified,
+					ContentDate: tt.modified,
 				},
 			}
 			prompt := BuildSystemPrompt(fragments, false)

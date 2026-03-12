@@ -25,10 +25,11 @@ Content of subsection A.
 Content of section two.
 `
 	ext := NewMarkdownExtractor(2000)
-	chunks, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
+	result, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// Expect: preamble (# Title + intro), ## Section One, ### Subsection A, ## Section Two
 	if len(chunks) < 3 {
@@ -81,10 +82,11 @@ date: 2024-01-01
 World.
 `
 	ext := NewMarkdownExtractor(2000)
-	chunks, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
+	result, err := ext.Extract([]byte(md), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// Frontmatter should be stripped; we should get the Hello chunk.
 	found := false
@@ -106,10 +108,11 @@ func TestMarkdownLargeSectionFallback(t *testing.T) {
 	maxSize := 100
 	largeContent := "## Big Section\n\n" + strings.Repeat("word ", 50) // ~250 chars
 	ext := NewMarkdownExtractor(maxSize)
-	chunks, err := ext.Extract([]byte(largeContent), ExtractOptions{Path: "test.md"})
+	result, err := ext.Extract([]byte(largeContent), ExtractOptions{Path: "test.md"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks for large section, got %d", len(chunks))
@@ -144,10 +147,11 @@ func World() {
 }
 `
 	ext := NewCodeExtractor(2000)
-	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "main.go"})
+	result, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "main.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
@@ -187,10 +191,11 @@ def standalone():
     pass
 `
 	ext := NewCodeExtractor(2000)
-	chunks, err := ext.Extract([]byte(pyCode), ExtractOptions{Path: "module.py"})
+	result, err := ext.Extract([]byte(pyCode), ExtractOptions{Path: "module.py"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
@@ -219,10 +224,11 @@ func TestCodeLargeFunctionFallback(t *testing.T) {
 	maxSize := 100
 	goCode := "package main\n\nfunc Big() {\n" + strings.Repeat("\tx := 1\n", 30) + "}\n"
 	ext := NewCodeExtractor(maxSize)
-	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big.go"})
+	result, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks for large function, got %d", len(chunks))
@@ -250,10 +256,11 @@ func TestCodeLargePreambleFallback(t *testing.T) {
 	largePreamble := "package main\n\nvar (\n" + strings.Repeat("\tx = 1\n", 40) + ")\n\n"
 	goCode := largePreamble + "func Hello() {\n\tfmt.Println(\"hello\")\n}\n"
 	ext := NewCodeExtractor(maxSize)
-	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big_preamble.go"})
+	result, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big_preamble.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	// The preamble is larger than maxSize, so it should be split into multiple chunks.
 	preambleChunks := 0
@@ -291,10 +298,11 @@ func TestCodeNoRecognizableBoundaries(t *testing.T) {
 	// A file with no function/class boundaries.
 	content := strings.Repeat("some random content line\n", 20)
 	ext := NewCodeExtractor(100)
-	chunks, err := ext.Extract([]byte(content), ExtractOptions{Path: "data.go"})
+	result, err := ext.Extract([]byte(content), ExtractOptions{Path: "data.go"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks for plaintext fallback, got %d", len(chunks))
@@ -307,10 +315,11 @@ func TestPlaintextFixedSizeSplitting(t *testing.T) {
 	// Create text longer than maxChunkSize.
 	text := strings.Repeat("Hello world. ", 200) // ~2600 chars
 	ext := NewPlaintextExtractor(500, 50)
-	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
+	result, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
@@ -340,10 +349,11 @@ func TestPlaintextParagraphBoundarySplitting(t *testing.T) {
 	}
 	text := strings.Join(paragraphs, "\n\n")
 	ext := NewPlaintextExtractor(400, 50)
-	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
+	result, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks for paragraph splitting, got %d", len(chunks))
@@ -366,10 +376,11 @@ func TestPlaintextOverlap(t *testing.T) {
 	// Use a simple text to verify overlap behavior.
 	text := strings.Repeat("abcdefghij ", 100) // ~1100 chars
 	ext := NewPlaintextExtractor(200, 50)
-	chunks, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
+	result, err := ext.Extract([]byte(text), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
@@ -400,10 +411,11 @@ func TestPlaintextOverlap(t *testing.T) {
 
 func TestPlaintextEmptyContent(t *testing.T) {
 	ext := NewPlaintextExtractor(1500, 150)
-	chunks, err := ext.Extract([]byte(""), ExtractOptions{Path: "test.txt"})
+	result, err := ext.Extract([]byte(""), ExtractOptions{Path: "test.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	chunks := result.Chunks
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk for empty content, got %d", len(chunks))
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
+	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
@@ -59,6 +60,8 @@ type Result struct {
 	HitAt5          float64  `json:"hit_at_5"`
 	ContentMatch    bool     `json:"content_match"`
 	TopResultMatch  bool     `json:"top_result_match"`
+	AvgFreshness    float64  `json:"avg_freshness"`
+	AvgConfidence   float64  `json:"avg_confidence"` // overall composite
 }
 
 // ChunkingStats holds statistics about the chunking of the eval corpus.
@@ -84,6 +87,8 @@ type CategoryBreakdown struct {
 	HitAt1      float64 `json:"hit_at_1"`
 	HitAt3      float64 `json:"hit_at_3"`
 	HitAt5      float64 `json:"hit_at_5"`
+	AvgFreshness  float64 `json:"avg_freshness"`
+	AvgConfidence float64 `json:"avg_confidence"`
 }
 
 // Summary holds the overall evaluation results.
@@ -99,6 +104,8 @@ type Summary struct {
 	HitAt1            float64              `json:"hit_at_1"`
 	HitAt3            float64              `json:"hit_at_3"`
 	HitAt5            float64              `json:"hit_at_5"`
+	AvgFreshness      float64              `json:"avg_freshness"`
+	AvgConfidence     float64              `json:"avg_confidence"`
 	Timestamp         string               `json:"timestamp"`
 	CategoryBreakdowns []CategoryBreakdown `json:"category_breakdowns"`
 	Chunking          *ChunkingStats       `json:"chunking,omitempty"`
@@ -205,6 +212,30 @@ func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, 
 	// Top result match: check if fragments[0] matches expectations.
 	if tc.ExpectedTopResult.SourceContains != "" || tc.ExpectedTopResult.ContentContains != "" {
 		result.TopResultMatch = checkTopResultMatch(tc.ExpectedTopResult, fragments)
+	}
+
+	// Compute confidence metrics.
+	if len(fragments) > 0 {
+		sourceNames := make(map[string]struct{})
+		for _, f := range fragments {
+			sourceNames[f.SourceName] = struct{}{}
+		}
+		corroboration := query.ComputeCorroboration(len(sourceNames))
+
+		var totalFreshness, totalConfidence float64
+		for _, f := range fragments {
+			breakdown := model.ConfidenceBreakdown{
+				Freshness:     query.ComputeFreshness(f.ContentDate, f.IngestedAt, f.FileType),
+				Corroboration: corroboration,
+				Consistency:   query.ComputeConsistency(f.ConfidenceAdj),
+				Authority:     query.ComputeAuthority(f.FileType),
+			}
+			totalFreshness += breakdown.Freshness
+			totalConfidence += query.ComputeOverallTrust(breakdown, model.DefaultTrustWeights())
+		}
+		n := float64(len(fragments))
+		result.AvgFreshness = math.Round(totalFreshness/n*100) / 100
+		result.AvgConfidence = math.Round(totalConfidence/n*100) / 100
 	}
 
 	return result, nil
@@ -434,6 +465,7 @@ func computeOverallMetrics(summary *Summary) {
 	var totalP5, totalP10, totalP20 float64
 	var totalMRR float64
 	var totalH1, totalH3, totalH5 float64
+	var totalFreshness, totalConfidence float64
 
 	catMap := make(map[string]*CategoryBreakdown)
 
@@ -448,6 +480,8 @@ func computeOverallMetrics(summary *Summary) {
 		totalH1 += r.HitAt1
 		totalH3 += r.HitAt3
 		totalH5 += r.HitAt5
+		totalFreshness += r.AvgFreshness
+		totalConfidence += r.AvgConfidence
 
 		cb, ok := catMap[r.Category]
 		if !ok {
@@ -465,6 +499,8 @@ func computeOverallMetrics(summary *Summary) {
 		cb.HitAt1 += r.HitAt1
 		cb.HitAt3 += r.HitAt3
 		cb.HitAt5 += r.HitAt5
+		cb.AvgFreshness += r.AvgFreshness
+		cb.AvgConfidence += r.AvgConfidence
 	}
 
 	summary.RecallAt5 = totalR5 / n
@@ -477,6 +513,8 @@ func computeOverallMetrics(summary *Summary) {
 	summary.HitAt1 = totalH1 / n
 	summary.HitAt3 = totalH3 / n
 	summary.HitAt5 = totalH5 / n
+	summary.AvgFreshness = totalFreshness / n
+	summary.AvgConfidence = totalConfidence / n
 
 	// Build sorted category breakdowns.
 	categories := []string{"direct_extraction", "cross_document", "knowledge_update", "abstention"}
@@ -496,6 +534,8 @@ func computeOverallMetrics(summary *Summary) {
 		cb.HitAt1 /= cn
 		cb.HitAt3 /= cn
 		cb.HitAt5 /= cn
+		cb.AvgFreshness /= cn
+		cb.AvgConfidence /= cn
 		summary.CategoryBreakdowns = append(summary.CategoryBreakdowns, *cb)
 		delete(catMap, cat)
 	}
@@ -512,6 +552,8 @@ func computeOverallMetrics(summary *Summary) {
 		cb.HitAt1 /= cn
 		cb.HitAt3 /= cn
 		cb.HitAt5 /= cn
+		cb.AvgFreshness /= cn
+		cb.AvgConfidence /= cn
 		summary.CategoryBreakdowns = append(summary.CategoryBreakdowns, *cb)
 	}
 
@@ -536,25 +578,25 @@ func FormatSummaryTableWithDelta(current, previous *Summary) string {
 	}
 
 	// Per-question detail table.
-	sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  Hit@1  Hit@3  Hit@5  MRR    R@5\n",
+	sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  Hit@1  Hit@3  Hit@5  MRR    R@5    AvgConf\n",
 		"ID", "Category", "Query"))
-	sb.WriteString(strings.Repeat("-", 130) + "\n")
+	sb.WriteString(strings.Repeat("-", 138) + "\n")
 
 	for _, r := range current.Results {
 		q := r.Query
 		if len(q) > 43 {
 			q = q[:43] + ".."
 		}
-		sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  %.2f   %.2f   %.2f   %.2f   %.2f\n",
+		sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  %.2f   %.2f   %.2f   %.2f   %.2f   %.2f\n",
 			r.ID, r.Category, q,
-			r.HitAt1, r.HitAt3, r.HitAt5, r.MRR, r.RecallAt5))
+			r.HitAt1, r.HitAt3, r.HitAt5, r.MRR, r.RecallAt5, r.AvgConfidence))
 	}
 
 	// Category summary table.
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("%-22s %5s  %-12s %-12s %-12s %-12s\n",
-		"Category", "Tests", "Hit@1", "Hit@3", "Hit@5", "MRR"))
-	sb.WriteString(strings.Repeat("-", 82) + "\n")
+	sb.WriteString(fmt.Sprintf("%-22s %5s  %-12s %-12s %-12s %-12s %-12s\n",
+		"Category", "Tests", "Hit@1", "Hit@3", "Hit@5", "MRR", "AvgConf"))
+	sb.WriteString(strings.Repeat("-", 94) + "\n")
 
 	// Build previous category map.
 	prevCatMap := make(map[string]*CategoryBreakdown)
@@ -566,27 +608,29 @@ func FormatSummaryTableWithDelta(current, previous *Summary) string {
 
 	for _, cb := range current.CategoryBreakdowns {
 		prev := prevCatMap[cb.Category]
-		sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s\n",
+		sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s %s\n",
 			cb.Category, cb.Count,
 			formatWithDelta(cb.HitAt1, prev, func(p *CategoryBreakdown) float64 { return p.HitAt1 }),
 			formatWithDelta(cb.HitAt3, prev, func(p *CategoryBreakdown) float64 { return p.HitAt3 }),
 			formatWithDelta(cb.HitAt5, prev, func(p *CategoryBreakdown) float64 { return p.HitAt5 }),
 			formatWithDelta(cb.MRR, prev, func(p *CategoryBreakdown) float64 { return p.MRR }),
+			formatWithDelta(cb.AvgConfidence, prev, func(p *CategoryBreakdown) float64 { return p.AvgConfidence }),
 		))
 	}
 
 	// Overall row.
-	sb.WriteString(strings.Repeat("-", 82) + "\n")
+	sb.WriteString(strings.Repeat("-", 94) + "\n")
 	var prevSummary *Summary
 	if previous != nil {
 		prevSummary = previous
 	}
-	sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s\n",
+	sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s %s\n",
 		"Overall", len(current.Results),
 		formatWithDeltaSummary(current.HitAt1, prevSummary, func(s *Summary) float64 { return s.HitAt1 }),
 		formatWithDeltaSummary(current.HitAt3, prevSummary, func(s *Summary) float64 { return s.HitAt3 }),
 		formatWithDeltaSummary(current.HitAt5, prevSummary, func(s *Summary) float64 { return s.HitAt5 }),
 		formatWithDeltaSummary(current.MRR, prevSummary, func(s *Summary) float64 { return s.MRR }),
+		formatWithDeltaSummary(current.AvgConfidence, prevSummary, func(s *Summary) float64 { return s.AvgConfidence }),
 	))
 
 	// Chunking stats if present.

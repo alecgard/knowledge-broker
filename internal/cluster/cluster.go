@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
@@ -382,21 +383,21 @@ func aggregateConfidence(members []model.SourceFragment) model.Confidence {
 	sourceNames := make(map[string]struct{})
 
 	for _, m := range members {
-		freshSum += computeFreshness(m.LastModified)
-		consistSum += computeConsistency(m.ConfidenceAdj)
-		authSum += computeAuthority(m.FileType)
+		freshSum += query.ComputeFreshness(m.ContentDate, m.IngestedAt, m.FileType)
+		consistSum += query.ComputeConsistency(m.ConfidenceAdj)
+		authSum += query.ComputeAuthority(m.FileType)
 		sourceNames[m.SourceName] = struct{}{}
 	}
 
 	n := float64(len(members))
 	breakdown := model.ConfidenceBreakdown{
 		Freshness:     round2(freshSum / n),
-		Corroboration: computeCorroboration(len(sourceNames)),
+		Corroboration: query.ComputeCorroboration(len(sourceNames)),
 		Consistency:   round2(consistSum / n),
 		Authority:     round2(authSum / n),
 	}
 	return model.Confidence{
-		Overall:   computeOverallTrust(breakdown, model.DefaultTrustWeights()),
+		Overall:   query.ComputeOverallTrust(breakdown, model.DefaultTrustWeights()),
 		Breakdown: breakdown,
 	}
 }
@@ -427,74 +428,6 @@ func buildSummary(members []model.SourceFragment) string {
 	return fmt.Sprintf("Covers %s", strings.Join(sorted, ", "))
 }
 
-// --- Confidence helpers (same logic as query engine, kept local to avoid
-//     circular imports). ---
-
-func computeFreshness(lastModified time.Time) float64 {
-	if lastModified.IsZero() {
-		return 0.3
-	}
-	days := time.Since(lastModified).Hours() / 24
-	if days <= 0 {
-		return 1.0
-	}
-	score := math.Exp(-days / 130.0)
-	if score < 0.1 {
-		score = 0.1
-	}
-	return round2(score)
-}
-
-func computeCorroboration(numSources int) float64 {
-	if numSources <= 0 {
-		return 0.0
-	}
-	if numSources == 1 {
-		return 0.3
-	}
-	if numSources == 2 {
-		return 0.6
-	}
-	if numSources >= 5 {
-		return 1.0
-	}
-	return 0.8
-}
-
-func computeConsistency(confidenceAdj float64) float64 {
-	score := 0.5 + confidenceAdj
-	if score < 0 {
-		score = 0
-	}
-	if score > 1 {
-		score = 1
-	}
-	return round2(score)
-}
-
-func computeAuthority(fileType string) float64 {
-	ext := strings.ToLower(fileType)
-	if ext == "" {
-		return 0.5
-	}
-	if ext[0] != '.' {
-		ext = "." + ext
-	}
-	switch ext {
-	case ".md", ".markdown", ".rst":
-		return 0.8
-	case ".go", ".py", ".js", ".ts", ".java", ".rs", ".c", ".cpp", ".rb":
-		return 0.7
-	case ".yaml", ".yml", ".toml", ".json":
-		return 0.65
-	case ".txt":
-		return 0.6
-	case ".html", ".htm", ".xml":
-		return 0.55
-	default:
-		return 0.5
-	}
-}
 
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100

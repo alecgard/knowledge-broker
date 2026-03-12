@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecallAtK(t *testing.T) {
@@ -421,9 +422,9 @@ func TestChunkingStatsEmpty(t *testing.T) {
 func TestRunnerWithMockStore(t *testing.T) {
 	store := &mockStore{
 		fragments: []mockFragment{
-			{id: "f1", sourcePath: "eval/corpus/config.go"},
-			{id: "f2", sourcePath: "eval/corpus/README.md"},
-			{id: "f3", sourcePath: "eval/corpus/api.go"},
+			{id: "f1", sourcePath: "eval/corpus/config.go", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+			{id: "f2", sourcePath: "eval/corpus/README.md", fileType: ".md", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+			{id: "f3", sourcePath: "eval/corpus/api.go", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
 		},
 	}
 	embedder := &mockEmbedder{dim: 4}
@@ -568,9 +569,9 @@ func TestSaveAndLoadResults(t *testing.T) {
 func TestContentMatch(t *testing.T) {
 	store := &mockStore{
 		fragments: []mockFragment{
-			{id: "f1", sourcePath: "eval/corpus/config.go", content: "The database is PostgreSQL running on port 5432"},
-			{id: "f2", sourcePath: "eval/corpus/README.md", content: "This service uses Redis for caching"},
-			{id: "f3", sourcePath: "eval/corpus/api.go", content: "API endpoints defined here"},
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "The database is PostgreSQL running on port 5432", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+			{id: "f2", sourcePath: "eval/corpus/README.md", content: "This service uses Redis for caching", fileType: ".md", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+			{id: "f3", sourcePath: "eval/corpus/api.go", content: "API endpoints defined here", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
 		},
 	}
 	embedder := &mockEmbedder{dim: 4}
@@ -603,6 +604,65 @@ func TestContentMatch(t *testing.T) {
 	}
 	if summary.Results[1].ContentMatch {
 		t.Error("expected ContentMatch=false for MongoDB query")
+	}
+}
+
+func TestConfidenceMetrics(t *testing.T) {
+	s := &mockStore{
+		fragments: []mockFragment{
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "config data", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "source-a"},
+			{id: "f2", sourcePath: "eval/corpus/README.md", content: "readme content", fileType: ".md", contentDate: time.Now().Add(-2 * time.Hour), sourceName: "source-b"},
+			{id: "f3", sourcePath: "eval/corpus/api.go", content: "api code", fileType: ".go", contentDate: time.Now().Add(-48 * time.Hour), sourceName: "source-a"},
+		},
+	}
+	embedder := &mockEmbedder{dim: 4}
+	runner := NewRunner(s, embedder)
+
+	cases := []TestCase{
+		{
+			ID:              "q01",
+			Query:           "What config?",
+			ExpectedSources: []string{"config.go"},
+			Category:        "direct_extraction",
+		},
+	}
+
+	summary, err := runner.Run(context.Background(), cases, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := summary.Results[0]
+
+	// Code files (.go) get freshness of 0.95; .md with recent date gets high freshness.
+	// With 2 .go files (0.95 each) and 1 .md file (~1.0 for 2h old), avg should be high.
+	if r.AvgFreshness < 0.90 {
+		t.Errorf("AvgFreshness = %.2f, want >= 0.90", r.AvgFreshness)
+	}
+
+	// AvgConfidence should be populated (> 0).
+	if r.AvgConfidence <= 0 {
+		t.Errorf("AvgConfidence = %.2f, want > 0", r.AvgConfidence)
+	}
+
+	// Summary-level confidence should also be populated.
+	if summary.AvgFreshness < 0.90 {
+		t.Errorf("Summary AvgFreshness = %.2f, want >= 0.90", summary.AvgFreshness)
+	}
+	if summary.AvgConfidence <= 0 {
+		t.Errorf("Summary AvgConfidence = %.2f, want > 0", summary.AvgConfidence)
+	}
+
+	// Category breakdown should have confidence.
+	if len(summary.CategoryBreakdowns) == 0 {
+		t.Fatal("expected at least one category breakdown")
+	}
+	cb := summary.CategoryBreakdowns[0]
+	if cb.AvgFreshness < 0.90 {
+		t.Errorf("Category AvgFreshness = %.2f, want >= 0.90", cb.AvgFreshness)
+	}
+	if cb.AvgConfidence <= 0 {
+		t.Errorf("Category AvgConfidence = %.2f, want > 0", cb.AvgConfidence)
 	}
 }
 

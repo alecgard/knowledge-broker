@@ -64,13 +64,13 @@ func TestUpsertAndGetFragments(t *testing.T) {
 		{
 			ID: "f1", Content: "hello world", SourceType: "filesystem",
 			SourcePath: "/a/b.txt", SourceURI: "file:///a/b.txt",
-			LastModified: now, Author: "alice", FileType: "txt",
+			ContentDate: now, Author: "alice", FileType: "txt",
 			Checksum: "abc123", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "f2", Content: "goodbye world", SourceType: "filesystem",
 			SourcePath: "/a/c.txt", SourceURI: "file:///a/c.txt",
-			LastModified: now, Author: "bob", FileType: "txt",
+			ContentDate: now, Author: "bob", FileType: "txt",
 			Checksum: "def456", Embedding: []float32{0, 1, 0, 0},
 		},
 	}
@@ -108,7 +108,7 @@ func TestUpsertUpdatesExisting(t *testing.T) {
 	frag := model.SourceFragment{
 		ID: "f1", Content: "v1", SourceType: "filesystem",
 		SourcePath: "/a.txt", SourceURI: "file:///a.txt",
-		LastModified: now, FileType: "txt", Checksum: "c1",
+		ContentDate: now, FileType: "txt", Checksum: "c1",
 		Embedding: []float32{1, 0, 0, 0},
 	}
 
@@ -137,19 +137,19 @@ func TestSearchByVector(t *testing.T) {
 		{
 			ID: "f1", Content: "one", SourceType: "fs",
 			SourcePath: "/1", SourceURI: "f:///1",
-			LastModified: now, FileType: "txt", Checksum: "a",
+			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "f2", Content: "two", SourceType: "fs",
 			SourcePath: "/2", SourceURI: "f:///2",
-			LastModified: now, FileType: "txt", Checksum: "b",
+			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0, 1, 0, 0},
 		},
 		{
 			ID: "f3", Content: "three", SourceType: "fs",
 			SourcePath: "/3", SourceURI: "f:///3",
-			LastModified: now, FileType: "txt", Checksum: "c",
+			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0, 0, 1, 0},
 		},
 	}
@@ -181,19 +181,19 @@ func TestSearchByVectorFiltered(t *testing.T) {
 		{
 			ID: "f1", Content: "alpha", SourceType: "git", SourceName: "org/repo-a",
 			SourcePath: "/1", SourceURI: "g:///1",
-			LastModified: now, FileType: "txt", Checksum: "a",
+			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "f2", Content: "beta", SourceType: "git", SourceName: "org/repo-b",
 			SourcePath: "/2", SourceURI: "g:///2",
-			LastModified: now, FileType: "txt", Checksum: "b",
+			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0.9, 0.1, 0, 0},
 		},
 		{
 			ID: "f3", Content: "gamma", SourceType: "git", SourceName: "org/repo-c",
 			SourcePath: "/3", SourceURI: "g:///3",
-			LastModified: now, FileType: "txt", Checksum: "c",
+			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0.8, 0.2, 0, 0},
 		},
 	}
@@ -255,19 +255,19 @@ func TestSearchByVectorFilteredBySourceType(t *testing.T) {
 		{
 			ID: "t1", Content: "alpha", SourceType: "git", SourceName: "org/repo",
 			SourcePath: "/1", SourceURI: "g:///1",
-			LastModified: now, FileType: "txt", Checksum: "a",
+			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "t2", Content: "beta", SourceType: "confluence", SourceName: "ENGINEERING",
 			SourcePath: "/2", SourceURI: "c:///2",
-			LastModified: now, FileType: "txt", Checksum: "b",
+			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0.9, 0.1, 0, 0},
 		},
 		{
 			ID: "t3", Content: "gamma", SourceType: "filesystem", SourceName: "/tmp/docs",
 			SourcePath: "/3", SourceURI: "f:///3",
-			LastModified: now, FileType: "txt", Checksum: "c",
+			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0.8, 0.2, 0, 0},
 		},
 	}
@@ -320,12 +320,12 @@ func TestGetChecksums(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID: "f1", Content: "a", SourceType: "filesystem",
-			SourcePath: "/a.txt", SourceURI: "f:///a", LastModified: now,
+			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa",
 		},
 		{
 			ID: "f2", Content: "b", SourceType: "github",
-			SourcePath: "/b.txt", SourceURI: "f:///b", LastModified: now,
+			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb",
 		},
 	}
@@ -351,12 +351,12 @@ func TestDeleteByPaths(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID: "f1", Content: "a", SourceType: "filesystem",
-			SourcePath: "/a.txt", SourceURI: "f:///a", LastModified: now,
+			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "f2", Content: "b", SourceType: "filesystem",
-			SourcePath: "/b.txt", SourceURI: "f:///b", LastModified: now,
+			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb", Embedding: []float32{0, 1, 0, 0},
 		},
 	}
@@ -406,17 +406,17 @@ func TestDeleteFragmentsBySource(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID: "f1", Content: "a", SourceType: "filesystem", SourceName: "proj1",
-			SourcePath: "/a.txt", SourceURI: "f:///a", LastModified: now,
+			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
 			ID: "f2", Content: "b", SourceType: "filesystem", SourceName: "proj1",
-			SourcePath: "/b.txt", SourceURI: "f:///b", LastModified: now,
+			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb", Embedding: []float32{0, 1, 0, 0},
 		},
 		{
 			ID: "f3", Content: "c", SourceType: "github", SourceName: "repo1",
-			SourcePath: "/c.txt", SourceURI: "f:///c", LastModified: now,
+			SourcePath: "/c.txt", SourceURI: "f:///c", ContentDate: now,
 			FileType: "txt", Checksum: "ccc", Embedding: []float32{0, 0, 1, 0},
 		},
 	}
@@ -507,7 +507,7 @@ func TestConcurrentUpserts(t *testing.T) {
 				frags = append(frags, model.SourceFragment{
 					ID: id, Content: fmt.Sprintf("content-%s", id),
 					SourceType: "test", SourcePath: fmt.Sprintf("/w%d/%d.txt", workerID, i),
-					SourceURI: "test://", LastModified: now,
+					SourceURI: "test://", ContentDate: now,
 					FileType: "txt", Checksum: fmt.Sprintf("ck-%s", id),
 					Embedding: []float32{float32(workerID), float32(i), 0, 0},
 				})
@@ -563,7 +563,7 @@ func TestConcurrentUpsertSameID(t *testing.T) {
 			frag := model.SourceFragment{
 				ID: "shared-id", Content: fmt.Sprintf("version-%d", workerID),
 				SourceType: "test", SourcePath: "/shared.txt",
-				SourceURI: "test://", LastModified: now,
+				SourceURI: "test://", ContentDate: now,
 				FileType: "txt", Checksum: fmt.Sprintf("v%d", workerID),
 				Embedding: []float32{1, 0, 0, 0},
 			}
@@ -608,7 +608,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 		id := fmt.Sprintf("seed-%d", i)
 		err := s.UpsertFragments(context.Background(), []model.SourceFragment{{
 			ID: id, Content: "seed", SourceType: "test", SourcePath: fmt.Sprintf("/%d.txt", i),
-			SourceURI: "test://", LastModified: now, FileType: "txt", Checksum: "s",
+			SourceURI: "test://", ContentDate: now, FileType: "txt", Checksum: "s",
 			Embedding: []float32{1, 0, 0, 0},
 		}})
 		if err != nil {
@@ -634,7 +634,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 			errs <- ws.UpsertFragments(context.Background(), []model.SourceFragment{{
 				ID: id, Content: "new", SourceType: "test",
 				SourcePath: fmt.Sprintf("/new/%d.txt", workerID),
-				SourceURI: "test://", LastModified: now, FileType: "txt", Checksum: "n",
+				SourceURI: "test://", ContentDate: now, FileType: "txt", Checksum: "n",
 				Embedding: []float32{0, 1, 0, 0},
 			}})
 		}(w)

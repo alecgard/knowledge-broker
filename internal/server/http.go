@@ -293,7 +293,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 			SourceName:   f.SourceName,
 			SourcePath:   f.SourcePath,
 			SourceURI:    f.SourceURI,
-			LastModified: f.LastModified,
+			ContentDate: f.ContentDate,
 			Author:       f.Author,
 			FileType:     fileType,
 			Checksum:     f.Checksum,

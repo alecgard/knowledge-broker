@@ -575,7 +575,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 	fmt.Fprintf(os.Stderr, "Extracting chunks...\n")
 	var allFragments []model.IngestFragment
 	for _, doc := range docs {
-		chunks, err := ingest.ExtractChunks(doc, reg)
+		result, err := ingest.ExtractChunks(doc, reg)
 		if err != nil {
 			logger.Warn("extract failed", "path", doc.Path, "error", err)
 			continue
@@ -583,14 +583,14 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 
 		fileType := filepath.Ext(doc.Path)
 
-		for _, chunk := range chunks {
+		for _, chunk := range result.Chunks {
 			allFragments = append(allFragments, model.IngestFragment{
 				Content:      chunk.Content,
 				SourceType:   doc.SourceType,
 				SourceName:   doc.SourceName,
 				SourcePath:   doc.Path,
 				SourceURI:    doc.SourceURI,
-				LastModified: doc.LastModified,
+				ContentDate: doc.ContentDate,
 				Author:       doc.Author,
 				FileType:     fileType,
 				Checksum:     doc.Checksum,
@@ -666,7 +666,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 				SourceName:   doc.SourceName,
 				SourcePath:   doc.Path,
 				SourceURI:    doc.SourceURI,
-				LastModified: doc.LastModified,
+				ContentDate: doc.ContentDate,
 				Author:       doc.Author,
 				FileType:     filepath.Ext(doc.Path),
 				Checksum:     doc.Checksum,
@@ -983,7 +983,7 @@ func exportCmd() *cobra.Command {
 				return fmt.Errorf("create metadata.tsv: %w", err)
 			}
 			mw := bufio.NewWriter(mf)
-			mw.WriteString("id\tsource_name\tsource_path\tsource_type\tfile_type\tauthor\tlast_modified\n")
+			mw.WriteString("id\tsource_name\tsource_path\tsource_type\tfile_type\tauthor\tcontent_date\n")
 			for _, f := range fragments {
 				fmt.Fprintf(mw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 					sanitizeTSV(f.ID),
@@ -992,7 +992,7 @@ func exportCmd() *cobra.Command {
 					sanitizeTSV(f.SourceType),
 					sanitizeTSV(f.FileType),
 					sanitizeTSV(f.Author),
-					sanitizeTSV(f.LastModified.Format("2006-01-02T15:04:05Z")),
+					sanitizeTSV(f.ContentDate.Format("2006-01-02T15:04:05Z")),
 				)
 			}
 			if err := mw.Flush(); err != nil {

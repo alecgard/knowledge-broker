@@ -156,21 +156,22 @@ func deserializeEmbedding(b []byte) []float32 {
 
 // scanFragment scans a fragment row from the standard column set:
 // id, content, source_type, source_name, source_path, source_uri,
-// last_modified, author, file_type, checksum, confidence_adj.
+// content_date, author, file_type, checksum, confidence_adj, ingested_at.
 // Additional columns (e.g., distance, embedding) must be handled by the caller
 // via the extra parameter.
 func scanFragment(scanner interface{ Scan(...any) error }, extra ...any) (model.SourceFragment, error) {
 	var f model.SourceFragment
-	var lastMod string
+	var contentDate, ingestedAt string
 	dest := []any{
 		&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
-		&lastMod, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj,
+		&contentDate, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj, &ingestedAt,
 	}
 	dest = append(dest, extra...)
 	if err := scanner.Scan(dest...); err != nil {
 		return model.SourceFragment{}, err
 	}
-	f.LastModified, _ = time.Parse(time.RFC3339, lastMod)
+	f.ContentDate, _ = time.Parse(time.RFC3339, contentDate)
+	f.IngestedAt, _ = time.Parse(time.RFC3339, ingestedAt)
 	return f, nil
 }
 
@@ -191,7 +192,7 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 
 	fragStmt, err := tx.PrepareContext(ctx, `
 		INSERT OR REPLACE INTO fragments
-			(id, content, source_type, source_name, source_path, source_uri, last_modified, author, file_type, checksum, confidence_adj, updated_at)
+			(id, content, source_type, source_name, source_path, source_uri, content_date, author, file_type, checksum, confidence_adj, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
@@ -219,7 +220,7 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 	for _, f := range fragments {
 		_, err := fragStmt.ExecContext(ctx,
 			f.ID, f.Content, f.SourceType, f.SourceName, f.SourcePath, f.SourceURI,
-			f.LastModified.UTC().Format(time.RFC3339),
+			f.ContentDate.UTC().Format(time.RFC3339),
 			f.Author, f.FileType, f.Checksum, f.ConfidenceAdj,
 		)
 		if err != nil {
@@ -245,7 +246,7 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, limit int) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
-		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
 		       fe.distance
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
@@ -308,7 +309,7 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 
 	query := fmt.Sprintf(`
 		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
-		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
 		       fe.distance
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
@@ -352,7 +353,7 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 
 	query := fmt.Sprintf(`
 		SELECT id, content, source_type, source_name, source_path, source_uri,
-		       last_modified, author, file_type, checksum, confidence_adj
+		       content_date, author, file_type, checksum, confidence_adj, ingested_at
 		FROM fragments
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -460,7 +461,7 @@ func (s *SQLiteStore) deleteByPathsOnce(ctx context.Context, sourceType, sourceN
 func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
-		       f.last_modified, f.author, f.file_type, f.checksum, f.confidence_adj,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
 		       fe.embedding
 		FROM fragments f
 		INNER JOIN fragment_embeddings fe ON fe.fragment_id = f.id

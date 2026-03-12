@@ -37,7 +37,7 @@ type jupyterCell struct {
 	Source   []string `json:"source"`     // lines of source content
 }
 
-func (j *JupyterExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
+func (j *JupyterExtractor) Extract(content []byte, opts ExtractOptions) (*ExtractResult, error) {
 	var nb jupyterNotebook
 	if err := json.Unmarshal(content, &nb); err != nil {
 		return nil, fmt.Errorf("parse notebook JSON: %w", err)
@@ -86,13 +86,13 @@ func (j *JupyterExtractor) Extract(content []byte, opts ExtractOptions) ([]model
 	chunks = j.mergeSmallChunks(chunks)
 
 	if len(chunks) == 0 {
-		return []model.Chunk{{
+		return &ExtractResult{Chunks: []model.Chunk{{
 			Content:  "",
 			Metadata: map[string]string{"cell_type": "", "cell_number": "0"},
-		}}, nil
+		}}}, nil
 	}
 
-	return chunks, nil
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 // mergeSmallChunks combines consecutive chunks of the same cell type when

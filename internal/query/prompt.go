@@ -21,7 +21,7 @@ RULES:
 - Be maximally terse. No filler, no caveats, no preamble. Use abbreviations.
 - State facts directly. "Retries 3x, exp backoff, 1s initial" not "The service retries failed charges up to three times using exponential backoff with an initial delay of one second."
 - Cite sources inline as [id].
-- If sources contradict, state both claims briefly.
+- If sources contradict, state both claims briefly. Include the date of each source to indicate which is newer. Example: 'Source A (2025-11-03) says X, but Source B (2026-02-15) says Y — the newer source likely supersedes.'
 
 Emit metadata after your answer:
 
@@ -29,7 +29,7 @@ Emit metadata after your answer:
 {"confidence":{"overall":0.0,"breakdown":{"freshness":0.0,"corroboration":0.0,"consistency":0.0,"authority":0.0}},"sources":[{"fragment_id":"...","source_uri":"...","source_path":"..."}],"contradictions":[]}
 ---KB_META_END---
 
-Confidence breakdown: freshness=recency relative to corpus, corroboration=number of independent sources (1=0.3,2-3=0.6,4+=0.9), consistency=agreement between sources, authority=source type fitness (code>docs>config>commits). Compute overall as a weighted composite: freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25.
+Confidence breakdown: freshness=recency relative to corpus (code files are always fresh as long as they exist in the corpus; for documentation and prose, score freshness based on recency), corroboration=number of independent sources (1=0.3,2-3=0.6,4+=0.9), consistency=agreement between sources, authority=source type fitness (code>docs>config>commits). Compute overall as a weighted composite: freshness*0.20 + corroboration*0.25 + consistency*0.30 + authority*0.25.
 Only include fragments you used in sources. No text after ---KB_META_END---. No code fences around the metadata block.
 
 If fragments come from multiple unrelated projects, answer based on the most relevant project and note which project you're answering about. Do not blend information from unrelated projects into a single answer.
@@ -49,10 +49,12 @@ You have been given a set of source fragments retrieved from a knowledge base. Y
 
 Assess these four signals on a scale of 0.0 to 1.0:
 
-- **Freshness**: How recently were the sources modified? Score relative to the range of dates you see. Recent sources score higher.
+- **Freshness**: Code files (source code, config) are always fresh as long as they exist in the corpus. For documentation and prose, score freshness based on recency relative to the range of dates you see.
 - **Corroboration**: How many independent sources support the answer? 1 source = low (0.2-0.4), 2-3 sources = medium (0.5-0.7), 4+ sources = high (0.8-1.0).
 - **Consistency**: Do the sources agree? If they contradict each other, score lower and flag the contradiction.
 - **Authority**: How authoritative are the source types for this kind of question? Code is authoritative for behaviour. Docs are authoritative for intent/design. Config files are authoritative for settings. Commit messages are low authority.
+
+When sources contradict, include the date of each source to indicate which is newer. Example: 'Source A (2025-11-03) says X, but Source B (2026-02-15) says Y — the newer source likely supersedes.'
 
 ## Response format
 
@@ -87,14 +89,14 @@ If fragments come from multiple unrelated projects, answer based on the most rel
 		}
 
 		for _, f := range g.fragments {
-			age := now.Sub(f.LastModified)
+			age := now.Sub(f.ContentDate)
 			ageStr := formatAge(age)
 
 			fmt.Fprintf(&b, "### Fragment: %s\n", f.ID)
 			fmt.Fprintf(&b, "- Path: %s\n", f.SourcePath)
 			fmt.Fprintf(&b, "- URI: %s\n", f.SourceURI)
 			fmt.Fprintf(&b, "- Type: %s\n", f.FileType)
-			fmt.Fprintf(&b, "- Last modified: %s (%s ago)\n", f.LastModified.Format("2006-01-02"), ageStr)
+			fmt.Fprintf(&b, "- Content date: %s (%s ago)\n", f.ContentDate.Format("2006-01-02"), ageStr)
 			if f.Author != "" {
 				fmt.Fprintf(&b, "- Author: %s\n", f.Author)
 			}

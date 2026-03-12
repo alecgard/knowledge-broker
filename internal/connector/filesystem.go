@@ -218,7 +218,7 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 		docs = append(docs, model.RawDocument{
 			Path:         path,
 			Content:      content,
-			LastModified: lastModified,
+			ContentDate: lastModified,
 			Author:       author,
 			SourceURI:    "file://" + absPath,
 			SourceType:   SourceTypeFilesystem,

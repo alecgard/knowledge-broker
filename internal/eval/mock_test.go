@@ -10,9 +10,12 @@ import (
 
 // mockFragment holds test fragment data.
 type mockFragment struct {
-	id         string
-	sourcePath string
-	content    string
+	id          string
+	sourcePath  string
+	content     string
+	fileType    string
+	contentDate time.Time
+	sourceName  string
 }
 
 // mockStore implements store.Store for testing.
@@ -31,9 +34,13 @@ func (m *mockStore) SearchByVector(ctx context.Context, embedding []float32, lim
 			break
 		}
 		results = append(results, model.SourceFragment{
-			ID:         f.id,
-			SourcePath: f.sourcePath,
-			Content:    f.content,
+			ID:          f.id,
+			SourcePath:  f.sourcePath,
+			Content:     f.content,
+			FileType:    f.fileType,
+			ContentDate: f.contentDate,
+			SourceName:  f.sourceName,
+			IngestedAt:  time.Now(),
 		})
 	}
 	return results, nil
@@ -62,7 +69,7 @@ func (m *mockStore) ExportFragments(ctx context.Context) ([]model.SourceFragment
 			ID:           f.id,
 			SourcePath:   f.sourcePath,
 			Content:      f.content,
-			LastModified: time.Now(),
+			ContentDate: time.Now(),
 			Embedding:    []float32{0.1, 0.2, 0.3, 0.4},
 		})
 	}

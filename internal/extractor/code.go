@@ -68,14 +68,14 @@ var languagePatterns = map[string][]*regexp.Regexp{
 	},
 }
 
-func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Chunk, error) {
+func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) (*ExtractResult, error) {
 	text := string(content)
 	ext := strings.ToLower(filepath.Ext(opts.Path))
 
 	patterns, ok := languagePatterns[ext]
 	if !ok {
 		// Unknown extension, fall back to plaintext chunking.
-		return plaintextChunk(text, c.maxChunkSize, 0)
+		return wrapChunksResult(plaintextChunk(text, c.maxChunkSize, 0))
 	}
 
 	lines := strings.Split(text, "\n")
@@ -101,7 +101,7 @@ func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Ch
 
 	if len(boundaries) == 0 {
 		// No recognizable boundaries; fall back to plaintext chunking.
-		return plaintextChunk(text, c.maxChunkSize, 0)
+		return wrapChunksResult(plaintextChunk(text, c.maxChunkSize, 0))
 	}
 
 	var chunks []model.Chunk
@@ -174,10 +174,10 @@ func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Ch
 	}
 
 	if len(chunks) == 0 {
-		return plaintextChunk(text, c.maxChunkSize, 0)
+		return wrapChunksResult(plaintextChunk(text, c.maxChunkSize, 0))
 	}
 
-	return chunks, nil
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 // extractPreamble returns package/import lines for context.
@@ -352,6 +352,14 @@ func extractJavaMethodName(line string) string {
 		return matches[1]
 	}
 	return ""
+}
+
+// wrapChunksResult wraps a ([]model.Chunk, error) return into (*ExtractResult, error).
+func wrapChunksResult(chunks []model.Chunk, err error) (*ExtractResult, error) {
+	if err != nil {
+		return nil, err
+	}
+	return &ExtractResult{Chunks: chunks}, nil
 }
 
 // plaintextChunk is a helper that splits text into fixed-size chunks.

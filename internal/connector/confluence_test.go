@@ -162,8 +162,8 @@ func TestConfluenceConnector_BasicScan(t *testing.T) {
 		t.Errorf("Checksum = %q, want %q", doc.Checksum, expectedChecksum)
 	}
 
-	if doc.LastModified.IsZero() {
-		t.Error("LastModified should not be zero")
+	if doc.ContentDate.IsZero() {
+		t.Error("ContentDate should not be zero")
 	}
 }
 
@@ -629,12 +629,12 @@ func TestConfluenceConnector_TimestampFormats(t *testing.T) {
 		if len(docs) != 1 {
 			t.Fatalf("expected 1 doc, got %d", len(docs))
 		}
-		if docs[0].LastModified.IsZero() {
-			t.Error("LastModified should not be zero for Confluence Cloud timestamp")
+		if docs[0].ContentDate.IsZero() {
+			t.Error("ContentDate should not be zero for Confluence Cloud timestamp")
 		}
 		expected := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
-		if !docs[0].LastModified.Equal(expected) {
-			t.Errorf("LastModified = %v, want %v", docs[0].LastModified, expected)
+		if !docs[0].ContentDate.Equal(expected) {
+			t.Errorf("ContentDate = %v, want %v", docs[0].ContentDate, expected)
 		}
 	})
 }

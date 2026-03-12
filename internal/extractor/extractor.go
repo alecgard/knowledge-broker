@@ -11,6 +11,9 @@ type Extractor = extractor.Extractor
 // ExtractOptions is the public ExtractOptions type.
 type ExtractOptions = extractor.ExtractOptions
 
+// ExtractResult is the public ExtractResult type.
+type ExtractResult = extractor.ExtractResult
+
 // Registry maps file extensions to extractors.
 type Registry struct {
 	extractors map[string]Extractor

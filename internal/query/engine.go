@@ -277,29 +277,30 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	for _, f := range fragments {
 		sourceNames[f.SourceName] = struct{}{}
 	}
-	corroboration := computeCorroboration(len(sourceNames))
+	corroboration := ComputeCorroboration(len(sourceNames))
 
 	// Build raw fragments with per-fragment confidence signals.
 	rawFragments := make([]model.RawFragment, len(fragments))
 	for i, f := range fragments {
 		breakdown := model.ConfidenceBreakdown{
-			Freshness:     computeFreshness(f.LastModified),
+			Freshness:     ComputeFreshness(f.ContentDate, f.IngestedAt, f.FileType),
 			Corroboration: corroboration,
-			Consistency:   computeConsistency(f.ConfidenceAdj),
-			Authority:     computeAuthority(f.FileType),
+			Consistency:   ComputeConsistency(f.ConfidenceAdj),
+			Authority:     ComputeAuthority(f.FileType),
 		}
 		rawFragments[i] = model.RawFragment{
-			FragmentID:   f.ID,
-			Content:      f.Content,
-			SourcePath:   f.SourcePath,
-			SourceURI:    f.SourceURI,
-			SourceName:   f.SourceName,
-			SourceType:   f.SourceType,
-			FileType:     f.FileType,
-			LastModified: f.LastModified,
-			Author:       f.Author,
+			FragmentID:  f.ID,
+			Content:     f.Content,
+			SourcePath:  f.SourcePath,
+			SourceURI:   f.SourceURI,
+			SourceName:  f.SourceName,
+			SourceType:  f.SourceType,
+			FileType:    f.FileType,
+			ContentDate: f.ContentDate,
+			IngestedAt:  f.IngestedAt,
+			Author:      f.Author,
 			Confidence: model.Confidence{
-				Overall:   computeOverallTrust(breakdown, model.DefaultTrustWeights()),
+				Overall:   ComputeOverallTrust(breakdown, model.DefaultTrustWeights()),
 				Breakdown: breakdown,
 			},
 		}
@@ -330,19 +331,30 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	return result, nil
 }
 
-// computeOverallTrust computes a weighted composite trust score from the breakdown.
-func computeOverallTrust(b model.ConfidenceBreakdown, w model.TrustWeights) float64 {
+// ComputeOverallTrust computes a weighted composite trust score from the breakdown.
+func ComputeOverallTrust(b model.ConfidenceBreakdown, w model.TrustWeights) float64 {
 	score := b.Freshness*w.Freshness + b.Corroboration*w.Corroboration + b.Consistency*w.Consistency + b.Authority*w.Authority
 	return math.Round(score*100) / 100
 }
 
-// computeFreshness returns a score from 0 to 1 based on how recent the document is.
-// 1.0 for today, decaying over months.
-func computeFreshness(lastModified time.Time) float64 {
-	if lastModified.IsZero() {
+// ComputeFreshness returns a score from 0 to 1 based on how recent the document is.
+// Code files get high freshness regardless of age (code in the repo is current).
+// For docs/prose, uses temporal decay with ingested_at as fallback when content_date is zero.
+func ComputeFreshness(contentDate, ingestedAt time.Time, fileType string) float64 {
+	// Code files: high freshness as long as they exist in the repo.
+	if IsCodeFile(fileType) {
+		return 0.95
+	}
+
+	// Docs/prose: temporal decay.
+	t := contentDate
+	if t.IsZero() {
+		t = ingestedAt
+	}
+	if t.IsZero() {
 		return 0.3 // unknown date gets a low default
 	}
-	days := time.Since(lastModified).Hours() / 24
+	days := time.Since(t).Hours() / 24
 	if days <= 0 {
 		return 1.0
 	}
@@ -354,8 +366,18 @@ func computeFreshness(lastModified time.Time) float64 {
 	return math.Round(score*100) / 100
 }
 
-// computeCorroboration returns a score based on how many distinct sources appear.
-func computeCorroboration(numSources int) float64 {
+// IsCodeFile returns true for source code and config file extensions.
+func IsCodeFile(fileType string) bool {
+	switch strings.ToLower(fileType) {
+	case ".go", ".py", ".js", ".ts", ".java", ".rs", ".c", ".cpp", ".rb",
+		".yaml", ".yml", ".toml", ".json", ".xml", ".html":
+		return true
+	}
+	return false
+}
+
+// ComputeCorroboration returns a score based on how many distinct sources appear.
+func ComputeCorroboration(numSources int) float64 {
 	if numSources <= 0 {
 		return 0.0
 	}
@@ -372,9 +394,9 @@ func computeCorroboration(numSources int) float64 {
 	return 0.8
 }
 
-// computeConsistency maps a confidence adjustment to a 0-1 range.
+// ComputeConsistency maps a confidence adjustment to a 0-1 range.
 // Baseline is 0.5, adjustment is added and clamped.
-func computeConsistency(confidenceAdj float64) float64 {
+func ComputeConsistency(confidenceAdj float64) float64 {
 	score := 0.5 + confidenceAdj
 	if score < 0 {
 		score = 0
@@ -385,8 +407,8 @@ func computeConsistency(confidenceAdj float64) float64 {
 	return math.Round(score*100) / 100
 }
 
-// computeAuthority returns a heuristic authority score based on file type.
-func computeAuthority(fileType string) float64 {
+// ComputeAuthority returns a heuristic authority score based on file type.
+func ComputeAuthority(fileType string) float64 {
 	ext := strings.ToLower(fileType)
 	if ext == "" {
 		return 0.5

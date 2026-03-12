@@ -366,7 +366,7 @@ func (c *SlackConnector) buildThreadDocument(channelName, channelID string, mess
 	return &model.RawDocument{
 		Path:         path,
 		Content:      []byte(content),
-		LastModified: latestTime,
+		ContentDate: latestTime,
 		Author:       author,
 		SourceURI:    fmt.Sprintf("slack://channel/%s/p%s", channelID, strings.Replace(threadTS, ".", "", 1)),
 		SourceType:   SourceTypeSlack,
@@ -406,7 +406,7 @@ func (c *SlackConnector) buildDailyDocument(channelName, channelID, date string,
 	return &model.RawDocument{
 		Path:         path,
 		Content:      []byte(content),
-		LastModified: latestTime,
+		ContentDate: latestTime,
 		Author:       author,
 		SourceURI:    fmt.Sprintf("slack://channel/%s/p%s", channelID, strings.Replace(messages[0].TS, ".", "", 1)),
 		SourceType:   SourceTypeSlack,

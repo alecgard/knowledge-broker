@@ -29,15 +29,15 @@ func FragmentID(sourceType, sourcePath string, index int) string {
 
 // IngestFragment is a single fragment in an ingest request (without ID or embedding).
 type IngestFragment struct {
-	Content      string    `json:"content"`
-	SourceType   string    `json:"source_type"`
-	SourceName   string    `json:"source_name,omitempty"`
-	SourcePath   string    `json:"source_path"`
-	SourceURI    string    `json:"source_uri"`
-	LastModified time.Time `json:"last_modified"`
-	Author       string    `json:"author"`
-	FileType     string    `json:"file_type"`
-	Checksum     string    `json:"checksum"`
+	Content     string    `json:"content"`
+	SourceType  string    `json:"source_type"`
+	SourceName  string    `json:"source_name,omitempty"`
+	SourcePath  string    `json:"source_path"`
+	SourceURI   string    `json:"source_uri"`
+	ContentDate time.Time `json:"content_date"`
+	Author      string    `json:"author"`
+	FileType    string    `json:"file_type"`
+	Checksum    string    `json:"checksum"`
 }
 
 // IngestDeletedPath identifies a source type, source name, and path to delete.
@@ -70,15 +70,15 @@ type Source struct {
 
 // RawDocument is the output of a connector before extraction.
 type RawDocument struct {
-	Path         string
-	Content      []byte
-	LastModified time.Time
-	Author       string
-	SourceURI    string
-	SourceType   string
-	SourceName   string
-	Checksum     string
-	Chunks       []Chunk // optional pre-chunked content; skips extractor when set
+	Path        string
+	Content     []byte
+	ContentDate time.Time
+	Author      string
+	SourceURI   string
+	SourceType  string
+	SourceName  string
+	Checksum    string
+	Chunks      []Chunk // optional pre-chunked content; skips extractor when set
 }
 
 // Chunk is the output of an extractor.
@@ -95,7 +95,8 @@ type SourceFragment struct {
 	SourceName    string
 	SourcePath    string
 	SourceURI     string
-	LastModified  time.Time
+	ContentDate   time.Time
+	IngestedAt    time.Time
 	Author        string
 	FileType      string
 	Checksum      string
@@ -191,16 +192,17 @@ type KnowledgeUnit struct {
 
 // RawFragment is a single fragment returned by raw retrieval mode.
 type RawFragment struct {
-	FragmentID   string           `json:"fragment_id"`
-	Content      string           `json:"content"`
-	SourcePath   string           `json:"source_path"`
-	SourceURI    string           `json:"source_uri"`
-	SourceName   string           `json:"source_name,omitempty"`
-	SourceType   string           `json:"source_type"`
-	FileType     string           `json:"file_type"`
-	LastModified time.Time        `json:"last_modified"`
-	Author       string           `json:"author"`
-	Confidence   Confidence `json:"confidence"`
+	FragmentID  string     `json:"fragment_id"`
+	Content     string     `json:"content"`
+	SourcePath  string     `json:"source_path"`
+	SourceURI   string     `json:"source_uri"`
+	SourceName  string     `json:"source_name,omitempty"`
+	SourceType  string     `json:"source_type"`
+	FileType    string     `json:"file_type"`
+	ContentDate time.Time  `json:"content_date"`
+	IngestedAt  time.Time  `json:"ingested_at"`
+	Author      string     `json:"author"`
+	Confidence  Confidence `json:"confidence"`
 }
 
 // RawKnowledgeUnit is a knowledge unit returned in raw retrieval results.

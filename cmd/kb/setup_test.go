@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestResolveConfigPath(t *testing.T) {
@@ -240,23 +243,151 @@ func TestWriteConfigFile_CreatesDirectories(t *testing.T) {
 func TestFormatEntryJSON(t *testing.T) {
 	entry := buildMCPEntry("/usr/local/bin/kb")
 	out := formatEntryJSON(entry)
-	if !contains(out, `"knowledge-broker"`) {
+	if !strings.Contains(out, `"knowledge-broker"`) {
 		t.Errorf("missing knowledge-broker key in output: %s", out)
 	}
-	if !contains(out, `/usr/local/bin/kb`) {
+	if !strings.Contains(out, `/usr/local/bin/kb`) {
 		t.Errorf("missing binary path in output: %s", out)
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
+func TestAgentHintFile(t *testing.T) {
+	if got := agentHintFile(clientClaudeCode); got != "CLAUDE.md" {
+		t.Errorf("claude code: got %q, want CLAUDE.md", got)
+	}
+	if got := agentHintFile(clientCursor); got != "AGENTS.md" {
+		t.Errorf("cursor: got %q, want AGENTS.md", got)
+	}
 }
 
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+func TestHandleAgentHint_ClaudeLocalCreatesFile(t *testing.T) {
+	tmp := t.TempDir()
+	cmd := &cobra.Command{}
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+
+	if err := handleAgentHint(cmd, clientClaudeCode, scopeLocal, tmp); err != nil {
+		t.Fatal(err)
 	}
-	return false
+
+	data, err := os.ReadFile(filepath.Join(tmp, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), agentHintHeading) {
+		t.Error("CLAUDE.md missing Knowledge Broker heading")
+	}
+	if !strings.Contains(buf.String(), "Appended Knowledge Broker section") {
+		t.Error("expected confirmation message")
+	}
+}
+
+func TestHandleAgentHint_CursorLocalCreatesAgentsMD(t *testing.T) {
+	tmp := t.TempDir()
+	cmd := &cobra.Command{}
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+
+	if err := handleAgentHint(cmd, clientCursor, scopeLocal, tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmp, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), agentHintHeading) {
+		t.Error("AGENTS.md missing Knowledge Broker heading")
+	}
+	if !strings.Contains(buf.String(), "Appended Knowledge Broker section") {
+		t.Error("expected confirmation message")
+	}
+}
+
+func TestHandleAgentHint_LocalAppendsToExisting(t *testing.T) {
+	tmp := t.TempDir()
+	existing := "# My Project\n\nSome info.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "CLAUDE.md"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&strings.Builder{})
+
+	if err := handleAgentHint(cmd, clientClaudeCode, scopeLocal, tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmp, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, existing) {
+		t.Error("existing content was not preserved")
+	}
+	if !strings.Contains(content, agentHintHeading) {
+		t.Error("CLAUDE.md missing Knowledge Broker heading")
+	}
+}
+
+func TestHandleAgentHint_LocalSkipsDuplicate(t *testing.T) {
+	tmp := t.TempDir()
+	existing := "# My Project\n\n## Knowledge Broker\n\nAlready here.\n"
+	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+
+	if err := handleAgentHint(cmd, clientCursor, scopeLocal, tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmp, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != existing {
+		t.Error("file was modified when it should have been skipped")
+	}
+	if !strings.Contains(buf.String(), "already contains") {
+		t.Error("expected skip message")
+	}
+}
+
+func TestHandleAgentHint_GlobalPrintsSnippet(t *testing.T) {
+	cmd := &cobra.Command{}
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+
+	if err := handleAgentHint(cmd, clientClaudeCode, scopeGlobal, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(buf.String(), agentHintHeading) {
+		t.Error("expected snippet in output")
+	}
+	if !strings.Contains(buf.String(), "CLAUDE.md") {
+		t.Error("expected CLAUDE.md filename in tip")
+	}
+	if !strings.Contains(buf.String(), "Tip:") {
+		t.Error("expected tip prefix")
+	}
+}
+
+func TestHandleAgentHint_GlobalCursorPrintsAgentsMD(t *testing.T) {
+	cmd := &cobra.Command{}
+	var buf strings.Builder
+	cmd.SetOut(&buf)
+
+	if err := handleAgentHint(cmd, clientCursor, scopeGlobal, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(buf.String(), "AGENTS.md") {
+		t.Error("expected AGENTS.md filename in tip")
+	}
 }

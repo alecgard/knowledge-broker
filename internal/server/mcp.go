@@ -50,7 +50,7 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 			mcp.Required(),
 		),
 		mcp.WithString("topics",
-			mcp.Description("Optional comma-separated topics to boost relevance (e.g., 'authentication,octroi')"),
+			mcp.Description("Optional comma-separated topics to boost relevance (e.g., 'authentication,deployment')"),
 		),
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of fragments to retrieve (default 20)"),

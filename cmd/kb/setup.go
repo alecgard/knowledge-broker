@@ -197,6 +197,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Wrote MCP config to %s\n\n%s\n", configPath, formatEntryJSON(entry))
+
+	if err := handleAgentHint(cmd, client, scope, cwd); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -268,4 +273,67 @@ func resolveScope(globalFlag, localFlag bool, client mcpClientType, reader *bufi
 		return scopeGlobal, nil
 	}
 	return scopeLocal, nil
+}
+
+const agentHintSection = `## Knowledge Broker
+
+A knowledge base is available via the ` + "`query`" + ` and ` + "`list-sources`" + ` MCP tools. Use these when grep and local file search don't surface the answer — they search across indexed documentation, repos, and project knowledge that may not be in the local codebase.
+`
+
+const agentHintHeading = "## Knowledge Broker"
+
+// agentHintFile returns the instructions filename for the given client.
+// Claude Code reads CLAUDE.md; Cursor and Codex read AGENTS.md.
+func agentHintFile(client mcpClientType) string {
+	switch client {
+	case clientClaudeCode:
+		return "CLAUDE.md"
+	default:
+		return "AGENTS.md"
+	}
+}
+
+// handleAgentHint appends a usage hint to the client's agent instructions file
+// (local scope) or prints the snippet to stdout (global scope).
+func handleAgentHint(cmd *cobra.Command, client mcpClientType, scope mcpScope, cwd string) error {
+	filename := agentHintFile(client)
+
+	if scope == scopeGlobal {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nTip: add the following to your project's %s so the agent knows about the knowledge base:\n\n%s\n", filename, agentHintSection)
+		return nil
+	}
+
+	// Local scope: append to the instructions file in cwd.
+	mdPath := filepath.Join(cwd, filename)
+	existing, err := os.ReadFile(mdPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", mdPath, err)
+	}
+
+	if strings.Contains(string(existing), agentHintHeading) {
+		fmt.Fprintf(cmd.OutOrStdout(), "\n✓ %s already contains Knowledge Broker section, skipping.\n", filename)
+		return nil
+	}
+
+	f, err := os.OpenFile(mdPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", mdPath, err)
+	}
+	defer f.Close()
+
+	content := agentHintSection
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n\n") {
+		if strings.HasSuffix(string(existing), "\n") {
+			content = "\n" + content
+		} else {
+			content = "\n\n" + content
+		}
+	}
+
+	if _, err := f.WriteString(content); err != nil {
+		return fmt.Errorf("write %s: %w", mdPath, err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Appended Knowledge Broker section to %s\n", mdPath)
+	return nil
 }

@@ -114,7 +114,7 @@ type QueryRequest struct {
 	Messages []Message `json:"messages"`
 	Limit    int       `json:"limit,omitempty"`   // max fragments to retrieve, default 20
 	Concise  bool      `json:"concise,omitempty"` // terse, agent-friendly output
-	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "octroi")
+	Topics   []string  `json:"topics,omitempty"`  // optional topics to boost relevance (e.g., "authentication", "deployment")
 	Stream   *bool     `json:"stream,omitempty"`  // stream SSE responses; default false (single JSON response)
 	Mode     string    `json:"mode,omitempty"`    // "raw" for raw retrieval without LLM synthesis
 	Sources     []string `json:"sources,omitempty"`      // filter results to these source names

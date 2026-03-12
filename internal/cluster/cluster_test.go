@@ -22,7 +22,11 @@ func TestKMeans_BasicClustering(t *testing.T) {
 		{10, 11},
 	}
 
-	assignments := KMeans(embeddings, 2, 100)
+	assignments, iters := KMeans(embeddings, 2, 100)
+
+	if iters == 0 {
+		t.Log("k-means converged immediately")
+	}
 
 	if len(assignments) != 6 {
 		t.Fatalf("expected 6 assignments, got %d", len(assignments))
@@ -47,7 +51,7 @@ func TestKMeans_SingleCluster(t *testing.T) {
 		{5, 6},
 	}
 
-	assignments := KMeans(embeddings, 1, 100)
+	assignments, _ := KMeans(embeddings, 1, 100)
 
 	if len(assignments) != 3 {
 		t.Fatalf("expected 3 assignments, got %d", len(assignments))
@@ -68,7 +72,7 @@ func TestKMeans_KEqualsN(t *testing.T) {
 		{1, 1},
 	}
 
-	assignments := KMeans(embeddings, 3, 100)
+	assignments, _ := KMeans(embeddings, 3, 100)
 
 	if len(assignments) != 3 {
 		t.Fatalf("expected 3 assignments, got %d", len(assignments))
@@ -85,7 +89,7 @@ func TestKMeans_KEqualsN(t *testing.T) {
 }
 
 func TestKMeans_Empty(t *testing.T) {
-	assignments := KMeans(nil, 3, 100)
+	assignments, _ := KMeans(nil, 3, 100)
 	if assignments != nil {
 		t.Errorf("expected nil for empty input, got %v", assignments)
 	}

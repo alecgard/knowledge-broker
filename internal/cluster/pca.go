@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"log/slog"
 	"math"
 	"math/rand"
 )
@@ -23,6 +24,7 @@ func PCA3D(embeddings [][]float32) (xs, ys, zs []float64) {
 	if components == nil {
 		return nil, nil, nil
 	}
+	slog.Info("PCA projection complete")
 	return components[0], components[1], components[2]
 }
 
@@ -63,6 +65,8 @@ func pcaProject(embeddings [][]float32, k int) [][]float64 {
 		}
 	}
 
+	slog.Info("PCA projection", "points", n, "dimensions", dim, "components", k)
+
 	// Find principal components via successive deflated power iteration.
 	pcs := make([][]float64, k)
 	for c := 0; c < k; c++ {
@@ -70,7 +74,7 @@ func pcaProject(embeddings [][]float32, k int) [][]float64 {
 		if c > 0 {
 			deflate = pcs[:c]
 		}
-		pcs[c] = powerIteration(data, dim, deflate)
+		pcs[c] = powerIteration(data, dim, deflate, c)
 	}
 
 	// Project each point onto each PC.
@@ -90,7 +94,8 @@ func pcaProject(embeddings [][]float32, k int) [][]float64 {
 // powerIteration finds a principal component of centered data using power
 // iteration on the implicit covariance matrix (X^T X). Components in the
 // directions of deflate vectors are removed each iteration.
-func powerIteration(data [][]float64, dim int, deflate [][]float64) []float64 {
+// componentIdx is used for logging purposes.
+func powerIteration(data [][]float64, dim int, deflate [][]float64, componentIdx int) []float64 {
 	rng := rand.New(rand.NewSource(42))
 
 	// Random initial vector.
@@ -131,7 +136,17 @@ func powerIteration(data [][]float64, dim int, deflate [][]float64) []float64 {
 		}
 
 		normalize(vNew)
+
+		// Convergence check: cosine similarity between v and vNew.
+		dot := 0.0
+		for j := range v {
+			dot += v[j] * vNew[j]
+		}
 		v = vNew
+		if dot > 1-1e-8 {
+			slog.Info("PCA", "component", componentIdx, "converged", iter)
+			break
+		}
 	}
 
 	return v

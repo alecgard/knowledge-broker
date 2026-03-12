@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 	"path"
@@ -67,6 +68,8 @@ func RunClustering(ctx context.Context, s store.Store, k int) ([]ClusterInfo, er
 		return nil, nil
 	}
 
+	slog.Info("loaded fragments", "total", len(fragments), "withEmbeddings", len(withEmb))
+
 	// Determine k.
 	if k <= 0 {
 		k = int(math.Sqrt(float64(len(withEmb)) / 2.0))
@@ -78,6 +81,8 @@ func RunClustering(ctx context.Context, s store.Store, k int) ([]ClusterInfo, er
 		k = len(withEmb)
 	}
 
+	slog.Info("clustering", "k", k, "fragments", len(withEmb))
+
 	// Extract embedding matrix.
 	embeddings := make([][]float32, len(withEmb))
 	for i, f := range withEmb {
@@ -85,7 +90,9 @@ func RunClustering(ctx context.Context, s store.Store, k int) ([]ClusterInfo, er
 	}
 
 	// Run k-means.
-	assignments := KMeans(embeddings, k, 100)
+	assignments, actualIters := KMeans(embeddings, k, 100)
+
+	slog.Info("clustering complete", "iterations", actualIters)
 
 	// Group fragments by cluster.
 	grouped := make(map[int][]int) // cluster index -> fragment indices
@@ -496,11 +503,12 @@ func round2(v float64) float64 {
 // --- K-Means implementation ---
 
 // KMeans performs k-means clustering with k-means++ initialization.
-// Returns a slice of cluster assignments (one per input embedding).
-func KMeans(embeddings [][]float32, k, maxIter int) []int {
+// Returns a slice of cluster assignments (one per input embedding) and the
+// number of iterations actually performed.
+func KMeans(embeddings [][]float32, k, maxIter int) ([]int, int) {
 	n := len(embeddings)
 	if n == 0 || k <= 0 {
-		return nil
+		return nil, 0
 	}
 	if k >= n {
 		// Each point is its own cluster.
@@ -508,7 +516,7 @@ func KMeans(embeddings [][]float32, k, maxIter int) []int {
 		for i := range assignments {
 			assignments[i] = i
 		}
-		return assignments
+		return assignments, 0
 	}
 
 	dim := len(embeddings[0])
@@ -517,18 +525,31 @@ func KMeans(embeddings [][]float32, k, maxIter int) []int {
 	centroids := kmeansppInit(embeddings, k)
 
 	assignments := make([]int, n)
+	var actualIter int
 	for iter := 0; iter < maxIter; iter++ {
+		actualIter = iter + 1
+
+		if iter%10 == 0 {
+			slog.Info("k-means", "iteration", iter, "maxIter", maxIter)
+		}
+
 		// Assignment step: assign each point to the nearest centroid.
-		changed := false
+		numChanged := 0
 		for i, emb := range embeddings {
 			nearest := nearestCentroid(emb, centroids)
 			if nearest != assignments[i] {
 				assignments[i] = nearest
-				changed = true
+				numChanged++
 			}
 		}
 
-		if !changed {
+		if numChanged == 0 {
+			break
+		}
+
+		// Convergence threshold: if less than 0.1% of points changed, stop.
+		if iter > 0 && float64(numChanged)/float64(n) < 0.001 {
+			slog.Info("k-means converged early", "iteration", iter, "changed", numChanged, "total", n)
 			break
 		}
 
@@ -558,7 +579,7 @@ func KMeans(embeddings [][]float32, k, maxIter int) []int {
 		centroids = newCentroids
 	}
 
-	return assignments
+	return assignments, actualIter
 }
 
 // kmeansppInit selects k initial centroids using the k-means++ algorithm.

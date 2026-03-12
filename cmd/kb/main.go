@@ -1363,6 +1363,8 @@ func clusterVizCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
+			slog.Info("starting cluster visualization...")
+
 			clusters, err := cluster.RunClustering(ctx, s, k)
 			if err != nil {
 				return err
@@ -1372,6 +1374,8 @@ func clusterVizCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "No fragments with embeddings found.")
 				return nil
 			}
+
+			slog.Info("clustering done", "clusters", len(clusters))
 
 			// Collect all embeddings and build VizPoints.
 			var allEmb [][]float32
@@ -1388,7 +1392,11 @@ func clusterVizCmd() *cobra.Command {
 				}
 			}
 
+			slog.Info("projecting to 3D...", "points", len(allEmb))
+
 			xs, ys, zs := cluster.PCA3D(allEmb)
+
+			slog.Info("projection complete")
 
 			points := make([]cluster.VizPoint, len(refs))
 			for i, ref := range refs {

@@ -35,8 +35,24 @@ install:
 	fi
 
 clean:
+	@dbs=$$(ls *.db 2>/dev/null); \
+	if [ -n "$$dbs" ]; then \
+		echo "Databases found: $$dbs"; \
+		for db in $$dbs; do \
+			backup="$${db%.db}.sources.json"; \
+			echo "Exporting sources from $$db to $$backup..."; \
+			./$(BINARY) sources export --db "$$db" -o "$$backup" 2>/dev/null || \
+			CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb sources export --db "$$db" -o "$$backup" 2>/dev/null || \
+			echo "  Warning: could not export $$db (binary not built?)"; \
+		done; \
+		printf "Delete databases? [y/N] "; \
+		read ans; \
+		case "$$ans" in \
+			[yY]*) rm -f *.db; echo "Databases deleted." ;; \
+			*)     echo "Keeping databases." ;; \
+		esac; \
+	fi
 	rm -f $(BINARY)
-	rm -f *.db
 
 ## Test
 
@@ -86,7 +102,7 @@ help:
 	@echo "  make test         Run all tests"
 	@echo "  make test-v       Run all tests (verbose)"
 	@echo "  make lint         Run go vet"
-	@echo "  make clean        Remove binary and database files"
+	@echo "  make clean        Export sources, then remove binary and database files"
 	@echo "  make deps         Tidy and verify Go modules"
 	@echo "  make run-ingest   Build and ingest current directory"
 	@echo "  make run-serve    Build and start HTTP server"

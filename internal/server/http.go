@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
@@ -43,6 +44,7 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/query", s.handleQuery)
 	s.mux.HandleFunc("/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/v1/ingest", s.handleIngest)
+	s.mux.HandleFunc("/v1/sources", s.handleUpdateSource)
 }
 
 // Handler returns the http.Handler.
@@ -307,6 +309,43 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"ingested": len(fragments), "skipped": skipped})
+}
+
+// handleUpdateSource handles PATCH /v1/sources for updating source descriptions.
+func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		SourceType  string `json:"source_type"`
+		SourceName  string `json:"source_name"`
+		Description string `json:"description"`
+		Force       bool   `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.SourceType == "" || req.SourceName == "" {
+		http.Error(w, "source_type and source_name are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.UpdateSourceDescription(r.Context(), req.SourceType, req.SourceName, req.Description, req.Force); err != nil {
+		if strings.Contains(err.Error(), "already has a description") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		s.logger.Error("update source failed", "error", err)
+		http.Error(w, fmt.Sprintf("update failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // ListenAndServe starts the HTTP server.

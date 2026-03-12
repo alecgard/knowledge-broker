@@ -85,6 +85,14 @@ func (m *mockStore) DeleteFragmentsBySource(ctx context.Context, sourceType, sou
 	return nil
 }
 
+func (m *mockStore) GetSource(ctx context.Context, sourceType, sourceName string) (*model.Source, error) {
+	return nil, nil
+}
+
+func (m *mockStore) UpdateSourceDescription(ctx context.Context, sourceType, sourceName, description string, force bool) error {
+	return nil
+}
+
 func (m *mockStore) DeleteSource(ctx context.Context, sourceType, sourceName string) error {
 	return nil
 }

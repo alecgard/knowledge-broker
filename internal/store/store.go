@@ -50,6 +50,13 @@ type Store interface {
 	// DeleteFragmentsBySource removes all fragments and their embeddings for the given source.
 	DeleteFragmentsBySource(ctx context.Context, sourceType, sourceName string) error
 
+	// GetSource retrieves a single source by type and name. Returns nil if not found.
+	GetSource(ctx context.Context, sourceType, sourceName string) (*model.Source, error)
+
+	// UpdateSourceDescription sets the description for an existing source.
+	// If force is false and the source already has a non-empty description, it returns an error.
+	UpdateSourceDescription(ctx context.Context, sourceType, sourceName, description string, force bool) error
+
 	// DeleteSource removes a source registration.
 	DeleteSource(ctx context.Context, sourceType, sourceName string) error
 

@@ -599,6 +599,120 @@ func TestHandleQueryNoLLM(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateSource(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	srv := NewHTTPServer(nil, emb, st, nil)
+
+	// Register a source first.
+	if err := st.RegisterSource(context.Background(), model.Source{
+		SourceType: "filesystem",
+		SourceName: "my-docs",
+		Config:     map[string]string{"path": "/docs"},
+		LastIngest: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	t.Run("MethodNotAllowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/sources", nil)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
+		}
+	})
+
+	t.Run("SetDescription", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"source_type": "filesystem",
+			"source_name": "my-docs",
+			"description": "My documentation",
+		})
+		req := httptest.NewRequest(http.MethodPatch, "/v1/sources", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp map[string]string
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["status"] != "ok" {
+			t.Fatalf("expected status ok, got %s", resp["status"])
+		}
+
+		// Verify the description was set.
+		src, err := st.GetSource(context.Background(), "filesystem", "my-docs")
+		if err != nil {
+			t.Fatalf("GetSource: %v", err)
+		}
+		if src.Description != "My documentation" {
+			t.Fatalf("expected description 'My documentation', got %q", src.Description)
+		}
+	})
+
+	t.Run("ConflictWithoutForce", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"source_type": "filesystem",
+			"source_name": "my-docs",
+			"description": "New description",
+		})
+		req := httptest.NewRequest(http.MethodPatch, "/v1/sources", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "already has a description") {
+			t.Fatalf("expected conflict message, got: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("OverwriteWithForce", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"source_type": "filesystem",
+			"source_name": "my-docs",
+			"description": "Overwritten description",
+			"force":       true,
+		})
+		req := httptest.NewRequest(http.MethodPatch, "/v1/sources", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		src, err := st.GetSource(context.Background(), "filesystem", "my-docs")
+		if err != nil {
+			t.Fatalf("GetSource: %v", err)
+		}
+		if src.Description != "Overwritten description" {
+			t.Fatalf("expected 'Overwritten description', got %q", src.Description)
+		}
+	})
+
+	t.Run("MissingFields", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"description": "something",
+		})
+		req := httptest.NewRequest(http.MethodPatch, "/v1/sources", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 func TestHandleQueryRawModeWithFilters(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}

@@ -592,6 +592,54 @@ func (s *SQLiteStore) DeleteFragmentsBySource(ctx context.Context, sourceType, s
 	return tx.Commit()
 }
 
+// GetSource retrieves a single source by type and name. Returns nil if not found.
+func (s *SQLiteStore) GetSource(ctx context.Context, sourceType, sourceName string) (*model.Source, error) {
+	row := s.db.QueryRowContext(ctx,
+		"SELECT source_type, source_name, config, last_ingest, description FROM sources WHERE source_type = ? AND source_name = ?",
+		sourceType, sourceName)
+
+	var src model.Source
+	var configJSON string
+	var lastIngest sql.NullString
+	if err := row.Scan(&src.SourceType, &src.SourceName, &configJSON, &lastIngest, &src.Description); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get source: %w", err)
+	}
+	if err := json.Unmarshal([]byte(configJSON), &src.Config); err != nil {
+		return nil, fmt.Errorf("unmarshal source config: %w", err)
+	}
+	if lastIngest.Valid {
+		src.LastIngest, _ = time.Parse(time.RFC3339, lastIngest.String)
+	}
+	return &src, nil
+}
+
+// UpdateSourceDescription sets the description for an existing source.
+// If force is false and the source already has a non-empty description, it returns an error.
+func (s *SQLiteStore) UpdateSourceDescription(ctx context.Context, sourceType, sourceName, description string, force bool) error {
+	if !force {
+		existing, err := s.GetSource(ctx, sourceType, sourceName)
+		if err != nil {
+			return err
+		}
+		if existing != nil && existing.Description != "" {
+			return fmt.Errorf("source %s/%s already has a description (use --force to overwrite)", sourceType, sourceName)
+		}
+	}
+
+	res, err := s.db.ExecContext(ctx, `UPDATE sources SET description = ? WHERE source_type = ? AND source_name = ?`, description, sourceType, sourceName)
+	if err != nil {
+		return fmt.Errorf("update source description: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("source %s/%s not found", sourceType, sourceName)
+	}
+	return nil
+}
+
 // DeleteSource removes a source registration from the sources table.
 func (s *SQLiteStore) DeleteSource(ctx context.Context, sourceType, sourceName string) error {
 	_, err := s.db.ExecContext(ctx, `

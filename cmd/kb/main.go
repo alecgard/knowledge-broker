@@ -1153,6 +1153,7 @@ func sourcesCmd() *cobra.Command {
 	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
 	cmd.AddCommand(sourcesListCmd())
 	cmd.AddCommand(sourcesRemoveCmd())
+	cmd.AddCommand(sourcesDescribeCmd())
 	cmd.AddCommand(sourcesExportCmd())
 	cmd.AddCommand(sourcesImportCmd())
 	return cmd
@@ -1187,6 +1188,40 @@ func sourcesListCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func sourcesDescribeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "describe <type/name> <description>",
+		Short: "Set description for an existing source",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.Default()
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("source must be in type/name format (e.g. git/myrepo)")
+			}
+
+			force, _ := cmd.Flags().GetBool("force")
+
+			if err := s.UpdateSourceDescription(context.Background(), parts[0], parts[1], args[1], force); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(os.Stderr, "Updated description for %s\n", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().Bool("force", false, "Overwrite existing description")
+	return cmd
 }
 
 func sourcesExportCmd() *cobra.Command {

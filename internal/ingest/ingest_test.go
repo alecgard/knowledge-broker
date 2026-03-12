@@ -29,6 +29,9 @@ const embeddingDim = 8
 // and fast to compute.
 type MockEmbedder struct {
 	dim int
+	// FailTexts is a set of text content that should return nil embeddings
+	// (simulating embedding failure for oversized chunks).
+	FailTexts map[string]bool
 }
 
 func NewMockEmbedder(dim int) *MockEmbedder {
@@ -42,7 +45,11 @@ func (m *MockEmbedder) Embed(_ context.Context, text string) ([]float32, error) 
 func (m *MockEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float32, error) {
 	vecs := make([][]float32, len(texts))
 	for i, t := range texts {
-		vecs[i] = m.hashToVector(t)
+		if m.FailTexts != nil && m.FailTexts[t] {
+			vecs[i] = nil
+		} else {
+			vecs[i] = m.hashToVector(t)
+		}
 	}
 	return vecs, nil
 }
@@ -488,4 +495,79 @@ func TestDeletedFiles(t *testing.T) {
 		}
 	}
 	t.Logf("After deletion, vector search returns %d fragments (none from deleted file)", len(fragments))
+}
+
+func TestNilEmbeddingSkipsFragment(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	registry := newTestRegistry()
+
+	// Create a Go file with two functions. We'll make the embedder fail on
+	// one of the chunk contents to simulate an oversized chunk.
+	goContent := `package main
+
+func Good() {
+	// this function is fine
+}
+
+func Bad() {
+	// this function will fail embedding
+}
+`
+
+	embedder := NewMockEmbedder(embeddingDim)
+
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs: []model.RawDocument{
+			makeDoc("pkg/example.go", goContent, checksum(goContent)),
+		},
+	}
+
+	// First, ingest normally to see how many fragments we get.
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	result1, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("First Run: %v", err)
+	}
+	totalFragments := result1.Added
+	t.Logf("Normal ingestion: added=%d", totalFragments)
+	if totalFragments == 0 {
+		t.Fatal("expected fragments to be added")
+	}
+
+	// Now re-ingest with one chunk's text causing a nil embedding.
+	// We need a fresh store so that checksums don't cause skipping.
+	s2 := newTestStore(t)
+
+	// Extract chunks to find one to fail on.
+	doc := conn.Docs[0]
+	chunks, err := ingest.ExtractChunks(doc, registry)
+	if err != nil {
+		t.Fatalf("ExtractChunks: %v", err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
+	}
+
+	// Pick the second chunk's content to fail.
+	failContent := chunks[1].Content
+	embedder2 := NewMockEmbedder(embeddingDim)
+	embedder2.FailTexts = map[string]bool{failContent: true}
+
+	pipeline2 := ingest.NewPipeline(s2, embedder2, registry, 2, nil)
+	result2, err := pipeline2.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Second Run: %v", err)
+	}
+
+	// Should have fewer fragments than the normal run (the failed one is skipped).
+	if result2.Added >= totalFragments {
+		t.Fatalf("expected fewer fragments when one embedding fails: got %d, normal was %d",
+			result2.Added, totalFragments)
+	}
+	if result2.Added == 0 {
+		t.Fatal("expected at least some fragments to be added despite one failure")
+	}
+	t.Logf("With nil embedding: added=%d (normal was %d)", result2.Added, totalFragments)
 }

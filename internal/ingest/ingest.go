@@ -202,10 +202,15 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 		return nil, fmt.Errorf("embed %s: %w", doc.Path, err)
 	}
 
-	// Build fragments.
-	fragments := make([]model.SourceFragment, len(chunks))
+	// Build fragments, skipping any chunks whose embedding failed (nil).
+	var fragments []model.SourceFragment
 	for i, chunk := range chunks {
-		fragments[i] = model.SourceFragment{
+		if embeddings[i] == nil {
+			p.logger.Warn("skipping chunk with nil embedding",
+				"path", doc.Path, "chunk_index", i, "chunk_length", len(chunk.Content))
+			continue
+		}
+		fragments = append(fragments, model.SourceFragment{
 			ID:           model.FragmentID(doc.SourceType, doc.Path, i),
 			Content:      chunk.Content,
 			SourceType:   doc.SourceType,
@@ -217,7 +222,7 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 			FileType:     fileType,
 			Checksum:     doc.Checksum,
 			Embedding:    embeddings[i],
-		}
+		})
 	}
 
 	return fragments, nil

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -222,7 +223,28 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	}
 	vectors, err := o.doEmbed(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("ollama embed batch: %w", err)
+		// Batch request failed — fall back to embedding one-at-a-time so that
+		// a single oversized text doesn't fail the entire batch.
+		slog.Warn("batch embed failed, falling back to individual requests", "error", err, "count", len(uncachedTexts))
+		vectors = make([][]float32, len(uncachedTexts))
+		for i, text := range uncachedTexts {
+			vec, singleErr := o.doEmbed(ctx, text)
+			if singleErr != nil {
+				slog.Warn("skipping text that failed to embed", "error", singleErr, "text_length", len(text))
+				vectors[i] = nil
+			} else if len(vec) > 0 {
+				vectors[i] = vec[0]
+			}
+		}
+
+		// Place results and cache successful ones.
+		for j, idx := range uncachedIndices {
+			results[idx] = vectors[j]
+			if vectors[j] != nil {
+				o.cachePut(embCacheKey(uncachedTexts[j]), vectors[j])
+			}
+		}
+		return results, nil
 	}
 	if len(vectors) != len(uncachedTexts) {
 		return nil, fmt.Errorf("ollama embed batch: expected %d embeddings, got %d", len(uncachedTexts), len(vectors))

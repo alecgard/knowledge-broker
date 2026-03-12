@@ -244,6 +244,49 @@ func TestCodeLargeFunctionFallback(t *testing.T) {
 	}
 }
 
+func TestCodeLargePreambleFallback(t *testing.T) {
+	// Create a Go file with a massive preamble (var block) before the first func.
+	maxSize := 100
+	largePreamble := "package main\n\nvar (\n" + strings.Repeat("\tx = 1\n", 40) + ")\n\n"
+	goCode := largePreamble + "func Hello() {\n\tfmt.Println(\"hello\")\n}\n"
+	ext := NewCodeExtractor(maxSize)
+	chunks, err := ext.Extract([]byte(goCode), ExtractOptions{Path: "big_preamble.go"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The preamble is larger than maxSize, so it should be split into multiple chunks.
+	preambleChunks := 0
+	for _, ch := range chunks {
+		if ch.Metadata["type"] == "preamble" {
+			preambleChunks++
+		}
+	}
+	if preambleChunks < 2 {
+		t.Fatalf("expected at least 2 preamble chunks for large preamble, got %d", preambleChunks)
+	}
+
+	// Preamble chunks should have "part" metadata.
+	for _, ch := range chunks {
+		if ch.Metadata["type"] == "preamble" {
+			if ch.Metadata["part"] == "" {
+				t.Error("large preamble chunk should have 'part' metadata")
+			}
+		}
+	}
+
+	// Should also have the Hello function chunk.
+	foundHello := false
+	for _, ch := range chunks {
+		if ch.Metadata["name"] == "Hello" {
+			foundHello = true
+		}
+	}
+	if !foundHello {
+		t.Error("did not find chunk for function Hello")
+	}
+}
+
 func TestCodeNoRecognizableBoundaries(t *testing.T) {
 	// A file with no function/class boundaries.
 	content := strings.Repeat("some random content line\n", 20)

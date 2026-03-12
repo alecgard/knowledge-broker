@@ -302,6 +302,65 @@ func TestEmbedConnectionError(t *testing.T) {
 	}
 }
 
+func TestEmbedBatch_FallbackOnBatchError(t *testing.T) {
+	// Simulate a batch request that fails (e.g. 400 due to oversized input),
+	// then individual requests where one succeeds and one fails.
+	batchAttempted := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ollamaEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		switch v := req.Input.(type) {
+		case []any:
+			// Batch request — fail with 400 to trigger fallback.
+			batchAttempted = true
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"input length exceeds context length"}`))
+		case string:
+			// Individual request — fail for "too_long", succeed for others.
+			if v == "too_long" {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"input length exceeds context length"}`))
+			} else {
+				resp := ollamaEmbedResponse{
+					Model:      "nomic-embed-text",
+					Embeddings: [][]float64{{0.5, 0.6}},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}
+		default:
+			t.Fatalf("unexpected input type: %T", req.Input)
+		}
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
+	vecs, err := e.EmbedBatch(context.Background(), []string{"ok_text", "too_long"})
+	if err != nil {
+		t.Fatalf("EmbedBatch() should not return error on fallback, got: %v", err)
+	}
+	if !batchAttempted {
+		t.Fatal("expected batch request to be attempted first")
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("expected 2 result slots, got %d", len(vecs))
+	}
+	// "ok_text" should have a valid embedding.
+	if vecs[0] == nil {
+		t.Fatal("expected non-nil embedding for 'ok_text'")
+	}
+	if vecs[0][0] != 0.5 || vecs[0][1] != 0.6 {
+		t.Errorf("vecs[0] = %v, want [0.5, 0.6]", vecs[0])
+	}
+	// "too_long" should have a nil embedding.
+	if vecs[1] != nil {
+		t.Fatalf("expected nil embedding for 'too_long', got %v", vecs[1])
+	}
+}
+
 func TestCheckHealth_OK(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -111,13 +111,24 @@ func (c *CodeExtractor) Extract(content []byte, opts ExtractOptions) ([]model.Ch
 		pre := strings.TrimSpace(strings.Join(lines[:boundaries[0].lineIdx], "\n"))
 		if pre != "" {
 			chunkContent := pre
-			if preamble != "" {
-				// The preamble is already part of this pre-section; no need to prefix.
+			if len(chunkContent) <= c.maxChunkSize {
+				chunks = append(chunks, model.Chunk{
+					Content:  chunkContent,
+					Metadata: map[string]string{"type": "preamble", "name": ""},
+				})
+			} else {
+				sub := fixedSizeChunks(chunkContent, c.maxChunkSize, 0)
+				for j, s := range sub {
+					chunks = append(chunks, model.Chunk{
+						Content: s,
+						Metadata: map[string]string{
+							"type": "preamble",
+							"name": "",
+							"part": fmt.Sprintf("%d", j+1),
+						},
+					})
+				}
 			}
-			chunks = append(chunks, model.Chunk{
-				Content:  chunkContent,
-				Metadata: map[string]string{"type": "preamble", "name": ""},
-			})
 		}
 	}
 

@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
@@ -449,4 +451,297 @@ func TestIngestFragmentIDConsistency(t *testing.T) {
 	if fragments[0].Content != "Test content" {
 		t.Fatalf("unexpected content: %s", fragments[0].Content)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Query endpoint tests
+// ---------------------------------------------------------------------------
+
+func TestHandleQueryMethodNotAllowed(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	eng := query.NewEngine(st, emb, nil, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/query", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleQueryEmptyMessages(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	eng := query.NewEngine(st, emb, nil, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	body, _ := json.Marshal(model.QueryRequest{Messages: []model.Message{}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleQueryInvalidJSON(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	eng := query.NewEngine(st, emb, nil, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader([]byte("{bad json")))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleQueryRawMode(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+
+	// Insert fragments directly into the store.
+	vec, _ := emb.Embed(context.Background(), "authentication login security")
+	frags := []model.SourceFragment{
+		{
+			ID:           "frag-raw-1",
+			Content:      "Authentication is handled via OAuth2 tokens.",
+			SourceType:   "filesystem",
+			SourceName:   "docs",
+			SourcePath:   "docs/auth.md",
+			SourceURI:    "file://docs/auth.md",
+			LastModified: time.Now().UTC(),
+			Author:       "alice",
+			FileType:     ".md",
+			Checksum:     "raw1",
+			Embedding:    vec,
+		},
+	}
+	if err := st.UpsertFragments(context.Background(), frags); err != nil {
+		t.Fatalf("UpsertFragments: %v", err)
+	}
+
+	eng := query.NewEngine(st, emb, nil, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	queryReq := model.QueryRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "authentication login security"}},
+		Mode:     model.ModeRaw,
+	}
+	body, _ := json.Marshal(queryReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result model.RawResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if len(result.Fragments) == 0 {
+		t.Fatal("expected at least one fragment in raw result")
+	}
+
+	found := false
+	for _, f := range result.Fragments {
+		if f.FragmentID == "frag-raw-1" {
+			found = true
+			if f.Content != "Authentication is handled via OAuth2 tokens." {
+				t.Fatalf("unexpected content: %s", f.Content)
+			}
+			if f.Confidence.Overall <= 0 {
+				t.Fatalf("expected positive overall confidence, got %f", f.Confidence.Overall)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected to find fragment frag-raw-1 in results")
+	}
+}
+
+func TestHandleQueryNoLLM(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	eng := query.NewEngine(st, emb, nil, 20) // nil LLM
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	queryReq := model.QueryRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "how does auth work?"}},
+		// No mode specified -> defaults to synthesis, which needs LLM.
+	}
+	body, _ := json.Marshal(queryReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	respBody := rec.Body.String()
+	if !strings.Contains(respBody, "ANTHROPIC_API_KEY") {
+		t.Fatalf("expected error mentioning ANTHROPIC_API_KEY, got: %s", respBody)
+	}
+}
+
+func TestHandleQueryRawModeWithFilters(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+
+	// Insert fragments from different sources and source types.
+	content := "shared deployment guide content for filtering test"
+	vec, _ := emb.Embed(context.Background(), content)
+
+	frags := []model.SourceFragment{
+		{
+			ID:           "frag-filter-1",
+			Content:      content,
+			SourceType:   "filesystem",
+			SourceName:   "local-docs",
+			SourcePath:   "docs/deploy.md",
+			SourceURI:    "file://docs/deploy.md",
+			LastModified: time.Now().UTC(),
+			FileType:     ".md",
+			Checksum:     "filter1",
+			Embedding:    vec,
+		},
+		{
+			ID:           "frag-filter-2",
+			Content:      content,
+			SourceType:   "github",
+			SourceName:   "acme/platform",
+			SourcePath:   "docs/deploy.md",
+			SourceURI:    "https://github.com/acme/platform/blob/main/docs/deploy.md",
+			LastModified: time.Now().UTC(),
+			FileType:     ".md",
+			Checksum:     "filter2",
+			Embedding:    vec,
+		},
+		{
+			ID:           "frag-filter-3",
+			Content:      content,
+			SourceType:   "github",
+			SourceName:   "acme/infra",
+			SourcePath:   "infra/deploy.md",
+			SourceURI:    "https://github.com/acme/infra/blob/main/infra/deploy.md",
+			LastModified: time.Now().UTC(),
+			FileType:     ".md",
+			Checksum:     "filter3",
+			Embedding:    vec,
+		},
+	}
+	if err := st.UpsertFragments(context.Background(), frags); err != nil {
+		t.Fatalf("UpsertFragments: %v", err)
+	}
+
+	eng := query.NewEngine(st, emb, nil, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	// Sub-test: filter by source_types to only get github results.
+	t.Run("FilterBySourceType", func(t *testing.T) {
+		queryReq := model.QueryRequest{
+			Messages:    []model.Message{{Role: model.RoleUser, Content: content}},
+			Mode:        model.ModeRaw,
+			SourceTypes: []string{"github"},
+		}
+		body, _ := json.Marshal(queryReq)
+		req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var result model.RawResult
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		for _, f := range result.Fragments {
+			if f.SourceType != "github" {
+				t.Fatalf("expected only github fragments, got source_type=%s", f.SourceType)
+			}
+		}
+		if len(result.Fragments) != 2 {
+			t.Fatalf("expected 2 github fragments, got %d", len(result.Fragments))
+		}
+	})
+
+	// Sub-test: filter by source name.
+	t.Run("FilterBySourceName", func(t *testing.T) {
+		queryReq := model.QueryRequest{
+			Messages: []model.Message{{Role: model.RoleUser, Content: content}},
+			Mode:     model.ModeRaw,
+			Sources:  []string{"acme/platform"},
+		}
+		body, _ := json.Marshal(queryReq)
+		req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var result model.RawResult
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if len(result.Fragments) != 1 {
+			t.Fatalf("expected 1 fragment for acme/platform, got %d", len(result.Fragments))
+		}
+		if result.Fragments[0].SourceName != "acme/platform" {
+			t.Fatalf("expected source_name=acme/platform, got %s", result.Fragments[0].SourceName)
+		}
+	})
+
+	// Sub-test: combine source_types and sources filters.
+	t.Run("FilterBySourceTypeAndName", func(t *testing.T) {
+		queryReq := model.QueryRequest{
+			Messages:    []model.Message{{Role: model.RoleUser, Content: content}},
+			Mode:        model.ModeRaw,
+			SourceTypes: []string{"github"},
+			Sources:     []string{"acme/infra"},
+		}
+		body, _ := json.Marshal(queryReq)
+		req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var result model.RawResult
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if len(result.Fragments) != 1 {
+			t.Fatalf("expected 1 fragment, got %d", len(result.Fragments))
+		}
+		if result.Fragments[0].SourceName != "acme/infra" {
+			t.Fatalf("expected source_name=acme/infra, got %s", result.Fragments[0].SourceName)
+		}
+	})
 }

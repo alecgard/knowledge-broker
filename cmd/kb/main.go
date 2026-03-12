@@ -1153,6 +1153,8 @@ func sourcesCmd() *cobra.Command {
 	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
 	cmd.AddCommand(sourcesListCmd())
 	cmd.AddCommand(sourcesRemoveCmd())
+	cmd.AddCommand(sourcesExportCmd())
+	cmd.AddCommand(sourcesImportCmd())
 	return cmd
 }
 
@@ -1182,6 +1184,109 @@ func sourcesListCmd() *cobra.Command {
 
 			out, _ := json.MarshalIndent(sources, "", "  ")
 			fmt.Println(string(out))
+			return nil
+		},
+	}
+}
+
+func sourcesExportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "export [file]",
+		Short: "Export registered sources to a JSON file",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outFile := "sources.json"
+			if len(args) > 0 {
+				outFile = args[0]
+			}
+
+			cfg := config.Default()
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			sources, err := s.ListSources(context.Background())
+			if err != nil {
+				return fmt.Errorf("list sources: %w", err)
+			}
+
+			// Use a local struct to omit last_ingest from export.
+			type exportSource struct {
+				SourceType  string            `json:"source_type"`
+				SourceName  string            `json:"source_name"`
+				Description string            `json:"description,omitempty"`
+				Config      map[string]string `json:"config"`
+			}
+
+			out := make([]exportSource, len(sources))
+			for i, src := range sources {
+				out[i] = exportSource{
+					SourceType:  src.SourceType,
+					SourceName:  src.SourceName,
+					Description: src.Description,
+					Config:      src.Config,
+				}
+			}
+
+			data, err := json.MarshalIndent(out, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshal sources: %w", err)
+			}
+
+			if err := os.WriteFile(outFile, append(data, '\n'), 0644); err != nil {
+				return fmt.Errorf("write file: %w", err)
+			}
+
+			fmt.Fprintf(os.Stderr, "Exported %d sources to %s\n", len(out), outFile)
+			return nil
+		},
+	}
+}
+
+func sourcesImportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "import [file]",
+		Short: "Import sources from a JSON file",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			inFile := "sources.json"
+			if len(args) > 0 {
+				inFile = args[0]
+			}
+
+			data, err := os.ReadFile(inFile)
+			if err != nil {
+				return fmt.Errorf("read file: %w", err)
+			}
+
+			var sources []model.Source
+			if err := json.Unmarshal(data, &sources); err != nil {
+				return fmt.Errorf("parse sources: %w", err)
+			}
+
+			cfg := config.Default()
+			cfg.DBPath, _ = cmd.Flags().GetString("db")
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			ctx := context.Background()
+			for _, src := range sources {
+				// Clear LastIngest so the source is treated as not-yet-ingested.
+				src.LastIngest = time.Time{}
+				if err := s.RegisterSource(ctx, src); err != nil {
+					return fmt.Errorf("register source %s/%s: %w", src.SourceType, src.SourceName, err)
+				}
+			}
+
+			fmt.Fprintf(os.Stderr, "Imported %d sources from %s\n", len(sources), inFile)
 			return nil
 		},
 	}

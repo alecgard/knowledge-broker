@@ -7,6 +7,8 @@ local
 metadata.tsv
 tensors.tsv
 tmp/
-.claude/worktrees/
 clusters.html
 .mcp.json
+.cursor/
+.claude/
+sources.json

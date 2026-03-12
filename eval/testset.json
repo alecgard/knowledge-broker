@@ -362,5 +362,87 @@
     "expected_sources": ["architecture.md", "CHANGELOG.md", "incident-review.md"],
     "reference_answer": "Multiple changes address system overload: the rate limiter was changed from token bucket to sliding window in v2.1, the rate limit was increased to 200 req/min in v2.3, cache TTL was increased to 10 minutes to reduce database load, and after the August 2025 outage a circuit breaker is being added to the write path to return 503 immediately when the database rejects connections.",
     "category": "vocabulary_mismatch"
+  },
+
+  {
+    "id": "q48",
+    "query": "Why did Elena Vasquez choose NATS over Kafka for the notification system?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Elena chose NATS JetStream over Kafka because of its operational simplicity and lower resource footprint. The team only has three infrastructure engineers and couldn't justify the overhead of a Kafka cluster.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["NATS", "operational simplicity"],
+    "expected_top_result": {
+      "content_contains": "NATS"
+    }
+  },
+  {
+    "id": "q49",
+    "query": "What retry strategy does the notification system use for failed deliveries?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Each channel delivery worker retries with exponential backoff starting at 1 second and capping at 5 minutes, with a maximum of 8 retries. After exhausting retries, the notification is marked as failed and an alert is sent to #notifications-oncall Slack channel.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["exponential backoff"],
+    "expected_top_result": {
+      "content_contains": "exponential backoff"
+    }
+  },
+  {
+    "id": "q50",
+    "query": "What is Raj Mehta's role in the notification system project?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Raj Mehta is the product owner. He asked about push notification support, notification fatigue, notification storage, and timeline. He pushed back on the eight-week timeline wanting six weeks, and agreed to a compromise where the preferences UI was deferred to a follow-up release.",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "product"
+    }
+  },
+  {
+    "id": "q51",
+    "query": "How does the notification system handle message ordering?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "NATS JetStream provides at-least-once delivery. The system uses sequence numbers per user to ensure in-app notifications display in correct order even if delivery workers process them out of order. Email and push are inherently unordered, so ordering guarantees only apply to the in-app channel.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["sequence numbers"],
+    "expected_top_result": {
+      "content_contains": "sequence numbers"
+    }
+  },
+  {
+    "id": "q52",
+    "query": "What is the notification storage growth estimate?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Dana Liu estimated roughly 500,000 notifications per day at current scale, growing to 2 million per day within the next year. At 500 bytes per row, that's about 30GB per month after growth. She recommended using TimescaleDB's compression to reduce storage by roughly 90%.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["500,000", "TimescaleDB"],
+    "expected_top_result": {
+      "content_contains": "TimescaleDB"
+    }
+  },
+  {
+    "id": "q53",
+    "query": "What is the migration plan for replacing the old notification cron job?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Elena outlined a three-phase approach: deploy the new system in shadow mode (processes events but only logs, doesn't deliver), run both systems in parallel for two weeks comparing output, then cut over by disabling the cron job and enabling delivery. Rollback is possible by re-enabling the old cron job within minutes.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["shadow mode"],
+    "expected_top_result": {
+      "content_contains": "shadow"
+    }
+  },
+  {
+    "id": "q54",
+    "query": "What push notification infrastructure does the notification system use?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "The notification system uses Firebase Cloud Messaging (FCM) for push notifications. Push notification tokens from FCM are encrypted at rest using AES-256. Each delivery channel (email, push, in-app) has its own worker to isolate failures.",
+    "category": "vocabulary_mismatch",
+    "expected_content_contains": ["Firebase", "FCM"]
+  },
+  {
+    "id": "q55",
+    "query": "What are the alert thresholds for notification delivery?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Delivery success rate below 99% triggers a warning, below 95% pages the on-call. NATS consumer lag exceeding 10,000 messages triggers investigation. Metrics include notification delivery latency (p50, p95, p99), delivery success rate per channel, NATS consumer lag, WebSocket connection count, and retry queue depth.",
+    "category": "vocabulary_mismatch",
+    "expected_content_contains": ["99%", "Prometheus"]
   }
 ]

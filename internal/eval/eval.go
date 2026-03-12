@@ -517,7 +517,7 @@ func computeOverallMetrics(summary *Summary) {
 	summary.AvgConfidence = totalConfidence / n
 
 	// Build sorted category breakdowns.
-	categories := []string{"direct_extraction", "cross_document", "knowledge_update", "abstention"}
+	categories := []string{"direct_extraction", "cross_document", "knowledge_update", "abstention", "pronoun_resolution", "vocabulary_mismatch"}
 	for _, cat := range categories {
 		cb, ok := catMap[cat]
 		if !ok {

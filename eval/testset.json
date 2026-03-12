@@ -211,5 +211,156 @@
     "expected_sources": [],
     "reference_answer": "There is no documented disaster recovery plan. The runbook covers backups (daily pg_dump to S3 with 30-day retention) and basic restore procedures, but does not define Recovery Time Objective (RTO), Recovery Point Objective (RPO), or a formal DR plan.",
     "category": "abstention"
+  },
+
+  {
+    "id": "q31",
+    "query": "What caused the August 2025 outage?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "A long-running database migration held a table lock on the widgets table, causing all write queries to block. The blocked writes exhausted the connection pool (25 connections), which starved the read path too. The migration was an ALTER TABLE requiring a full table rewrite on a table with over 2 million rows.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["migration", "lock"]
+  },
+  {
+    "id": "q32",
+    "query": "What did Marcus do to fix the database outage?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Marcus killed the migration process that was holding the table lock. Once he did that, the blocked connections drained within seconds and the service recovered. Total downtime was 47 minutes.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["pg_terminate_backend"],
+    "expected_top_result": {
+      "content_contains": "pg_terminate_backend"
+    }
+  },
+  {
+    "id": "q33",
+    "query": "What did Marcus Rivera propose to improve write path reliability?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Marcus proposed adding a circuit breaker to the write path so that if the database starts rejecting connections, the service returns 503 immediately rather than queueing requests. This is similar to what they already do for the cache layer — when Redis is down, the service bypasses it rather than blocking.",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "circuit breaker"
+    }
+  },
+  {
+    "id": "q34",
+    "query": "What did Sarah Chen recommend to improve monitoring?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Sarah plans to add a Prometheus alert for long-running queries (warning at 30 seconds, page at 5 minutes), lower the connection pool warning threshold from 20 to 15 connections, and add a dedicated alert for lock waits (warning after 10 seconds).",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "long-running queries"
+    }
+  },
+  {
+    "id": "q35",
+    "query": "What is James O'Brien implementing to prevent future outages?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "James is implementing an advisory lock check that prevents migrations from running during peak traffic hours (06:00-22:00 UTC). The automated migration job will check for this lock before proceeding. He also recommended using pg_repack or shadow table strategies for non-blocking schema changes and offered to run a knowledge-sharing session on safe migration patterns.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["advisory lock"],
+    "expected_top_result": {
+      "content_contains": "advisory lock"
+    }
+  },
+  {
+    "id": "q36",
+    "query": "What monitoring gaps did Sarah Chen identify during the outage?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Sarah identified that the database connection warning threshold was set too high (20 out of 25), so the alert only fired when connections were already exhausted. She also noted there was no alerting for long-running queries or lock waits — a query could sit blocked for an hour without anyone being paged.",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "warning threshold"
+    }
+  },
+  {
+    "id": "q37",
+    "query": "What was the customer impact of the service disruption?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Approximately 12% of API requests during the 47-minute outage window received 503 errors. This was within the SLA for most customers but triggered an automatic credit for two enterprise accounts that have stricter uptime guarantees.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["12%"],
+    "expected_top_result": {
+      "content_contains": "12%"
+    }
+  },
+  {
+    "id": "q38",
+    "query": "What is Priya Patel automating after the incident?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Priya is automating the status page communication. During the incident it took 20 minutes to post the first status update because nobody could find the template. She wants a draft incident post to be created automatically when a critical alert fires, with alert details pre-filled, cutting time to first public communication from 20 minutes to under 5.",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "status page"
+    }
+  },
+  {
+    "id": "q39",
+    "query": "What did Marcus Rivera observe about connection pool sizing?",
+    "expected_sources": ["incident-review.md"],
+    "reference_answer": "Marcus observed that the connection pool size of 25 is too conservative for current traffic. He'd seen it approach 20 connections during normal peak hours even before the incident. He suggested bumping it to 50, which matches what the Kubernetes deployment already configures via WIDGET_DB_MAX_CONNS.",
+    "category": "pronoun_resolution",
+    "expected_top_result": {
+      "content_contains": "WIDGET_DB_MAX_CONNS"
+    }
+  },
+
+  {
+    "id": "q40",
+    "query": "How does the service handle traffic spikes?",
+    "expected_sources": ["architecture.md", "runbook.md", "deploy/kubernetes.yaml"],
+    "reference_answer": "The service handles traffic spikes through multiple mechanisms: a sliding window rate limiter (200 req/min per API key), Redis caching with 10-minute TTL to reduce database load, and Kubernetes HPA that scales from 3 to 10 replicas based on CPU (70%) and memory (80%) utilization.",
+    "category": "vocabulary_mismatch"
+  },
+  {
+    "id": "q41",
+    "query": "What's the container memory budget?",
+    "expected_sources": ["deploy/kubernetes.yaml", "runbook.md"],
+    "reference_answer": "The Kubernetes deployment sets memory requests at 256Mi and limits at 512Mi. The runbook recommends 1GB memory per instance for headroom during traffic spikes.",
+    "category": "vocabulary_mismatch"
+  },
+  {
+    "id": "q42",
+    "query": "How do I rotate secrets for the service?",
+    "expected_sources": ["runbook.md", "architecture.md"],
+    "reference_answer": "API keys can be rotated without downtime using the admin API. Generate a new key with POST /admin/api-keys and revoke the old one with DELETE /admin/api-keys/KEY_ID. Keys are stored as bcrypt hashes and scoped to an organization with an expiration date.",
+    "category": "vocabulary_mismatch"
+  },
+  {
+    "id": "q43",
+    "query": "What's the data persistence layer?",
+    "expected_sources": ["architecture.md", "config.go", "README.md"],
+    "reference_answer": "The service uses PostgreSQL for persistent storage, configured via individual environment variables (WIDGET_DB_HOST, WIDGET_DB_PORT, etc.). It connects through a connection pool (default 25-50 connections) and uses parameterized queries to prevent SQL injection.",
+    "category": "vocabulary_mismatch",
+    "expected_content_contains": ["PostgreSQL"]
+  },
+  {
+    "id": "q44",
+    "query": "How does the service prevent abuse?",
+    "expected_sources": ["architecture.md", "README.md"],
+    "reference_answer": "The service prevents abuse through API key authentication (bcrypt-hashed keys validated via X-API-Key header), sliding window rate limiting at 200 requests per minute per key, request body size limited to 1MB, and CORS configured for known frontend origins only.",
+    "category": "vocabulary_mismatch"
+  },
+  {
+    "id": "q45",
+    "query": "What's the observability stack?",
+    "expected_sources": ["architecture.md", "runbook.md"],
+    "reference_answer": "The service exposes Prometheus metrics at /metrics including widget_requests_total, widget_request_duration_seconds, widget_cache_hits_total, and widget_db_connections_active. Alert thresholds are configured for latency, error rate, connection count, cache hit rate, and disk usage.",
+    "category": "vocabulary_mismatch",
+    "expected_content_contains": ["Prometheus"]
+  },
+  {
+    "id": "q46",
+    "query": "How do I recover from a data loss event?",
+    "expected_sources": ["runbook.md"],
+    "reference_answer": "Daily automated backups via pg_dump are stored in S3 with 30-day retention. To restore, use pg_restore with the backup file. Manual backups can also be created with pg_dump -Fc.",
+    "category": "vocabulary_mismatch"
+  },
+  {
+    "id": "q47",
+    "query": "What changes were made to stop the system from being overwhelmed?",
+    "expected_sources": ["architecture.md", "CHANGELOG.md", "incident-review.md"],
+    "reference_answer": "Multiple changes address system overload: the rate limiter was changed from token bucket to sliding window in v2.1, the rate limit was increased to 200 req/min in v2.3, cache TTL was increased to 10 minutes to reduce database load, and after the August 2025 outage a circuit breaker is being added to the write path to return 503 immediately when the database rejects connections.",
+    "category": "vocabulary_mismatch"
   }
 ]

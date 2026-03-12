@@ -57,6 +57,14 @@ func initSchema(db *sql.DB, embeddingDim int) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
+	// Backfill: add description column for databases created before it existed.
+	// ALTER TABLE ADD COLUMN errors if the column already exists; ignore that.
+	if _, err := db.Exec(`ALTER TABLE sources ADD COLUMN description TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("add sources.description column: %w", err)
+		}
+	}
+
 	// Create the sqlite-vec virtual table.
 	vtableSQL := fmt.Sprintf(
 		`CREATE VIRTUAL TABLE IF NOT EXISTS fragment_embeddings USING vec0(

@@ -1104,6 +1104,16 @@ func evalCmd() *cobra.Command {
 					result.Added, result.Deleted, result.Skipped, result.Errors)
 			}
 
+			noSave, _ := cmd.Flags().GetBool("no-save")
+
+			// Load previous results for delta comparison.
+			resultsPath := filepath.Join(filepath.Dir(testsetPath), "results.json")
+			var previous *eval.Summary
+			if prev, err := eval.LoadResults(resultsPath); err == nil {
+				previous = prev
+				fmt.Fprintf(os.Stderr, "Loaded previous results from %s\n", resultsPath)
+			}
+
 			// Load test set.
 			cases, err := eval.LoadTestSet(testsetPath)
 			if err != nil {
@@ -1130,7 +1140,16 @@ func evalCmd() *cobra.Command {
 				out, _ := json.MarshalIndent(summary, "", "  ")
 				fmt.Println(string(out))
 			} else {
-				fmt.Print(eval.FormatSummaryTable(summary))
+				fmt.Print(eval.FormatSummaryTableWithDelta(summary, previous))
+			}
+
+			// Auto-save results unless --no-save.
+			if !noSave {
+				if err := eval.SaveResults(summary, resultsPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not save results: %v\n", err)
+				} else {
+					fmt.Fprintf(os.Stderr, "Results saved to %s\n", resultsPath)
+				}
 			}
 
 			return nil
@@ -1142,6 +1161,7 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per query")
 	cmd.Flags().Bool("ingest", false, "Ingest the eval corpus before running evaluation")
 	cmd.Flags().Bool("json", false, "Output results as JSON")
+	cmd.Flags().Bool("no-save", false, "Do not save results to results.json")
 	return cmd
 }
 

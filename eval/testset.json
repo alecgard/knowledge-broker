@@ -4,209 +4,212 @@
     "query": "What database does the Acme Widget Service use?",
     "expected_sources": ["README.md", "config.go"],
     "reference_answer": "The Acme Widget Service uses PostgreSQL for persistent storage.",
-    "category": "factual"
+    "category": "direct_extraction",
+    "expected_content_contains": ["PostgreSQL"]
   },
   {
     "id": "q02",
     "query": "What is the default port for the Widget Service?",
     "expected_sources": ["config.go"],
     "reference_answer": "The default port is 8080, configured via the WIDGET_PORT environment variable.",
-    "category": "factual"
+    "category": "direct_extraction"
   },
   {
     "id": "q03",
     "query": "What format does the API use for error responses?",
     "expected_sources": ["api.go"],
     "reference_answer": "The API uses RFC 7807 Problem Details format for error responses.",
-    "category": "factual"
+    "category": "direct_extraction",
+    "expected_content_contains": ["RFC 7807"]
   },
   {
     "id": "q04",
     "query": "What is the maximum length for a widget name?",
     "expected_sources": ["api.go"],
     "reference_answer": "The maximum widget name length is 255 characters.",
-    "category": "factual"
+    "category": "direct_extraction"
   },
   {
     "id": "q05",
     "query": "What is the health check endpoint URL?",
     "expected_sources": ["runbook.md"],
     "reference_answer": "The health check endpoint is GET /healthz.",
-    "category": "factual"
+    "category": "direct_extraction",
+    "expected_content_contains": ["/healthz"]
   },
   {
     "id": "q06",
     "query": "What is the graceful shutdown timeout for the service?",
     "expected_sources": ["runbook.md"],
     "reference_answer": "The service has a 30-second graceful shutdown timeout.",
-    "category": "factual"
+    "category": "direct_extraction"
   },
   {
     "id": "q07",
     "query": "What database migration tool does the project use?",
     "expected_sources": ["runbook.md"],
     "reference_answer": "The project uses golang-migrate for database migrations.",
-    "category": "factual"
+    "category": "direct_extraction"
   },
   {
     "id": "q08",
     "query": "What is the database SSL mode default?",
     "expected_sources": ["config.go"],
     "reference_answer": "The default SSL mode is 'disable', set via WIDGET_DB_SSLMODE.",
-    "category": "factual"
+    "category": "direct_extraction"
   },
   {
     "id": "q09",
     "query": "How does authentication work and where are API keys stored?",
     "expected_sources": ["architecture.md", "README.md"],
     "reference_answer": "API keys are validated via the X-API-Key header. Keys are stored as bcrypt hashes in the api_keys table and compared using bcrypt hash comparison.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q10",
     "query": "What happens when you delete a widget?",
     "expected_sources": ["api.go", "README.md"],
     "reference_answer": "Deletion is a soft delete: the widget status is set to 'deleted'. It is excluded from list results but can be retrieved by ID for 30 days before permanent deletion by a cleanup job.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q11",
     "query": "What monitoring metrics are available and what are their alert thresholds?",
     "expected_sources": ["architecture.md", "runbook.md"],
     "reference_answer": "Prometheus metrics include widget_requests_total, widget_request_duration_seconds, widget_cache_hits_total, and widget_db_connections_active. Alert thresholds include p99 latency warning at 500ms/critical at 2s, error rate warning at 1%/critical at 5%.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q12",
     "query": "How do I troubleshoot high latency in the widget service?",
     "expected_sources": ["runbook.md", "architecture.md"],
     "reference_answer": "Check the Prometheus p99 latency dashboard, verify Redis connectivity, check PostgreSQL active connections, and verify cache miss rates via redis-cli info memory.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q13",
     "query": "What is the full deployment architecture from client to database?",
     "expected_sources": ["architecture.md", "README.md"],
     "reference_answer": "Clients connect through NGINX (TLS termination) to the Widget Service Go binary, which connects to PostgreSQL for storage and Redis for caching and rate limiting.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q14",
     "query": "How do I configure the database connection and what are all the related settings?",
     "expected_sources": ["config.go", "README.md"],
     "reference_answer": "Database is configured via environment variables: WIDGET_DB_HOST (localhost), WIDGET_DB_PORT (5432), WIDGET_DB_USER (widget), WIDGET_DB_PASSWORD (required), WIDGET_DB_NAME (widgets), WIDGET_DB_SSLMODE (disable).",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q15",
     "query": "What rate limiting algorithm does the service use and what is the limit?",
     "expected_sources": ["README.md", "architecture.md"],
     "reference_answer": "The README says token bucket at 100 requests/minute, but the architecture doc says the algorithm was changed to sliding window in v2.1 and the limit was increased to 200 requests/minute in v2.3.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q16",
     "query": "What is the cache TTL for the Widget Service?",
     "expected_sources": ["README.md", "architecture.md"],
     "reference_answer": "The README states 5-minute TTL, but the architecture doc says it was recently increased to 10 minutes to reduce database load during peak traffic.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q17",
     "query": "How does the API key validation work? Is it a simple header check or something more complex?",
     "expected_sources": ["README.md", "architecture.md"],
     "reference_answer": "The README implies simple API key header validation, but the architecture doc clarifies that the service performs bcrypt hash comparison against stored keys in the database.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q18",
     "query": "What rate limiting mechanism is used: token bucket or sliding window?",
     "expected_sources": ["README.md", "architecture.md"],
     "reference_answer": "The README mentions token bucket, but the architecture doc says the token bucket was replaced with a sliding window algorithm in v2.1.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q19",
     "query": "Does the Acme Widget Service support GraphQL?",
     "expected_sources": [],
     "reference_answer": "There is no information about GraphQL support in the documentation. The service only documents a RESTful API.",
-    "category": "unanswerable"
+    "category": "abstention"
   },
   {
     "id": "q20",
     "query": "What message queue does the Widget Service use for async processing?",
     "expected_sources": [],
     "reference_answer": "There is no mention of a message queue in the documentation. The service uses PostgreSQL and Redis but no dedicated message queue is documented.",
-    "category": "unanswerable"
+    "category": "abstention"
   },
   {
     "id": "q21",
     "query": "What is the password policy for user accounts in the Widget Service?",
     "expected_sources": [],
     "reference_answer": "The documentation does not mention user accounts or password policies. Authentication is done via API keys, not user accounts.",
-    "category": "unanswerable"
+    "category": "abstention"
   },
   {
     "id": "q22",
     "query": "What CI/CD pipeline does the Acme Widget Service use?",
     "expected_sources": [],
     "reference_answer": "There is no information about CI/CD pipelines in the documentation.",
-    "category": "unanswerable"
+    "category": "abstention"
   },
   {
     "id": "q23",
     "query": "What breaking changes were introduced across versions of the Widget Service?",
     "expected_sources": ["CHANGELOG.md", "architecture.md"],
     "reference_answer": "Breaking changes include: v2.0 renamed the 'type' field to 'status' and changed the API prefix to /api/v1; v2.1 replaced the token bucket rate limiter with a sliding window algorithm; v2.4 limited metadata values to 1024 characters; v2.5 removed the WIDGET_DB_URL environment variable in favor of individual connection parameters. The architecture doc also notes the rate limiting algorithm change.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q24",
     "query": "How do I set up the development environment and run all the tests?",
     "expected_sources": ["README.md", "CONTRIBUTING.md"],
     "reference_answer": "Clone the repository, run 'go mod download' for dependencies, start PostgreSQL and Redis via Docker Compose, run database migrations with 'make migrate-up', and copy .env.example to .env. Unit tests run with 'go test ./...', integration tests with 'go test -tags=integration ./...', and end-to-end tests with 'make test-e2e'. All tests should be run with '-race' flag, and golangci-lint must report zero issues.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q25",
     "query": "What are the resource requirements for deploying the Widget Service in production?",
     "expected_sources": ["deploy/kubernetes.yaml", "runbook.md"],
     "reference_answer": "The Kubernetes deployment specifies resource requests of 250m CPU and 256Mi memory, with limits of 1 CPU and 512Mi memory. The runbook recommends at least 1 CPU core and 1GB memory per instance. The deployment runs 3 replicas by default with an HPA scaling up to 10 replicas based on CPU (70%) and memory (80%) utilization.",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q26",
     "query": "What environment variables are used across all configuration sources?",
     "expected_sources": ["config.go", "deploy/kubernetes.yaml", "runbook.md"],
     "reference_answer": "Environment variables include: WIDGET_PORT (8080), WIDGET_DB_HOST, WIDGET_DB_PORT (5432), WIDGET_DB_USER, WIDGET_DB_PASSWORD, WIDGET_DB_NAME, WIDGET_DB_SSLMODE (disable in dev, require in prod), WIDGET_DB_MAX_CONNS (default 25 in config/runbook, 50 in Kubernetes), WIDGET_REDIS_URL, WIDGET_RATE_LIMIT (200), WIDGET_LOG_LEVEL (info), WIDGET_CACHE_TTL (10m in Kubernetes), and GOMAXPROCS (2 in Kubernetes).",
-    "category": "cross-file"
+    "category": "cross_document"
   },
   {
     "id": "q27",
     "query": "What is the recommended memory limit for the Widget Service?",
     "expected_sources": ["runbook.md", "deploy/kubernetes.yaml"],
     "reference_answer": "There is a contradiction: the runbook recommends setting the memory limit to 1GB to allow headroom for traffic spikes, while the Kubernetes deployment manifest sets the memory limit to 512Mi. The Kubernetes resource request is 256Mi with a limit of 512Mi.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q28",
     "query": "What version of Go is required to work on the Widget Service?",
     "expected_sources": ["CONTRIBUTING.md", "CHANGELOG.md"],
     "reference_answer": "There is a contradiction: the CONTRIBUTING.md states Go 1.21 or later is required, but the CHANGELOG.md for v2.5.0 notes the minimum Go version was bumped from 1.21 to 1.22. The contributing guide has not been updated to reflect the newer requirement.",
-    "category": "contradiction"
+    "category": "knowledge_update"
   },
   {
     "id": "q29",
     "query": "Does the Widget Service support gRPC endpoints?",
     "expected_sources": [],
     "reference_answer": "There is no mention of gRPC support anywhere in the documentation. The service only provides a RESTful HTTP API and a WebSocket/SSE event stream.",
-    "category": "unanswerable"
+    "category": "abstention"
   },
   {
     "id": "q30",
     "query": "What is the disaster recovery plan and RTO/RPO for the Widget Service?",
     "expected_sources": [],
     "reference_answer": "There is no documented disaster recovery plan. The runbook covers backups (daily pg_dump to S3 with 30-day retention) and basic restore procedures, but does not define Recovery Time Objective (RTO), Recovery Point Objective (RPO), or a formal DR plan.",
-    "category": "unanswerable"
+    "category": "abstention"
   }
 ]

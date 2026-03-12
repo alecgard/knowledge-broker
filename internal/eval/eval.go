@@ -13,10 +13,18 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
+
+// TopResultExpectation defines what the first retrieved fragment should match.
+type TopResultExpectation struct {
+	SourceContains  string `json:"source_contains"`
+	ContentContains string `json:"content_contains"`
+}
 
 // TestCase represents a single evaluation query from the test set JSON.
 type TestCase struct {
@@ -24,7 +32,11 @@ type TestCase struct {
 	Query           string   `json:"query"`
 	ExpectedSources []string `json:"expected_sources"`
 	ReferenceAnswer string   `json:"reference_answer"`
-	Category        string   `json:"category"` // factual, cross-file, contradiction, unanswerable
+	Category        string   `json:"category"` // direct_extraction, cross_document, knowledge_update, abstention
+	ExpectedContentContains []string            `json:"expected_content_contains,omitempty"`
+	ExpectedTopResult       TopResultExpectation `json:"expected_top_result,omitempty"`
+	ExpectedResultCount     int                 `json:"expected_result_count,omitempty"`
+	MaxConfidence           float64             `json:"max_confidence,omitempty"`
 }
 
 // Result holds the evaluation outcome for a single test case.
@@ -42,6 +54,11 @@ type Result struct {
 	PrecisionAt10   float64  `json:"precision_at_10"`
 	PrecisionAt20   float64  `json:"precision_at_20"`
 	MRR             float64  `json:"mrr"` // 1/rank of first relevant fragment
+	HitAt1          float64  `json:"hit_at_1"`
+	HitAt3          float64  `json:"hit_at_3"`
+	HitAt5          float64  `json:"hit_at_5"`
+	ContentMatch    bool     `json:"content_match"`
+	TopResultMatch  bool     `json:"top_result_match"`
 }
 
 // ChunkingStats holds statistics about the chunking of the eval corpus.
@@ -64,6 +81,9 @@ type CategoryBreakdown struct {
 	PrecisionAt10 float64 `json:"precision_at_10"`
 	PrecisionAt20 float64 `json:"precision_at_20"`
 	MRR         float64 `json:"mrr"`
+	HitAt1      float64 `json:"hit_at_1"`
+	HitAt3      float64 `json:"hit_at_3"`
+	HitAt5      float64 `json:"hit_at_5"`
 }
 
 // Summary holds the overall evaluation results.
@@ -76,6 +96,10 @@ type Summary struct {
 	PrecisionAt10     float64              `json:"precision_at_10"`
 	PrecisionAt20     float64              `json:"precision_at_20"`
 	MRR               float64              `json:"mrr"`
+	HitAt1            float64              `json:"hit_at_1"`
+	HitAt3            float64              `json:"hit_at_3"`
+	HitAt5            float64              `json:"hit_at_5"`
+	Timestamp         string               `json:"timestamp"`
 	CategoryBreakdowns []CategoryBreakdown `json:"category_breakdowns"`
 	Chunking          *ChunkingStats       `json:"chunking,omitempty"`
 }
@@ -167,6 +191,21 @@ func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, 
 	result.PrecisionAt10 = PrecisionAtK(tc.ExpectedSources, retrievedPaths, 10)
 	result.PrecisionAt20 = PrecisionAtK(tc.ExpectedSources, retrievedPaths, 20)
 	result.MRR = MRRScore(tc.ExpectedSources, retrievedPaths)
+
+	// Hit@K metrics.
+	result.HitAt1 = HitAtK(tc.ExpectedSources, retrievedPaths, 1)
+	result.HitAt3 = HitAtK(tc.ExpectedSources, retrievedPaths, 3)
+	result.HitAt5 = HitAtK(tc.ExpectedSources, retrievedPaths, 5)
+
+	// Content match: check if all expected content strings appear in top-5 fragment content.
+	if len(tc.ExpectedContentContains) > 0 {
+		result.ContentMatch = checkContentMatch(tc.ExpectedContentContains, fragments, 5)
+	}
+
+	// Top result match: check if fragments[0] matches expectations.
+	if tc.ExpectedTopResult.SourceContains != "" || tc.ExpectedTopResult.ContentContains != "" {
+		result.TopResultMatch = checkTopResultMatch(tc.ExpectedTopResult, fragments)
+	}
 
 	return result, nil
 }
@@ -270,6 +309,29 @@ func MRRScore(expectedSources, retrievedPaths []string) float64 {
 	return 0.0
 }
 
+// HitAtK returns 1.0 if any expected source appears in the top K results, 0.0 otherwise.
+// For abstention cases (empty expected sources), returns 1.0 by convention.
+func HitAtK(expectedSources, retrievedPaths []string, k int) float64 {
+	if len(expectedSources) == 0 {
+		return 1.0
+	}
+
+	topK := retrievedPaths
+	if len(topK) > k {
+		topK = topK[:k]
+	}
+
+	for _, expected := range expectedSources {
+		for _, path := range topK {
+			if sourceMatches(path, expected) {
+				return 1.0
+			}
+		}
+	}
+
+	return 0.0
+}
+
 // ComputeChunkingStats computes statistics about fragments in the store.
 func ComputeChunkingStats(ctx context.Context, s store.Store) (*ChunkingStats, error) {
 	fragments, err := s.ExportFragments(ctx)
@@ -324,6 +386,43 @@ func ComputeChunkingStats(ctx context.Context, s store.Store) (*ChunkingStats, e
 	return stats, nil
 }
 
+// checkContentMatch returns true if all needles appear in the content of the top-K fragments.
+func checkContentMatch(needles []string, fragments []model.SourceFragment, k int) bool {
+	topK := fragments
+	if len(topK) > k {
+		topK = topK[:k]
+	}
+
+	var combined strings.Builder
+	for _, f := range topK {
+		combined.WriteString(f.Content)
+		combined.WriteString(" ")
+	}
+	haystack := strings.ToLower(combined.String())
+
+	for _, needle := range needles {
+		if !strings.Contains(haystack, strings.ToLower(needle)) {
+			return false
+		}
+	}
+	return true
+}
+
+// checkTopResultMatch checks if the first fragment matches the expected top result.
+func checkTopResultMatch(expected TopResultExpectation, fragments []model.SourceFragment) bool {
+	if len(fragments) == 0 {
+		return false
+	}
+	f := fragments[0]
+	if expected.SourceContains != "" && !strings.Contains(strings.ToLower(f.SourcePath), strings.ToLower(expected.SourceContains)) {
+		return false
+	}
+	if expected.ContentContains != "" && !strings.Contains(strings.ToLower(f.Content), strings.ToLower(expected.ContentContains)) {
+		return false
+	}
+	return true
+}
+
 // computeOverallMetrics fills in the summary-level averages and category breakdowns.
 func computeOverallMetrics(summary *Summary) {
 	n := float64(len(summary.Results))
@@ -334,6 +433,7 @@ func computeOverallMetrics(summary *Summary) {
 	var totalR5, totalR10, totalR20 float64
 	var totalP5, totalP10, totalP20 float64
 	var totalMRR float64
+	var totalH1, totalH3, totalH5 float64
 
 	catMap := make(map[string]*CategoryBreakdown)
 
@@ -345,6 +445,9 @@ func computeOverallMetrics(summary *Summary) {
 		totalP10 += r.PrecisionAt10
 		totalP20 += r.PrecisionAt20
 		totalMRR += r.MRR
+		totalH1 += r.HitAt1
+		totalH3 += r.HitAt3
+		totalH5 += r.HitAt5
 
 		cb, ok := catMap[r.Category]
 		if !ok {
@@ -359,6 +462,9 @@ func computeOverallMetrics(summary *Summary) {
 		cb.PrecisionAt10 += r.PrecisionAt10
 		cb.PrecisionAt20 += r.PrecisionAt20
 		cb.MRR += r.MRR
+		cb.HitAt1 += r.HitAt1
+		cb.HitAt3 += r.HitAt3
+		cb.HitAt5 += r.HitAt5
 	}
 
 	summary.RecallAt5 = totalR5 / n
@@ -368,9 +474,12 @@ func computeOverallMetrics(summary *Summary) {
 	summary.PrecisionAt10 = totalP10 / n
 	summary.PrecisionAt20 = totalP20 / n
 	summary.MRR = totalMRR / n
+	summary.HitAt1 = totalH1 / n
+	summary.HitAt3 = totalH3 / n
+	summary.HitAt5 = totalH5 / n
 
 	// Build sorted category breakdowns.
-	categories := []string{"factual", "cross-file", "contradiction", "unanswerable"}
+	categories := []string{"direct_extraction", "cross_document", "knowledge_update", "abstention"}
 	for _, cat := range categories {
 		cb, ok := catMap[cat]
 		if !ok {
@@ -384,6 +493,9 @@ func computeOverallMetrics(summary *Summary) {
 		cb.PrecisionAt10 /= cn
 		cb.PrecisionAt20 /= cn
 		cb.MRR /= cn
+		cb.HitAt1 /= cn
+		cb.HitAt3 /= cn
+		cb.HitAt5 /= cn
 		summary.CategoryBreakdowns = append(summary.CategoryBreakdowns, *cb)
 		delete(catMap, cat)
 	}
@@ -397,56 +509,89 @@ func computeOverallMetrics(summary *Summary) {
 		cb.PrecisionAt10 /= cn
 		cb.PrecisionAt20 /= cn
 		cb.MRR /= cn
+		cb.HitAt1 /= cn
+		cb.HitAt3 /= cn
+		cb.HitAt5 /= cn
 		summary.CategoryBreakdowns = append(summary.CategoryBreakdowns, *cb)
 	}
+
+	summary.Timestamp = time.Now().UTC().Format(time.RFC3339)
 }
 
 // FormatSummaryTable returns an ASCII table summarizing the evaluation results.
 func FormatSummaryTable(summary *Summary) string {
+	return FormatSummaryTableWithDelta(summary, nil)
+}
+
+// FormatSummaryTableWithDelta returns an ASCII table with optional delta comparison.
+func FormatSummaryTableWithDelta(current, previous *Summary) string {
 	var sb strings.Builder
 
-	// Per-question table.
-	sb.WriteString(fmt.Sprintf("%-5s %-14s %-50s  R@5   R@10  R@20  P@5   P@10  P@20  MRR\n",
-		"ID", "Category", "Query"))
-	sb.WriteString(strings.Repeat("-", 140) + "\n")
-
-	for _, r := range summary.Results {
-		q := r.Query
-		if len(q) > 48 {
-			q = q[:48] + ".."
+	// Build previous results map for per-question deltas.
+	prevMap := make(map[string]*Result)
+	if previous != nil {
+		for i := range previous.Results {
+			prevMap[previous.Results[i].ID] = &previous.Results[i]
 		}
-		sb.WriteString(fmt.Sprintf("%-5s %-14s %-50s  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f\n",
+	}
+
+	// Per-question detail table.
+	sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  Hit@1  Hit@3  Hit@5  MRR    R@5\n",
+		"ID", "Category", "Query"))
+	sb.WriteString(strings.Repeat("-", 130) + "\n")
+
+	for _, r := range current.Results {
+		q := r.Query
+		if len(q) > 43 {
+			q = q[:43] + ".."
+		}
+		sb.WriteString(fmt.Sprintf("%-5s %-20s %-45s  %.2f   %.2f   %.2f   %.2f   %.2f\n",
 			r.ID, r.Category, q,
-			r.RecallAt5, r.RecallAt10, r.RecallAt20,
-			r.PrecisionAt5, r.PrecisionAt10, r.PrecisionAt20,
-			r.MRR))
+			r.HitAt1, r.HitAt3, r.HitAt5, r.MRR, r.RecallAt5))
 	}
 
-	// Overall metrics.
-	sb.WriteString(strings.Repeat("-", 140) + "\n")
-	sb.WriteString(fmt.Sprintf("%-5s %-14s %-50s  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f\n",
-		"", "OVERALL", fmt.Sprintf("(%d queries)", len(summary.Results)),
-		summary.RecallAt5, summary.RecallAt10, summary.RecallAt20,
-		summary.PrecisionAt5, summary.PrecisionAt10, summary.PrecisionAt20,
-		summary.MRR))
+	// Category summary table.
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("%-22s %5s  %-12s %-12s %-12s %-12s\n",
+		"Category", "Tests", "Hit@1", "Hit@3", "Hit@5", "MRR"))
+	sb.WriteString(strings.Repeat("-", 82) + "\n")
 
-	// Category breakdowns.
-	sb.WriteString("\nCategory Breakdowns:\n")
-	sb.WriteString(fmt.Sprintf("  %-14s  %5s  R@5   R@10  R@20  P@5   P@10  P@20  MRR\n",
-		"Category", "Count"))
-	sb.WriteString("  " + strings.Repeat("-", 90) + "\n")
+	// Build previous category map.
+	prevCatMap := make(map[string]*CategoryBreakdown)
+	if previous != nil {
+		for i := range previous.CategoryBreakdowns {
+			prevCatMap[previous.CategoryBreakdowns[i].Category] = &previous.CategoryBreakdowns[i]
+		}
+	}
 
-	for _, cb := range summary.CategoryBreakdowns {
-		sb.WriteString(fmt.Sprintf("  %-14s  %5d  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f  %.2f\n",
+	for _, cb := range current.CategoryBreakdowns {
+		prev := prevCatMap[cb.Category]
+		sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s\n",
 			cb.Category, cb.Count,
-			cb.RecallAt5, cb.RecallAt10, cb.RecallAt20,
-			cb.PrecisionAt5, cb.PrecisionAt10, cb.PrecisionAt20,
-			cb.MRR))
+			formatWithDelta(cb.HitAt1, prev, func(p *CategoryBreakdown) float64 { return p.HitAt1 }),
+			formatWithDelta(cb.HitAt3, prev, func(p *CategoryBreakdown) float64 { return p.HitAt3 }),
+			formatWithDelta(cb.HitAt5, prev, func(p *CategoryBreakdown) float64 { return p.HitAt5 }),
+			formatWithDelta(cb.MRR, prev, func(p *CategoryBreakdown) float64 { return p.MRR }),
+		))
 	}
+
+	// Overall row.
+	sb.WriteString(strings.Repeat("-", 82) + "\n")
+	var prevSummary *Summary
+	if previous != nil {
+		prevSummary = previous
+	}
+	sb.WriteString(fmt.Sprintf("%-22s %5d  %s %s %s %s\n",
+		"Overall", len(current.Results),
+		formatWithDeltaSummary(current.HitAt1, prevSummary, func(s *Summary) float64 { return s.HitAt1 }),
+		formatWithDeltaSummary(current.HitAt3, prevSummary, func(s *Summary) float64 { return s.HitAt3 }),
+		formatWithDeltaSummary(current.HitAt5, prevSummary, func(s *Summary) float64 { return s.HitAt5 }),
+		formatWithDeltaSummary(current.MRR, prevSummary, func(s *Summary) float64 { return s.MRR }),
+	))
 
 	// Chunking stats if present.
-	if summary.Chunking != nil {
-		cs := summary.Chunking
+	if current.Chunking != nil {
+		cs := current.Chunking
 		sb.WriteString(fmt.Sprintf("\nChunking Statistics:\n"))
 		sb.WriteString(fmt.Sprintf("  Total fragments: %d\n", cs.TotalFragments))
 		sb.WriteString(fmt.Sprintf("  Mean token length:   %.1f\n", cs.MeanTokenLen))
@@ -454,7 +599,6 @@ func FormatSummaryTable(summary *Summary) string {
 		sb.WriteString(fmt.Sprintf("  P95 token length:    %.1f\n", cs.P95TokenLen))
 		sb.WriteString(fmt.Sprintf("  Fragments per file:\n"))
 
-		// Sort files for deterministic output.
 		files := make([]string, 0, len(cs.FragmentsPerFile))
 		for f := range cs.FragmentsPerFile {
 			files = append(files, f)
@@ -466,4 +610,54 @@ func FormatSummaryTable(summary *Summary) string {
 	}
 
 	return sb.String()
+}
+
+func formatWithDelta(val float64, prev *CategoryBreakdown, getter func(*CategoryBreakdown) float64) string {
+	if prev == nil {
+		return fmt.Sprintf("%-12.2f", val)
+	}
+	delta := val - getter(prev)
+	return fmt.Sprintf("%-12s", fmt.Sprintf("%.2f %s", val, formatDelta(delta)))
+}
+
+func formatWithDeltaSummary(val float64, prev *Summary, getter func(*Summary) float64) string {
+	if prev == nil {
+		return fmt.Sprintf("%-12.2f", val)
+	}
+	delta := val - getter(prev)
+	return fmt.Sprintf("%-12s", fmt.Sprintf("%.2f %s", val, formatDelta(delta)))
+}
+
+func formatDelta(delta float64) string {
+	if delta > 0.005 {
+		return fmt.Sprintf("(+%.2f)", delta)
+	} else if delta < -0.005 {
+		return fmt.Sprintf("(%.2f)", delta)
+	}
+	return "(=)"
+}
+
+// SaveResults writes the summary to a JSON file.
+func SaveResults(summary *Summary, path string) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal results: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write results: %w", err)
+	}
+	return nil
+}
+
+// LoadResults reads a previously saved summary from a JSON file.
+func LoadResults(path string) (*Summary, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read results: %w", err)
+	}
+	var summary Summary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		return nil, fmt.Errorf("parse results: %w", err)
+	}
+	return &summary, nil
 }

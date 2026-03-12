@@ -81,10 +81,8 @@ run-mcp: build
 ## Eval
 
 eval:
-	@echo "Ingesting eval corpus..."
-	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb ingest --source eval/corpus --db eval.db
 	@echo "Running evaluation..."
-	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus
 	@rm -f eval.db eval.db-shm eval.db-wal
 
 ## Dependencies

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1277,15 +1278,45 @@ func sourcesExportCmd() *cobra.Command {
 				Config      map[string]string `json:"config"`
 			}
 
-			out := make([]exportSource, len(sources))
-			for i, src := range sources {
-				out[i] = exportSource{
+			// Build map of current DB sources keyed by "type/name".
+			dbMap := make(map[string]exportSource, len(sources))
+			for _, src := range sources {
+				key := src.SourceType + "/" + src.SourceName
+				dbMap[key] = exportSource{
 					SourceType:  src.SourceType,
 					SourceName:  src.SourceName,
 					Description: src.Description,
 					Config:      src.Config,
 				}
 			}
+
+			// Merge with existing file to avoid dropping entries.
+			var existing []exportSource
+			if existingData, err := os.ReadFile(outFile); err == nil {
+				_ = json.Unmarshal(existingData, &existing)
+			}
+
+			merged := make(map[string]exportSource, len(existing)+len(dbMap))
+			for _, e := range existing {
+				key := e.SourceType + "/" + e.SourceName
+				merged[key] = e
+			}
+			// DB sources override existing entries.
+			for k, v := range dbMap {
+				merged[k] = v
+			}
+
+			out := make([]exportSource, 0, len(merged))
+			for _, v := range merged {
+				out = append(out, v)
+			}
+			// Sort for deterministic output.
+			sort.Slice(out, func(i, j int) bool {
+				if out[i].SourceType != out[j].SourceType {
+					return out[i].SourceType < out[j].SourceType
+				}
+				return out[i].SourceName < out[j].SourceName
+			})
 
 			data, err := json.MarshalIndent(out, "", "  ")
 			if err != nil {
@@ -1296,7 +1327,12 @@ func sourcesExportCmd() *cobra.Command {
 				return fmt.Errorf("write file: %w", err)
 			}
 
-			fmt.Fprintf(os.Stderr, "Exported %d sources to %s\n", len(out), outFile)
+			added := len(merged) - len(existing)
+			if added < 0 {
+				added = 0
+			}
+			fmt.Fprintf(os.Stderr, "Exported %d sources to %s (%d new, %d total)\n",
+				len(sources), outFile, added, len(out))
 			return nil
 		},
 	}

@@ -1282,6 +1282,19 @@ func evalCmd() *cobra.Command {
 
 			// Run evaluation.
 			runner := eval.NewRunner(s, emb)
+
+			ragasExport, _ := cmd.Flags().GetString("ragas-export")
+			if ragasExport != "" {
+				// Need LLM for answer generation.
+				apiKey := os.Getenv("ANTHROPIC_API_KEY")
+				if apiKey == "" {
+					return fmt.Errorf("ANTHROPIC_API_KEY required for RAGAS export (answer generation)")
+				}
+				llmClient := llm.NewClaudeClient(apiKey, cfg.ClaudeModel, client, logger)
+				engine := query.NewEngine(s, emb, llmClient, limit, logger)
+				runner.SetQueryEngine(engine)
+			}
+
 			summary, err := runner.Run(ctx, cases, limit)
 			if err != nil {
 				return fmt.Errorf("run eval: %w", err)
@@ -1321,6 +1334,14 @@ func evalCmd() *cobra.Command {
 				}
 			}
 
+			if ragasExport != "" {
+				ragasData := eval.ExportRAGAS(summary)
+				if err := eval.SaveRAGASExport(ragasData, ragasExport); err != nil {
+					return fmt.Errorf("save RAGAS export: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "RAGAS export saved to %s\n", ragasExport)
+			}
+
 			return nil
 		},
 	}
@@ -1334,6 +1355,7 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment during eval ingestion")
 	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
 	cmd.Flags().String("prompt-version", "", "Enrichment prompt version: v1 (full rewrite), v2 (append keywords)")
+	cmd.Flags().String("ragas-export", "", "Export results in RAGAS format to this path")
 	return cmd
 }
 

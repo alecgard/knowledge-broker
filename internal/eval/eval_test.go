@@ -3,11 +3,14 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 func TestRecallAtK(t *testing.T) {
@@ -663,6 +666,216 @@ func TestConfidenceMetrics(t *testing.T) {
 	}
 	if cb.AvgConfidence <= 0 {
 		t.Errorf("Category AvgConfidence = %.2f, want > 0", cb.AvgConfidence)
+	}
+}
+
+func TestContextsAndReferenceAnswerPopulated(t *testing.T) {
+	s := &mockStore{
+		fragments: []mockFragment{
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "PostgreSQL on port 5432", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+			{id: "f2", sourcePath: "eval/corpus/README.md", content: "Service overview", fileType: ".md", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+		},
+	}
+	embedder := &mockEmbedder{dim: 4}
+	runner := NewRunner(s, embedder)
+
+	cases := []TestCase{
+		{
+			ID:              "q01",
+			Query:           "What database?",
+			ExpectedSources: []string{"config.go"},
+			ReferenceAnswer: "PostgreSQL",
+			Category:        "direct_extraction",
+		},
+	}
+
+	summary, err := runner.Run(context.Background(), cases, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := summary.Results[0]
+	if r.ReferenceAnswer != "PostgreSQL" {
+		t.Errorf("ReferenceAnswer = %q, want %q", r.ReferenceAnswer, "PostgreSQL")
+	}
+	if len(r.Contexts) != 2 {
+		t.Fatalf("expected 2 contexts, got %d", len(r.Contexts))
+	}
+	if r.GeneratedAnswer != "" {
+		t.Error("expected empty GeneratedAnswer without query engine")
+	}
+}
+
+// mockQueryEngine implements QueryEngine for testing.
+type mockQueryEngine struct {
+	answer string
+	err    error
+}
+
+func (m *mockQueryEngine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &model.Answer{Content: m.answer}, nil
+}
+
+func TestRunnerWithQueryEngine(t *testing.T) {
+	s := &mockStore{
+		fragments: []mockFragment{
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "PostgreSQL", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+		},
+	}
+	embedder := &mockEmbedder{dim: 4}
+	runner := NewRunner(s, embedder)
+	runner.SetQueryEngine(&mockQueryEngine{answer: "The database is PostgreSQL."})
+
+	cases := []TestCase{
+		{
+			ID:              "q01",
+			Query:           "What database?",
+			ExpectedSources: []string{"config.go"},
+			ReferenceAnswer: "PostgreSQL",
+			Category:        "direct_extraction",
+		},
+	}
+
+	summary, err := runner.Run(context.Background(), cases, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := summary.Results[0]
+	if r.GeneratedAnswer != "The database is PostgreSQL." {
+		t.Errorf("GeneratedAnswer = %q, want %q", r.GeneratedAnswer, "The database is PostgreSQL.")
+	}
+}
+
+func TestRunnerWithQueryEngineError(t *testing.T) {
+	s := &mockStore{
+		fragments: []mockFragment{
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "data", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+		},
+	}
+	embedder := &mockEmbedder{dim: 4}
+	runner := NewRunner(s, embedder)
+	runner.SetQueryEngine(&mockQueryEngine{err: fmt.Errorf("LLM unavailable")})
+
+	cases := []TestCase{
+		{
+			ID:              "q01",
+			Query:           "What database?",
+			ExpectedSources: []string{"config.go"},
+			Category:        "direct_extraction",
+		},
+	}
+
+	// Should not fail — engine errors are logged as warnings.
+	summary, err := runner.Run(context.Background(), cases, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Results[0].GeneratedAnswer != "" {
+		t.Error("expected empty GeneratedAnswer on engine error")
+	}
+}
+
+func TestExportRAGAS(t *testing.T) {
+	summary := &Summary{
+		Results: []Result{
+			{
+				ID:              "q01",
+				Query:           "What database?",
+				Category:        "direct_extraction",
+				GeneratedAnswer: "PostgreSQL",
+				Contexts:        []string{"context1", "context2"},
+				ReferenceAnswer: "PostgreSQL is used.",
+				AvgFreshness:    0.95,
+				AvgConfidence:   0.61,
+			},
+			{
+				ID:              "q02",
+				Query:           "What about caching?",
+				Category:        "cross_document",
+				GeneratedAnswer: "Redis is used for caching.",
+				Contexts:        []string{"context3"},
+				ReferenceAnswer: "Redis.",
+				AvgFreshness:    0.90,
+				AvgConfidence:   0.55,
+			},
+		},
+		EmbeddingModel: "nomic-embed-text",
+		Timestamp:      "2026-03-13T12:00:00Z",
+	}
+
+	export := ExportRAGAS(summary)
+
+	if len(export.Dataset) != 2 {
+		t.Fatalf("expected 2 dataset entries, got %d", len(export.Dataset))
+	}
+
+	d := export.Dataset[0]
+	if d.Question != "What database?" {
+		t.Errorf("Question = %q, want %q", d.Question, "What database?")
+	}
+	if d.Answer != "PostgreSQL" {
+		t.Errorf("Answer = %q, want %q", d.Answer, "PostgreSQL")
+	}
+	if len(d.Contexts) != 2 {
+		t.Errorf("Contexts len = %d, want 2", len(d.Contexts))
+	}
+	if d.GroundTruth != "PostgreSQL is used." {
+		t.Errorf("GroundTruth = %q, want %q", d.GroundTruth, "PostgreSQL is used.")
+	}
+	if d.AvgFreshness != 0.95 {
+		t.Errorf("AvgFreshness = %v, want 0.95", d.AvgFreshness)
+	}
+	if d.ID != "q01" {
+		t.Errorf("ID = %q, want %q", d.ID, "q01")
+	}
+
+	if export.Metadata.EmbeddingModel != "nomic-embed-text" {
+		t.Errorf("EmbeddingModel = %q, want %q", export.Metadata.EmbeddingModel, "nomic-embed-text")
+	}
+}
+
+func TestSaveRAGASExport(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "ragas-export.json")
+
+	export := &RAGASExport{
+		Dataset: []RAGASTestCase{
+			{
+				Question:    "test?",
+				Answer:      "answer",
+				Contexts:    []string{"ctx"},
+				GroundTruth: "truth",
+				ID:          "q01",
+			},
+		},
+		Metadata: RAGASMetadata{
+			Timestamp: "2026-03-13T12:00:00Z",
+		},
+	}
+
+	if err := SaveRAGASExport(export, path); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify file is valid JSON.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var loaded RAGASExport
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(loaded.Dataset) != 1 {
+		t.Errorf("expected 1 dataset entry, got %d", len(loaded.Dataset))
+	}
+	if loaded.Dataset[0].Question != "test?" {
+		t.Errorf("Question = %q, want %q", loaded.Dataset[0].Question, "test?")
 	}
 }
 

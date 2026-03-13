@@ -64,7 +64,10 @@ type Result struct {
 	ContentMatch    bool     `json:"content_match"`
 	TopResultMatch  bool     `json:"top_result_match"`
 	AvgFreshness    float64  `json:"avg_freshness"`
-	AvgConfidence   float64  `json:"avg_confidence"` // overall composite
+	AvgConfidence   float64  `json:"avg_confidence"`   // overall composite
+	GeneratedAnswer string   `json:"generated_answer,omitempty"` // LLM-generated answer
+	Contexts        []string `json:"contexts,omitempty"`         // retrieved context strings
+	ReferenceAnswer string   `json:"reference_answer,omitempty"` // ground truth from testset
 }
 
 // ChunkingStats holds statistics about the chunking of the eval corpus.
@@ -199,15 +202,26 @@ type Summary struct {
 	System             *SystemInfo          `json:"system,omitempty"`
 }
 
+// QueryEngine is an optional interface for generating answers during eval.
+type QueryEngine interface {
+	Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error)
+}
+
 // Runner executes evaluation against the store using the embedder.
 type Runner struct {
 	store    store.Store
 	embedder embedding.Embedder
+	engine   QueryEngine // optional, for answer generation
 }
 
 // NewRunner creates a new evaluation runner.
 func NewRunner(s store.Store, e embedding.Embedder) *Runner {
 	return &Runner{store: s, embedder: e}
+}
+
+// SetQueryEngine enables answer generation during eval.
+func (r *Runner) SetQueryEngine(engine QueryEngine) {
+	r.engine = engine
 }
 
 // LoadTestSet reads and parses a test set JSON file.
@@ -234,7 +248,12 @@ func (r *Runner) Run(ctx context.Context, cases []TestCase, limit int) (*Summary
 		Results: make([]Result, 0, len(cases)),
 	}
 
-	for _, tc := range cases {
+	for i, tc := range cases {
+		if r.engine != nil {
+			fmt.Fprintf(os.Stderr, "  [%d/%d] %s: generating answer...\n", i+1, len(cases), tc.ID)
+		} else {
+			fmt.Fprintf(os.Stderr, "  [%d/%d] %s\n", i+1, len(cases), tc.ID)
+		}
 		result, err := r.evalOne(ctx, tc, limit)
 		if err != nil {
 			return nil, fmt.Errorf("eval %s: %w", tc.ID, err)
@@ -300,6 +319,30 @@ func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, 
 	// Top result match: check if fragments[0] matches expectations.
 	if tc.ExpectedTopResult.SourceContains != "" || tc.ExpectedTopResult.ContentContains != "" {
 		result.TopResultMatch = checkTopResultMatch(tc.ExpectedTopResult, fragments)
+	}
+
+	// Always populate contexts from retrieved fragments.
+	contexts := make([]string, 0, len(fragments))
+	for _, f := range fragments {
+		contexts = append(contexts, f.Content())
+	}
+	result.Contexts = contexts
+	result.ReferenceAnswer = tc.ReferenceAnswer
+
+	// Generate answer if query engine is available.
+	if r.engine != nil {
+		req := model.QueryRequest{
+			Messages: []model.Message{{Role: model.RoleUser, Content: tc.Query}},
+			Limit:    limit,
+			Concise:  true,
+		}
+		answer, err := r.engine.Query(ctx, req, nil)
+		if err != nil {
+			// Log warning but don't fail the eval.
+			fmt.Fprintf(os.Stderr, "Warning: answer generation failed for %s: %v\n", tc.ID, err)
+		} else {
+			result.GeneratedAnswer = answer.Content
+		}
 	}
 
 	// Compute confidence metrics.
@@ -792,4 +835,70 @@ func LoadResults(path string) (*Summary, error) {
 		return nil, fmt.Errorf("parse results: %w", err)
 	}
 	return &summary, nil
+}
+
+// RAGASTestCase is the format expected by the RAGAS Python framework.
+type RAGASTestCase struct {
+	Question      string   `json:"question"`
+	Answer        string   `json:"answer"`
+	Contexts      []string `json:"contexts"`
+	GroundTruth   string   `json:"ground_truth"`
+	AvgFreshness  float64  `json:"kb_avg_freshness"`
+	AvgConfidence float64  `json:"kb_avg_confidence"`
+	Category      string   `json:"kb_category"`
+	ID            string   `json:"kb_id"`
+}
+
+// RAGASExport is the full export format for the RAGAS Python harness.
+type RAGASExport struct {
+	Dataset  []RAGASTestCase `json:"dataset"`
+	Metadata RAGASMetadata   `json:"metadata"`
+}
+
+// RAGASMetadata holds provenance information for the RAGAS export.
+type RAGASMetadata struct {
+	EmbeddingModel    string      `json:"embedding_model,omitempty"`
+	EnrichmentModel   string      `json:"enrichment_model,omitempty"`
+	EnrichmentVersion string      `json:"enrichment_version,omitempty"`
+	Timestamp         string      `json:"timestamp"`
+	System            *SystemInfo `json:"system,omitempty"`
+}
+
+// ExportRAGAS converts a Summary into RAGAS-compatible export format.
+func ExportRAGAS(summary *Summary) *RAGASExport {
+	export := &RAGASExport{
+		Dataset: make([]RAGASTestCase, len(summary.Results)),
+		Metadata: RAGASMetadata{
+			EmbeddingModel:    summary.EmbeddingModel,
+			EnrichmentModel:   summary.EnrichmentModel,
+			EnrichmentVersion: summary.EnrichmentVersion,
+			Timestamp:         summary.Timestamp,
+			System:            summary.System,
+		},
+	}
+	for i, r := range summary.Results {
+		export.Dataset[i] = RAGASTestCase{
+			Question:      r.Query,
+			Answer:        r.GeneratedAnswer,
+			Contexts:      r.Contexts,
+			GroundTruth:   r.ReferenceAnswer,
+			AvgFreshness:  r.AvgFreshness,
+			AvgConfidence: r.AvgConfidence,
+			Category:      r.Category,
+			ID:            r.ID,
+		}
+	}
+	return export
+}
+
+// SaveRAGASExport writes the RAGAS export to a JSON file.
+func SaveRAGASExport(export *RAGASExport, path string) error {
+	data, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal RAGAS export: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write RAGAS export: %w", err)
+	}
+	return nil
 }

@@ -2,7 +2,7 @@ BINARY := kb
 VERSION := 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched
+.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched eval-ragas-export eval-ragas
 
 ## Build
 
@@ -90,6 +90,15 @@ eval-enriched:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus $(if $(ENRICH_MODEL),--enrich-model $(ENRICH_MODEL),)
 	@rm -f eval.db eval.db-shm eval.db-wal
 
+eval-ragas-export:
+	@echo "Running evaluation with answer generation + RAGAS export (requires Ollama + ANTHROPIC_API_KEY)..."
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus --skip-enrichment --ragas-export eval/ragas/export.json
+	@rm -f eval.db eval.db-shm eval.db-wal
+
+eval-ragas: eval-ragas-export
+	@echo "Running RAGAS evaluation (requires ANTHROPIC_API_KEY)..."
+	@cd eval/ragas && python run_ragas.py -i export.json -o results.json --verbose
+
 ## Dependencies
 
 deps:
@@ -110,4 +119,6 @@ help:
 	@echo "  make run-ingest   Build and ingest current directory"
 	@echo "  make run-serve    Build and start HTTP server"
 	@echo "  make run-mcp      Build and start MCP server"
-	@echo "  make eval         Ingest eval corpus and run evaluation"
+	@echo "  make eval              Ingest eval corpus and run evaluation"
+	@echo "  make eval-ragas-export Export eval results in RAGAS format (needs ANTHROPIC_API_KEY)"
+	@echo "  make eval-ragas        Run full RAGAS evaluation (needs ANTHROPIC_API_KEY)"

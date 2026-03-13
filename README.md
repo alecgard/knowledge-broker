@@ -98,10 +98,12 @@ curl -X POST localhost:8080/v1/query \
 
 1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki — see [docs/connectors.md](docs/connectors.md))
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
-3. **Embeddings** (via Ollama) convert chunks to vectors for semantic search
-4. **Storage** (SQLite + sqlite-vec) persists fragments and enables vector similarity search
-5. **Query engine** embeds your query, finds relevant fragments, and either returns them directly (raw mode) or synthesises an answer via Claude
-6. **Confidence signals** assess how much to trust each fragment across four dimensions
+3. **Enrichment** (optional) annotates chunks with entities and keywords using a local LLM
+4. **Embeddings** (via Ollama) convert chunks to vectors; raw text is indexed with FTS5 for keyword search
+5. **Query expansion** (optional) generates alternative phrasings grounded in corpus vocabulary
+6. **Hybrid search** runs both vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
+7. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
+8. **Confidence signals** assess how much to trust each result across four dimensions
 
 ## Confidence signals
 
@@ -256,24 +258,72 @@ Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [d
 
 ## Architecture
 
-```
-Connectors (filesystem, Git, Confluence, Slack, GitHub Wiki)
-  → Extractors (markdown, code, plaintext)
-  → Embed via Ollama
-  → Store in SQLite + sqlite-vec
+### Ingestion pipeline
 
-Query (raw mode)
-  → Embed query via Ollama
-  → Vector search (sqlite-vec)
-  → Compute per-fragment confidence signals
-  → Return ranked fragments
-
-Query (synthesis mode)
-  → Embed query via Ollama
-  → Vector search (sqlite-vec)
-  → Synthesise via Claude
-  → Stream answer + confidence signals
 ```
+Source (filesystem, Git, Confluence, Slack, GitHub Wiki)
+  → Connector        Pull content, track what's changed via checksums
+  → Extractor         Chunk at semantic boundaries per file type
+  → Enrichment        LLM adds context annotations to each chunk (optional)
+  → Embedding         Ollama converts chunks to vectors
+  → Storage           SQLite + sqlite-vec (vectors) + FTS5 (keyword index)
+```
+
+**Connectors** are pluggable adapters that pull content. Each source is registered with a type and name — the connector handles authentication, pagination, and change detection. Ingestion is incremental: unchanged files (by checksum) are skipped.
+
+**Extractors** split files into chunks at semantic boundaries — markdown splits on headings, code on function/class boundaries, plaintext on paragraphs. Oversized chunks get a fixed-size fallback with overlap.
+
+**Enrichment** (optional, requires Ollama) runs a small local LLM over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
+
+**Embedding** converts each chunk to a vector via Ollama (`nomic-embed-text` by default). Vectors are stored in sqlite-vec for similarity search. The raw text is also indexed in an FTS5 table for keyword search.
+
+### Query pipeline
+
+```
+User query
+  → Multi-query expansion     LLM generates 3-5 alternative phrasings (optional)
+  → Embedding                 Ollama embeds original + expanded queries
+  → Hybrid search             Vector similarity (sqlite-vec) + BM25 keyword (FTS5)
+  → RRF merge                 Reciprocal Rank Fusion across all result lists
+  → Synthesis / Raw return    Claude synthesises an answer, or return fragments directly
+```
+
+**Multi-query expansion** (optional, requires API key) does a quick scout retrieval to extract domain vocabulary, then asks the LLM to rephrase the query using those terms. This helps when the user's phrasing doesn't match the corpus vocabulary.
+
+**Hybrid search** runs every query through both vector similarity and BM25 keyword search. Each expanded query variant is searched independently. Results are merged via **Reciprocal Rank Fusion** (RRF), which boosts fragments that appear in multiple result lists.
+
+**Synthesis mode** sends the top fragments to Claude with a system prompt that instructs it to assess confidence signals, cite sources, and flag contradictions. **Raw mode** returns fragments directly with per-fragment confidence scores computed locally.
+
+### Knowledge clustering (optional)
+
+```
+All fragments
+  → K-means clustering on embeddings
+  → Topic labeling per cluster
+  → Knowledge units with centroid embeddings
+```
+
+`kb compute-units` groups fragments into topic clusters, producing knowledge units with summaries and confidence signals. These are searchable alongside individual fragments.
+
+## What requires an API key
+
+KB is designed to be useful with only Ollama (local, free). An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+
+| Capability | Ollama only | With `ANTHROPIC_API_KEY` |
+|------------|:-----------:|:------------------------:|
+| Ingestion (connectors, extraction, chunking) | Yes | Yes |
+| Embedding | Yes | Yes |
+| Enrichment (chunk annotations) | Yes | Yes |
+| Vector + BM25 hybrid search | Yes | Yes |
+| Per-fragment confidence signals | Yes | Yes |
+| Raw retrieval (`--raw`) | Yes | Yes |
+| Knowledge clustering | Yes | Yes |
+| **Multi-query expansion** | — | Yes |
+| **Answer synthesis** | — | Yes |
+| **Cross-fragment confidence assessment** | — | Yes |
+| **Contradiction detection** | — | Yes |
+
+Without an API key, queries run in raw mode by default — you get ranked fragments with metadata and confidence scores, but no synthesised answer or query expansion. Multi-query expansion and synthesis are the only features that require an external API.
 
 See [knowledge-broker.md](knowledge-broker.md) for the full spec and design decisions.
 

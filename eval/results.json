@@ -186,7 +186,7 @@
       "hit_at_5": 0,
       "content_match": true,
       "top_result_match": false,
-      "avg_freshness": 0.97,
+      "avg_freshness": 0.96,
       "avg_confidence": 0.61,
       "contexts": [
         "### Removed\n- Removed legacy XML response format. All responses are JSON only.\n- Removed deprecated `/widgets` endpoints (use `/api/v1/widgets`).",
@@ -256,7 +256,7 @@
       "hit_at_5": 0,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.97,
+      "avg_freshness": 0.96,
       "avg_confidence": 0.61,
       "contexts": [
         "### Added\n- Organization-level widget count quota (default 10,000 widgets per org).\n- `/api/v1/widgets/export` endpoint for CSV export of widget data.",
@@ -326,7 +326,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Service Health Check\nThe service exposes a health endpoint at `GET /healthz` that returns:\n- `200 OK` when the service is healthy\n- `503 Service Unavailable` when PostgreSQL or Redis is unreachable\n\n```bash\ncurl -s http://localhost:8080/healthz | jq .\n```",
@@ -466,7 +466,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "### Database Migrations\nMigrations are managed with `golang-migrate`. Always take a backup first.\n\n```bash\n# Run pending migrations\nmigrate -path ./migrations -database \"$WIDGET_DB_URL\" up\n\n# Rollback last migration\nmigrate -path ./migrations -database \"$WIDGET_DB_URL\" down 1\n```",
@@ -752,7 +752,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Monitoring\nTom asked how they would monitor the new system. She listed the key metrics:\nnotification delivery latency (p50, p95, p99), delivery success rate per\nchannel, NATS consumer lag, WebSocket connection count, and retry queue\ndepth. She said all metrics would be exposed as Prometheus counters and\nhistograms, with Grafana dashboards. Alert thresholds would be: delivery\nsuccess rate below 99% triggers a warning, below 95% pages the on-call.\nConsumer lag exceeding 10,000 messages triggers investigation.",
@@ -824,7 +824,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "# Acme Widget Service\n\nThe Acme Widget Service (AWS) is a high-performance widget management platform\nbuilt by Acme Corp. It provides a RESTful API for creating, reading, updating,\nand deleting widgets, along with real-time event streaming.",
@@ -896,7 +896,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Scaling Considerations\nThe service is stateless and can be horizontally scaled behind the load\nbalancer. PostgreSQL handles consistency via row-level locking. Redis\ncaching reduces read load on the database.\n\nFor deployments exceeding 10,000 requests per second, consider:\n- Read replicas for PostgreSQL\n- Redis Cluster for distributed caching\n- Partitioning widgets by organization ID",
@@ -968,7 +968,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Configuration\nThe service reads configuration from environment variables:\n\n| Variable           | Default           | Description                    |\n|--------------------|-------------------|--------------------------------|\n| `WIDGET_DB_URL`    | `localhost:5432`  | PostgreSQL connection string   |\n| `WIDGET_REDIS_URL` | `localhost:6379`  | Redis connection string        |\n| `WIDGET_PORT`      | `8080`            | HTTP listen port               |\n| `WIDGET_LOG_LEVEL` | `info`            | Log level (debug/info/warn)    |\n| `WIDGET_API_KEY`   | (required)        | API key for authentication     |",
@@ -1039,7 +1039,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Rate Limiting\nThe rate limiter uses a sliding window algorithm implemented in Redis.\nEach API key gets 200 requests per minute (note: the README says 100,\nbut this was increased in v2.3 and the README was not updated).\n\nThe sliding window approach provides smoother rate limiting than the\ntoken bucket algorithm mentioned in the README. The token bucket\nimplementation was replaced in v2.1.",
@@ -1183,7 +1183,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.97,
+      "avg_freshness": 0.96,
       "avg_confidence": 0.61,
       "contexts": [
         "## Authentication\nAPI keys are stored as bcrypt hashes in the `api_keys` table. Each key is\nscoped to an organization and has an expiration date. Keys can be rotated\nwithout downtime using the admin API.\n\n**Important:** Unlike what the README states about simple API key header\nvalidation, the service actually performs bcrypt hash comparison against\nstored keys. This is a security-critical path and should not be simplified.",
@@ -1255,7 +1255,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Rate Limiting\nThe rate limiter uses a sliding window algorithm implemented in Redis.\nEach API key gets 200 requests per minute (note: the README says 100,\nbut this was increased in v2.3 and the README was not updated).\n\nThe sliding window approach provides smoother rate limiting than the\ntoken bucket algorithm mentioned in the README. The token bucket\nimplementation was replaced in v2.1.",
@@ -1321,7 +1321,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.61,
       "contexts": [
         "# Acme Widget Service — Architecture",
@@ -1387,7 +1387,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Delivery Channels\nRaj asked about push notification support. She confirmed that the new system\nwould support three channels: email via SendGrid (keeping the existing\nprovider), push notifications via Firebase Cloud Messaging (FCM), and in-app\nnotifications stored in PostgreSQL. Each channel would have its own delivery\nworker to isolate failures — if FCM goes down, email and in-app delivery\nwould continue unaffected.\n\nDana raised a concern about message ordering. She explained that NATS\nJetStream provides at-least-once delivery with configurable acknowledgment.\nFor notification ordering, the system would use sequence numbers per user to\nensure in-app notifications display in the correct order, even if delivery\nworkers process them out of order. She noted that email and push are\ninherently unordered, so ordering guarantees only apply to the in-app channel.",
@@ -1453,7 +1453,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Security Considerations\nDana asked about security. She said all notifications would go through the\nexisting authentication and authorisation layer. Push notification tokens\nfrom FCM would be encrypted at rest using AES-256. The WebSocket connections\nwould require a valid JWT and would be terminated if the token expires\nwithout renewal. She also noted that notification content would be sanitised\nbefore storage to prevent XSS in the in-app notification display.",
@@ -1519,7 +1519,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.97,
+      "avg_freshness": 0.96,
       "avg_confidence": 0.61,
       "contexts": [
         "## Attendees\nPresent: Elena Vasquez (tech lead), Tom Park (frontend engineer), Dana Liu\n(infrastructure), and Raj Mehta (product owner).",
@@ -1591,7 +1591,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "# Changelog\n\nAll notable changes to the Acme Widget Service are documented in this file.",
@@ -1663,7 +1663,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Running Tests\nWe use the standard Go test runner. Tests are organized as follows:\n\n- **Unit tests** (`go test ./...`): No external dependencies, use mocks.\n- **Integration tests** (`go test -tags=integration ./...`): Require a running\n  PostgreSQL and Redis instance. These test real database queries and cache\n  behavior.\n- **End-to-end tests** (`make test-e2e`): Spin up the full service and exercise\n  the HTTP API. Requires Docker.\n\nRun the full suite before submitting a pull request:\n\n```bash\n# Unit tests with race detection\ngo test -race ./...\n\n# Integration tests\ngo test -tags=integration -race ./...\n\n# Linting\ngolangci-lint run ./...\n```\n\nAll tests must pass and the linter must report zero issues before a PR will be\nreviewed.",
@@ -1734,7 +1734,7 @@
       "hit_at_5": 0,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## System Overview\nThe Widget Service is deployed as a single Go binary behind an NGINX reverse\nproxy. It connects to PostgreSQL for persistent storage and Redis for caching\nand rate limiting.",
@@ -1878,7 +1878,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "## Resource Requirements\nThe service should be provisioned with at least 1 CPU core and 1GB of memory per\ninstance. Under typical load (1,000-2,000 requests/second per instance), memory\nusage stays around 400-600MB. We recommend setting the memory limit to 1GB to\nallow headroom for traffic spikes and garbage collection overhead.\n\nFor the database connection pool, use the `WIDGET_DB_MAX_CONNS` environment\nvariable (default: 25 connections).",
@@ -2016,7 +2016,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "### Deprecated\n- The `/api/v1/widgets/stream` WebSocket endpoint is deprecated in favor of the\n  new Server-Sent Events endpoint at `/api/v1/widgets/events`. The WebSocket\n  endpoint will be removed in v3.0.",
@@ -2082,7 +2082,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.98,
+      "avg_freshness": 0.97,
       "avg_confidence": 0.62,
       "contexts": [
         "# Acme Widget Service — Architecture",
@@ -2572,7 +2572,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": true,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Resolution and Customer Impact\nHe resolved the immediate issue by killing the migration process using\npg_terminate_backend. Once he did that, the blocked connections drained within\nseconds and the service recovered. The total downtime was 47 minutes.\n\nShe asked whether customers had been affected. He confirmed that approximately\n12% of API requests during that window received 503 errors. She noted that this\nwas within the SLA for most customers but had triggered an automatic credit for\ntwo enterprise accounts that have stricter uptime guarantees.",
@@ -2642,7 +2642,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": true,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Status Page Communication\nShe will update the status page communication template. During the incident,\nit took 20 minutes to post the first status update because nobody could find\nthe template in the wiki. She wants to automate the initial status page post —\nwhen a critical alert fires, a draft incident post should be created\nautomatically with the alert details pre-filled. The on-call engineer would\njust need to review and publish it. She estimated this could cut the time to\nfirst public communication from 20 minutes to under 5.",
@@ -3289,7 +3289,7 @@
       "hit_at_5": 1,
       "content_match": false,
       "top_result_match": false,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Migration Strategy\nTom asked how they would migrate from the old system to the new one. She\noutlined a three-phase approach: first, deploy the new system in shadow mode\nwhere it processes events but doesn't actually deliver notifications — it\njust logs what it would have sent. Second, run both systems in parallel for\ntwo weeks, comparing output to verify the new system matches the old one.\nThird, cut over by disabling the cron job and enabling delivery in the new\nsystem.\n\nDana asked about rollback. She said the old cron job could be re-enabled\nwithin minutes if something went wrong, since it's completely independent.\nThe new system's shadow mode logs would also provide an audit trail of\neverything it processed during the parallel run.",
@@ -3709,7 +3709,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": false,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Background\nElena opened by explaining why they needed a new notification system. The\nexisting one — built two years ago by a contractor who is no longer with the\ncompany — was a monolithic cron job that polled the database every 60 seconds\nand sent emails via SendGrid. It couldn't handle real-time notifications, had\nno support for push notifications, and was tightly coupled to the email\nprovider.",
@@ -3849,7 +3849,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": false,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Monitoring\nTom asked how they would monitor the new system. She listed the key metrics:\nnotification delivery latency (p50, p95, p99), delivery success rate per\nchannel, NATS consumer lag, WebSocket connection count, and retry queue\ndepth. She said all metrics would be exposed as Prometheus counters and\nhistograms, with Grafana dashboards. Alert thresholds would be: delivery\nsuccess rate below 99% triggers a warning, below 95% pages the on-call.\nConsumer lag exceeding 10,000 messages triggers investigation.",
@@ -3989,7 +3989,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": false,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Rate Limiting and Preferences\nHe asked about notification fatigue — users getting too many notifications.\nShe said the system would implement per-user rate limiting with configurable\nthresholds. The default would be 50 notifications per hour per channel. Users\ncould also configure their preferences through the settings page: which\nnotification types they want to receive, through which channels, and during\nwhat hours (a \"quiet hours\" feature). He suggested adding a digest mode where\nlow-priority notifications are batched and sent as a daily summary instead of\nindividually. She agreed and said they would implement that in the second\nphase.",
@@ -4199,7 +4199,7 @@
       "hit_at_5": 1,
       "content_match": true,
       "top_result_match": true,
-      "avg_freshness": 0.99,
+      "avg_freshness": 0.98,
       "avg_confidence": 0.62,
       "contexts": [
         "## Migration Strategy\nTom asked how they would migrate from the old system to the new one. She\noutlined a three-phase approach: first, deploy the new system in shadow mode\nwhere it processes events but doesn't actually deliver notifications — it\njust logs what it would have sent. Second, run both systems in parallel for\ntwo weeks, comparing output to verify the new system matches the old one.\nThird, cut over by disabling the cron job and enabling delivery in the new\nsystem.\n\nDana asked about rollback. She said the old cron job could be re-enabled\nwithin minutes if something went wrong, since it's completely independent.\nThe new system's shadow mode logs would also provide an audit trail of\neverything it processed during the parallel run.",
@@ -4236,9 +4236,9 @@
   "hit_at_1": 0.75,
   "hit_at_3": 0.9,
   "hit_at_5": 0.95,
-  "avg_freshness": 0.9788333333333328,
+  "avg_freshness": 0.9741666666666653,
   "avg_confidence": 0.6178333333333332,
-  "timestamp": "2026-03-13T17:43:31Z",
+  "timestamp": "2026-03-13T20:28:30Z",
   "category_breakdowns": [
     {
       "category": "direct_extraction",
@@ -4253,7 +4253,7 @@
       "hit_at_1": 0.5,
       "hit_at_3": 0.625,
       "hit_at_5": 0.75,
-      "avg_freshness": 0.97375,
+      "avg_freshness": 0.96875,
       "avg_confidence": 0.61375
     },
     {
@@ -4269,7 +4269,7 @@
       "hit_at_1": 0.5,
       "hit_at_3": 0.9,
       "hit_at_5": 0.9,
-      "avg_freshness": 0.9780000000000001,
+      "avg_freshness": 0.9709999999999999,
       "avg_confidence": 0.6180000000000001
     },
     {
@@ -4285,7 +4285,7 @@
       "hit_at_1": 0.8333333333333334,
       "hit_at_3": 0.8333333333333334,
       "hit_at_5": 1,
-      "avg_freshness": 0.975,
+      "avg_freshness": 0.9683333333333333,
       "avg_confidence": 0.615
     },
     {
@@ -4301,7 +4301,7 @@
       "hit_at_1": 1,
       "hit_at_3": 1,
       "hit_at_5": 1,
-      "avg_freshness": 0.9783333333333335,
+      "avg_freshness": 0.9683333333333333,
       "avg_confidence": 0.6166666666666667
     },
     {
@@ -4317,7 +4317,7 @@
       "hit_at_1": 0.9,
       "hit_at_3": 1,
       "hit_at_5": 1,
-      "avg_freshness": 0.9830000000000002,
+      "avg_freshness": 0.9805000000000004,
       "avg_confidence": 0.6199999999999998
     },
     {
@@ -4333,7 +4333,7 @@
       "hit_at_1": 0.7,
       "hit_at_3": 0.9,
       "hit_at_5": 1,
-      "avg_freshness": 0.978,
+      "avg_freshness": 0.976,
       "avg_confidence": 0.619
     }
   ],

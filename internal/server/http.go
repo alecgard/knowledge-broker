@@ -44,12 +44,21 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/query", s.handleQuery)
 	s.mux.HandleFunc("/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/v1/ingest", s.handleIngest)
-	s.mux.HandleFunc("/v1/sources", s.handleUpdateSource)
+	s.mux.HandleFunc("/v1/sources", s.handleSources)
 }
 
-// Handler returns the http.Handler.
+// Handler returns the http.Handler with CORS support for cross-origin UI access.
 func (s *HTTPServer) Handler() http.Handler {
-	return s.mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
 }
 
 // handleQuery handles query requests. Streams SSE by default; set
@@ -311,12 +320,32 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]int{"ingested": len(fragments), "skipped": skipped})
 }
 
-// handleUpdateSource handles PATCH /v1/sources for updating source descriptions.
-func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPatch {
+// handleSources routes /v1/sources to GET (list) or PATCH (update).
+func (s *HTTPServer) handleSources(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleListSources(w, r)
+	case http.MethodPatch:
+		s.handleUpdateSource(w, r)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleListSources returns all registered sources.
+func (s *HTTPServer) handleListSources(w http.ResponseWriter, r *http.Request) {
+	sources, err := s.store.ListSources(r.Context())
+	if err != nil {
+		s.logger.Error("list sources failed", "error", err)
+		http.Error(w, fmt.Sprintf("list sources failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sources)
+}
+
+// handleUpdateSource handles PATCH /v1/sources for updating source descriptions.
+func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		SourceType  string `json:"source_type"`
@@ -352,7 +381,7 @@ func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) 
 func (s *HTTPServer) ListenAndServe(ctx context.Context, addr string) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: s.mux,
+		Handler: s.Handler(),
 	}
 
 	go func() {

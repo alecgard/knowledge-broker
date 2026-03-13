@@ -615,7 +615,7 @@ func TestHandleUpdateSource(t *testing.T) {
 	}
 
 	t.Run("MethodNotAllowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/v1/sources", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/v1/sources", nil)
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {

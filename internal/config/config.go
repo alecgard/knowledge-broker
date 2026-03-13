@@ -13,9 +13,10 @@ type Config struct {
 	DBPath string
 
 	// Ollama
-	OllamaURL    string
-	OllamaModel  string
-	EmbeddingDim int
+	OllamaURL      string
+	EmbeddingModel string
+	EmbeddingDim   int
+	EnrichModel    string
 
 	// LLM Provider
 	LLMProvider string // "claude" (default), "openai", "ollama"
@@ -56,7 +57,8 @@ func Default() Config {
 	return Config{
 		DBPath:          envOr("KB_DB", "kb.db"),
 		OllamaURL:       envOr("KB_OLLAMA_URL", "http://localhost:11434"),
-		OllamaModel:     envOr("KB_OLLAMA_MODEL", "nomic-embed-text"),
+		EmbeddingModel:  envOr("KB_EMBEDDING_MODEL", "nomic-embed-text"),
+		EnrichModel:     envOr("KB_ENRICH_MODEL", "qwen2.5:0.5b"),
 		EmbeddingDim:    envOrInt("KB_EMBEDDING_DIM", 768),
 		LLMProvider:     envOr("KB_LLM_PROVIDER", "claude"),
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),

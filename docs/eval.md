@@ -93,4 +93,4 @@ Categories:
 
 **Adding corpus files:** Add files to `eval/corpus/` and write questions that reference them. Re-run `make eval` to see the impact.
 
-**Comparing configurations:** Run eval with different embedding models or chunk sizes by changing `KB_OLLAMA_MODEL` or `KB_MAX_CHUNK_SIZE`, then compare the summary tables.
+**Comparing configurations:** Run eval with different embedding models or chunk sizes by changing `KB_EMBEDDING_MODEL` or `KB_MAX_CHUNK_SIZE`, then compare the summary tables.

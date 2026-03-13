@@ -106,9 +106,12 @@ type Summary struct {
 	HitAt5            float64              `json:"hit_at_5"`
 	AvgFreshness      float64              `json:"avg_freshness"`
 	AvgConfidence     float64              `json:"avg_confidence"`
-	Timestamp         string               `json:"timestamp"`
-	CategoryBreakdowns []CategoryBreakdown `json:"category_breakdowns"`
-	Chunking          *ChunkingStats       `json:"chunking,omitempty"`
+	Timestamp          string               `json:"timestamp"`
+	CategoryBreakdowns []CategoryBreakdown  `json:"category_breakdowns"`
+	Chunking           *ChunkingStats       `json:"chunking,omitempty"`
+	EnrichmentModel    string               `json:"enrichment_model,omitempty"`
+	EnrichmentVersion  string               `json:"enrichment_version,omitempty"`
+	EmbeddingModel     string               `json:"embedding_model,omitempty"`
 }
 
 // Runner executes evaluation against the store using the embedder.
@@ -383,7 +386,7 @@ func ComputeChunkingStats(ctx context.Context, s store.Store) (*ChunkingStats, e
 	for _, f := range fragments {
 		stats.FragmentsPerFile[f.SourcePath]++
 		// Whitespace-split approximation for token count.
-		tokens := len(strings.Fields(f.Content))
+		tokens := len(strings.Fields(f.RawContent))
 		tokenLengths = append(tokenLengths, tokens)
 	}
 
@@ -426,7 +429,7 @@ func checkContentMatch(needles []string, fragments []model.SourceFragment, k int
 
 	var combined strings.Builder
 	for _, f := range topK {
-		combined.WriteString(f.Content)
+		combined.WriteString(f.Content())
 		combined.WriteString(" ")
 	}
 	haystack := strings.ToLower(combined.String())
@@ -448,7 +451,7 @@ func checkTopResultMatch(expected TopResultExpectation, fragments []model.Source
 	if expected.SourceContains != "" && !strings.Contains(strings.ToLower(f.SourcePath), strings.ToLower(expected.SourceContains)) {
 		return false
 	}
-	if expected.ContentContains != "" && !strings.Contains(strings.ToLower(f.Content), strings.ToLower(expected.ContentContains)) {
+	if expected.ContentContains != "" && !strings.Contains(strings.ToLower(f.Content()), strings.ToLower(expected.ContentContains)) {
 		return false
 	}
 	return true

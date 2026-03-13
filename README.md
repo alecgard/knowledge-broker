@@ -56,7 +56,8 @@ Knowledge Broker can also expose an **HTTP server** for HTTP API access - expose
 
 ```bash
 make install
-ollama pull nomic-embed-text
+ollama pull nomic-embed-text      # embedding model
+ollama pull qwen2.5:0.5b           # enrichment model (optional)
 
 # Ingest a local directory
 kb ingest --source ./my-repo
@@ -240,7 +241,8 @@ Copy `.env.example` to `.env` and fill in your values. Environment variables als
 |----------|---------|-------------|
 | `KB_DB` | `kb.db` | SQLite database path |
 | `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-| `KB_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Ollama model for chunk enrichment |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key (only needed for synthesis mode) |
 | `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |

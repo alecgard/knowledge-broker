@@ -11,9 +11,10 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
+	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
-	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 // ProgressFunc is called during document processing to report progress.
@@ -26,11 +27,20 @@ type ProgressFunc func(completed, total int)
 // and added is the number of fragments stored in this batch.
 type BatchFunc func(batch, totalBatches, added int)
 
+// EnrichmentConfig holds enrichment settings for the pipeline.
+type EnrichmentConfig struct {
+	Enricher    enrich.Enricher
+	HPrev       int // lookback window size (default 3)
+	HNext       int // lookahead window size (default 1)
+	Concurrency int // parallel enrichment workers (default 4)
+}
+
 // Pipeline orchestrates the ingestion of documents.
 type Pipeline struct {
 	store       store.Store
 	embedder    embedding.Embedder
 	extractors  *extractor.Registry
+	enrichment  *EnrichmentConfig
 	workers     int
 	logger      *slog.Logger
 	OnProgress  ProgressFunc
@@ -54,6 +64,20 @@ func NewPipeline(s store.Store, e embedding.Embedder, r *extractor.Registry, wor
 		logger:     logger,
 		BatchSize:  50,
 	}
+}
+
+// SetEnrichment enables chunk enrichment in the pipeline.
+func (p *Pipeline) SetEnrichment(cfg EnrichmentConfig) {
+	if cfg.HPrev <= 0 {
+		cfg.HPrev = 3
+	}
+	if cfg.HNext <= 0 {
+		cfg.HNext = 1
+	}
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = 4
+	}
+	p.enrichment = &cfg
 }
 
 // Result summarises an ingestion run.
@@ -113,6 +137,15 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 		result.Errors += errs
 
 		if len(fragments) > 0 {
+			// Per-batch phasing: enrich all chunks first, then embed all chunks.
+			if p.enrichment != nil {
+				p.enrichBatch(ctx, fragments)
+			}
+
+			if err := p.embedBatch(ctx, fragments); err != nil {
+				return result, fmt.Errorf("embed batch: %w", err)
+			}
+
 			if err := p.store.UpsertFragments(ctx, fragments); err != nil {
 				return result, fmt.Errorf("upsert fragments: %w", err)
 			}
@@ -134,6 +167,138 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 	return result, nil
 }
 
+// enrichBatch runs enrichment on all fragments in the batch.
+// Fragments are grouped by source path so that the sliding window operates
+// within a single document's chunks.
+func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFragment) {
+	cfg := p.enrichment
+	modelName := cfg.Enricher.Model()
+
+	// Check store for cached enrichments: if a fragment already exists with the
+	// same raw_content, enrichment_model, and enrichment_version, reuse it.
+	ids := make([]string, len(fragments))
+	for i, f := range fragments {
+		ids[i] = f.ID
+	}
+	cached := make(map[int]bool)
+	if existing, err := p.store.GetFragments(ctx, ids); err == nil {
+		existingByID := make(map[string]model.SourceFragment, len(existing))
+		for _, e := range existing {
+			existingByID[e.ID] = e
+		}
+		for i, f := range fragments {
+			if e, ok := existingByID[f.ID]; ok &&
+				e.EnrichedContent != "" &&
+				e.RawContent == f.RawContent &&
+				e.EnrichmentModel == modelName &&
+				e.EnrichmentVersion == enrich.PromptVersion {
+				fragments[i].EnrichedContent = e.EnrichedContent
+				fragments[i].EnrichmentModel = e.EnrichmentModel
+				fragments[i].EnrichmentVersion = e.EnrichmentVersion
+				cached[i] = true
+			}
+		}
+	}
+
+	needEnrichment := len(fragments) - len(cached)
+	if needEnrichment == 0 {
+		p.logger.Info("enrichment cached, skipping LLM calls", "chunks", len(fragments))
+		return
+	}
+	p.logger.Info("starting enrichment",
+		"model", modelName,
+		"prompt_version", enrich.PromptVersion,
+		"hprev", cfg.HPrev,
+		"hnext", cfg.HNext,
+		"concurrency", cfg.Concurrency,
+		"chunks", needEnrichment,
+		"cached", len(cached),
+	)
+
+	// Group fragments by source path to maintain document-level context windows.
+	type docGroup struct {
+		indices []int
+		chunks  []model.Chunk
+	}
+	groups := make(map[string]*docGroup)
+	var order []string
+	for i, f := range fragments {
+		key := f.SourceType + ":" + f.SourcePath
+		g, ok := groups[key]
+		if !ok {
+			g = &docGroup{}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.indices = append(g.indices, i)
+		g.chunks = append(g.chunks, model.Chunk{Content: f.RawContent})
+	}
+
+	done := 0
+	for _, key := range order {
+		g := groups[key]
+
+		// Check if all chunks in this group are cached.
+		allCached := true
+		for _, idx := range g.indices {
+			if !cached[idx] {
+				allCached = false
+				break
+			}
+		}
+		if allCached {
+			done += len(g.chunks)
+			continue
+		}
+
+		progress := func(chunkDone, chunkTotal int) {
+			pct := (done + chunkDone) * 100 / needEnrichment
+			if pct > 100 {
+				pct = 100
+			}
+			p.logger.Info("enriching", "chunk", done+chunkDone, "total", needEnrichment, "pct", pct)
+		}
+		enriched, err := enrich.EnrichChunks(ctx, cfg.Enricher, g.chunks, cfg.HPrev, cfg.HNext, cfg.Concurrency, progress)
+		if err != nil {
+			p.logger.Warn("enrichment failed, using raw content", "path", key, "error", err)
+			done += len(g.chunks)
+			continue
+		}
+		for j, idx := range g.indices {
+			fragments[idx].EnrichedContent = enriched[j]
+			fragments[idx].EnrichmentModel = modelName
+			fragments[idx].EnrichmentVersion = enrich.PromptVersion
+		}
+		done += len(g.chunks)
+	}
+}
+
+// embedBatch embeds all fragments. Uses enriched content if available, raw otherwise.
+func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragment) error {
+	texts := make([]string, len(fragments))
+	for i, f := range fragments {
+		texts[i] = f.Content() // enriched if available, raw otherwise
+	}
+
+	embeddings, err := p.embedder.EmbedBatch(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("embed batch: %w", err)
+	}
+
+	embModel := ""
+	if oe, ok := p.embedder.(*embedding.OllamaEmbedder); ok {
+		_ = oe // TODO: expose model name from embedder
+	}
+
+	for i := range fragments {
+		fragments[i].Embedding = embeddings[i]
+		fragments[i].EmbeddingModel = embModel
+	}
+	return nil
+}
+
+// processDocuments extracts chunks from documents concurrently.
+// When enrichment is enabled, embedding is deferred to the caller (per-batch phasing).
 func (p *Pipeline) processDocuments(ctx context.Context, docs []model.RawDocument, progressOffset, progressTotal int) ([]model.SourceFragment, int) {
 	type fragmentResult struct {
 		fragments []model.SourceFragment
@@ -201,27 +366,31 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 		}
 	}
 
-	// Embed chunks.
-	texts := make([]string, len(result.Chunks))
-	for i, c := range result.Chunks {
-		texts[i] = c.Content
-	}
-	embeddings, err := p.embedder.EmbedBatch(ctx, texts)
-	if err != nil {
-		return nil, fmt.Errorf("embed %s: %w", doc.Path, err)
+	// When enrichment is enabled, skip embedding here — it will be done
+	// per-batch after enrichment. When disabled, embed inline as before.
+	var embeddings [][]float32
+	if p.enrichment == nil {
+		texts := make([]string, len(result.Chunks))
+		for i, c := range result.Chunks {
+			texts[i] = c.Content
+		}
+		embeddings, err = p.embedder.EmbedBatch(ctx, texts)
+		if err != nil {
+			return nil, fmt.Errorf("embed %s: %w", doc.Path, err)
+		}
 	}
 
 	// Build fragments, skipping any chunks whose embedding failed (nil).
 	var fragments []model.SourceFragment
 	for i, chunk := range result.Chunks {
-		if embeddings[i] == nil {
+		if embeddings != nil && embeddings[i] == nil {
 			p.logger.Warn("skipping chunk with nil embedding",
 				"path", doc.Path, "chunk_index", i, "chunk_length", len(chunk.Content))
 			continue
 		}
-		fragments = append(fragments, model.SourceFragment{
+		f := model.SourceFragment{
 			ID:          model.FragmentID(doc.SourceType, doc.Path, i),
-			Content:     chunk.Content,
+			RawContent:  chunk.Content,
 			SourceType:  doc.SourceType,
 			SourceName:  doc.SourceName,
 			SourcePath:  doc.Path,
@@ -230,8 +399,11 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 			Author:      doc.Author,
 			FileType:    fileType,
 			Checksum:    doc.Checksum,
-			Embedding:   embeddings[i],
-		})
+		}
+		if embeddings != nil {
+			f.Embedding = embeddings[i]
+		}
+		fragments = append(fragments, f)
 	}
 
 	return fragments, nil

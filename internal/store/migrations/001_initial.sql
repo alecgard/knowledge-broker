@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS fragments (
     id            TEXT PRIMARY KEY,
-    content       TEXT NOT NULL,
+    raw_content   TEXT NOT NULL,
+    enriched_content TEXT,
     source_type   TEXT NOT NULL,
     source_name   TEXT DEFAULT '',
     source_path   TEXT NOT NULL,
@@ -10,6 +11,9 @@ CREATE TABLE IF NOT EXISTS fragments (
     file_type     TEXT NOT NULL,
     checksum      TEXT NOT NULL,
     confidence_adj REAL DEFAULT 0.0,
+    enrichment_model   TEXT,
+    enrichment_version TEXT,
+    embedding_model    TEXT,
     ingested_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );

@@ -208,10 +208,10 @@ func TestComputeUnits_Integration(t *testing.T) {
 
 	// Insert fragments with embeddings into two clear groups.
 	fragments := []model.SourceFragment{
-		{ID: "a1", Content: "auth login", SourceType: "fs", SourcePath: "auth/login.go", SourceURI: "file://auth/login.go", FileType: ".go", Checksum: "c1", ContentDate: time.Now(), Embedding: []float32{1, 0, 0, 0}},
-		{ID: "a2", Content: "auth token", SourceType: "fs", SourcePath: "auth/token.go", SourceURI: "file://auth/token.go", FileType: ".go", Checksum: "c2", ContentDate: time.Now(), Embedding: []float32{0.9, 0.1, 0, 0}},
-		{ID: "b1", Content: "db schema", SourceType: "fs", SourcePath: "db/schema.sql", SourceURI: "file://db/schema.sql", FileType: ".sql", Checksum: "c3", ContentDate: time.Now(), Embedding: []float32{0, 0, 1, 0}},
-		{ID: "b2", Content: "db migrate", SourceType: "fs", SourcePath: "db/migrate.go", SourceURI: "file://db/migrate.go", FileType: ".go", Checksum: "c4", ContentDate: time.Now(), Embedding: []float32{0, 0, 0.9, 0.1}},
+		{ID: "a1", RawContent: "auth login", SourceType: "fs", SourcePath: "auth/login.go", SourceURI: "file://auth/login.go", FileType: ".go", Checksum: "c1", ContentDate: time.Now(), Embedding: []float32{1, 0, 0, 0}},
+		{ID: "a2", RawContent: "auth token", SourceType: "fs", SourcePath: "auth/token.go", SourceURI: "file://auth/token.go", FileType: ".go", Checksum: "c2", ContentDate: time.Now(), Embedding: []float32{0.9, 0.1, 0, 0}},
+		{ID: "b1", RawContent: "db schema", SourceType: "fs", SourcePath: "db/schema.sql", SourceURI: "file://db/schema.sql", FileType: ".sql", Checksum: "c3", ContentDate: time.Now(), Embedding: []float32{0, 0, 1, 0}},
+		{ID: "b2", RawContent: "db migrate", SourceType: "fs", SourcePath: "db/migrate.go", SourceURI: "file://db/migrate.go", FileType: ".go", Checksum: "c4", ContentDate: time.Now(), Embedding: []float32{0, 0, 0.9, 0.1}},
 	}
 
 	if err := s.UpsertFragments(ctx, fragments); err != nil {
@@ -302,7 +302,7 @@ func TestComputeUnits_AutoK(t *testing.T) {
 	for i := range fragments {
 		fragments[i] = model.SourceFragment{
 			ID:           fmt.Sprintf("f%d", i),
-			Content:      fmt.Sprintf("content %d", i),
+			RawContent:   fmt.Sprintf("content %d", i),
 			SourceType:   "fs",
 			SourcePath:   fmt.Sprintf("dir/file%d.go", i),
 			SourceURI:    fmt.Sprintf("file://dir/file%d.go", i),

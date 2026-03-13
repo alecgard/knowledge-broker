@@ -26,6 +26,7 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/debug"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
+	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
 	"github.com/knowledge-broker/knowledge-broker/internal/eval"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
@@ -98,7 +99,83 @@ func openStore(cfg config.Config) (*store.SQLiteStore, error) {
 }
 
 func newEmbedder(cfg config.Config, client *http.Client) *embedding.OllamaEmbedder {
-	return embedding.NewOllamaEmbedder(cfg.OllamaURL, cfg.OllamaModel, cfg.EmbeddingDim, client)
+	return embedding.NewOllamaEmbedder(cfg.OllamaURL, cfg.EmbeddingModel, cfg.EmbeddingDim, client)
+}
+
+// configureEnrichment sets up enrichment on a pipeline if not skipped.
+func configureEnrichment(pipeline *ingest.Pipeline, cfg config.Config, client *http.Client, logger *slog.Logger, skipEnrichment bool, enrichModel string) {
+	if skipEnrichment {
+		return
+	}
+	if enrichModel == "" {
+		enrichModel = cfg.EnrichModel
+	}
+	enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, client, logger)
+	pipeline.SetEnrichment(ingest.EnrichmentConfig{
+		Enricher: enricher,
+	})
+}
+
+// reEnrichFragments re-runs enrichment on a set of fragments, groups them by source path
+// for correct sliding window context, re-embeds, and upserts.
+func reEnrichFragments(ctx context.Context, s store.Store, emb *embedding.OllamaEmbedder, enricher enrich.Enricher, frags []model.SourceFragment, logger *slog.Logger) error {
+	if len(frags) == 0 {
+		return nil
+	}
+
+	// Group by source path.
+	type group struct {
+		indices []int
+		chunks  []model.Chunk
+	}
+	groups := make(map[string]*group)
+	var order []string
+	for i, f := range frags {
+		key := f.SourcePath
+		g, ok := groups[key]
+		if !ok {
+			g = &group{}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.indices = append(g.indices, i)
+		g.chunks = append(g.chunks, model.Chunk{Content: f.RawContent})
+	}
+
+	// Enrich all chunks.
+	for _, key := range order {
+		g := groups[key]
+		enriched, err := enrich.EnrichChunks(ctx, enricher, g.chunks, 3, 1, 4)
+		if err != nil {
+			logger.Warn("enrichment failed for path, skipping", "path", key, "error", err)
+			continue
+		}
+		for j, idx := range g.indices {
+			frags[idx].EnrichedContent = enriched[j]
+			frags[idx].EnrichmentModel = enricher.Model()
+			frags[idx].EnrichmentVersion = enrich.PromptVersion
+		}
+	}
+
+	// Re-embed using enriched content.
+	texts := make([]string, len(frags))
+	for i, f := range frags {
+		texts[i] = f.Content()
+	}
+	embeddings, err := emb.EmbedBatch(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("re-embed: %w", err)
+	}
+	for i := range frags {
+		frags[i].Embedding = embeddings[i]
+	}
+
+	// Upsert.
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		return fmt.Errorf("upsert re-enriched: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "  Re-enriched and re-embedded %d fragments\n", len(frags))
+	return nil
 }
 
 // newLLMClient creates the appropriate LLM client based on the configured provider.
@@ -154,6 +231,9 @@ func ingestCmd() *cobra.Command {
 
 			watchMode, _ := cmd.Flags().GetBool("watch")
 			description, _ := cmd.Flags().GetString("description")
+			skipEnrichment, _ := cmd.Flags().GetBool("skip-enrichment")
+			enrichModel, _ := cmd.Flags().GetString("enrich-model")
+			reEnrich, _ := cmd.Flags().GetBool("re-enrich")
 
 			if all && remote != "" {
 				return fmt.Errorf("--all and --remote cannot be combined")
@@ -175,6 +255,47 @@ func ingestCmd() *cobra.Command {
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
+
+			// --re-enrich: re-run enrichment on existing fragments, then re-embed.
+			if reEnrich {
+				sourcePaths, _ := cmd.Flags().GetStringArray("source")
+
+				emb := newEmbedder(cfg, client)
+				if err := emb.CheckHealth(ctx); err != nil {
+					return err
+				}
+				enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, client, logger)
+
+				// Determine which source names to re-enrich.
+				var sourceNames []string
+				if len(sourcePaths) > 0 {
+					for _, p := range sourcePaths {
+						abs, _ := filepath.Abs(p)
+						sourceNames = append(sourceNames, abs)
+					}
+				}
+
+				if len(sourceNames) == 0 {
+					// Re-enrich all fragments.
+					frags, err := s.ExportFragments(ctx)
+					if err != nil {
+						return fmt.Errorf("export fragments: %w", err)
+					}
+					return reEnrichFragments(ctx, s, emb, enricher, frags, logger)
+				}
+
+				for _, name := range sourceNames {
+					frags, err := s.GetFragmentsBySource(ctx, name)
+					if err != nil {
+						return fmt.Errorf("get fragments for %s: %w", name, err)
+					}
+					fmt.Fprintf(os.Stderr, "Re-enriching %d fragments from %s...\n", len(frags), name)
+					if err := reEnrichFragments(ctx, s, emb, enricher, frags, logger); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 
 			// --all: re-ingest all registered local sources.
 			if all {
@@ -220,6 +341,7 @@ func ingestCmd() *cobra.Command {
 							fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnBatchDone = makeBatchFunc()
 							r, err := pipeline.Run(ctx, conn)
@@ -254,6 +376,7 @@ func ingestCmd() *cobra.Command {
 						fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
@@ -418,6 +541,7 @@ func ingestCmd() *cobra.Command {
 
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
@@ -465,6 +589,7 @@ func ingestCmd() *cobra.Command {
 
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					pipeline.OnBatchDone = makeBatchFunc()
 					r, err := pipeline.Run(ctx, conn)
@@ -506,6 +631,7 @@ func ingestCmd() *cobra.Command {
 				}
 				fmt.Fprintln(os.Stderr, "Watching for changes... (press Ctrl+C to stop)")
 				watchPipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+				configureEnrichment(watchPipeline, cfg, client, logger, skipEnrichment, enrichModel)
 				watcher := ingest.NewWatcher(watchPipeline, logger)
 				return watcher.Watch(ctx, watchPaths)
 			}
@@ -524,6 +650,9 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
 	cmd.Flags().Bool("parallel", false, "Ingest multiple sources in parallel (default: sequential)")
 	cmd.Flags().String("description", "", "Human-readable description of this source (shown to agents via MCP)")
+	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment (faster ingestion)")
+	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
+	cmd.Flags().Bool("re-enrich", false, "Re-run enrichment on already-ingested chunks, then re-embed")
 	return cmd
 }
 
@@ -662,7 +791,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		for _, doc := range docs {
 			trackFragments = append(trackFragments, model.SourceFragment{
 				ID:           model.FragmentID(doc.SourceType, doc.Path, 0),
-				Content:      "",
+				RawContent:   "",
 				SourceType:   doc.SourceType,
 				SourceName:   doc.SourceName,
 				SourcePath:   doc.Path,
@@ -1067,6 +1196,8 @@ func evalCmd() *cobra.Command {
 			limit, _ := cmd.Flags().GetInt("limit")
 			doIngest, _ := cmd.Flags().GetBool("ingest")
 			jsonOutput, _ := cmd.Flags().GetBool("json")
+			skipEnrichment, _ := cmd.Flags().GetBool("skip-enrichment")
+			enrichModel, _ := cmd.Flags().GetString("enrich-model")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
@@ -1095,6 +1226,7 @@ func evalCmd() *cobra.Command {
 
 				reg := newExtractorRegistry(cfg)
 				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+				configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
 				conn := connector.NewFilesystemConnector(absCorpus)
 
 				result, err := pipeline.Run(ctx, conn)
@@ -1107,8 +1239,22 @@ func evalCmd() *cobra.Command {
 
 			noSave, _ := cmd.Flags().GetBool("no-save")
 
+			// Resolve the effective enrichment model name for filenames and metadata.
+			effectiveEnrichModel := enrichModel
+			if !skipEnrichment && effectiveEnrichModel == "" {
+				effectiveEnrichModel = cfg.EnrichModel
+			}
+
 			// Load previous results for delta comparison.
-			resultsPath := filepath.Join(filepath.Dir(testsetPath), "results.json")
+			resultsFile := "results.json"
+			if !skipEnrichment {
+				if enrichModel != "" {
+					resultsFile = fmt.Sprintf("results-enriched-%s.json", enrichModel)
+				} else {
+					resultsFile = "results-enriched.json"
+				}
+			}
+			resultsPath := filepath.Join(filepath.Dir(testsetPath), resultsFile)
 			var previous *eval.Summary
 			if prev, err := eval.LoadResults(resultsPath); err == nil {
 				previous = prev
@@ -1137,6 +1283,13 @@ func evalCmd() *cobra.Command {
 				summary.Chunking = chunkStats
 			}
 
+			// Populate enrichment and embedding metadata.
+			summary.EmbeddingModel = cfg.EmbeddingModel
+			if !skipEnrichment {
+				summary.EnrichmentModel = effectiveEnrichModel
+				summary.EnrichmentVersion = enrich.PromptVersion
+			}
+
 			if jsonOutput {
 				out, _ := json.MarshalIndent(summary, "", "  ")
 				fmt.Println(string(out))
@@ -1163,6 +1316,8 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Bool("ingest", false, "Ingest the eval corpus before running evaluation")
 	cmd.Flags().Bool("json", false, "Output results as JSON")
 	cmd.Flags().Bool("no-save", false, "Do not save results to results.json")
+	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment during eval ingestion")
+	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
 	return cmd
 }
 
@@ -1491,7 +1646,7 @@ func clusterVizCmd() *cobra.Command {
 
 			points := make([]cluster.VizPoint, len(refs))
 			for i, ref := range refs {
-				snippet := ref.frag.Content
+				snippet := ref.frag.RawContent
 				if len(snippet) > 120 {
 					snippet = snippet[:120]
 				}

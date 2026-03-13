@@ -444,5 +444,61 @@
     "reference_answer": "Delivery success rate below 99% triggers a warning, below 95% pages the on-call. NATS consumer lag exceeding 10,000 messages triggers investigation. Metrics include notification delivery latency (p50, p95, p99), delivery success rate per channel, NATS consumer lag, WebSocket connection count, and retry queue depth.",
     "category": "vocabulary_mismatch",
     "expected_content_contains": ["99%", "Prometheus"]
+  },
+
+  {
+    "id": "q56",
+    "query": "Who proposed the event-driven NATS JetStream architecture?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Elena Vasquez proposed replacing the existing cron-based notification system with an event-driven architecture using NATS JetStream as the message broker.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["Elena"],
+    "expected_top_result": {
+      "content_contains": "Elena"
+    }
+  },
+  {
+    "id": "q57",
+    "query": "Who raised concerns about notification fatigue?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Raj Mehta raised concerns about notification fatigue — users getting too many notifications. He suggested adding a digest mode where low-priority notifications are batched and sent as a daily summary.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["Raj"],
+    "expected_top_result": {
+      "content_contains": "Raj"
+    }
+  },
+  {
+    "id": "q58",
+    "query": "Who described the notification storage and retention policy?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Elena Vasquez described the notification storage and retention policy: in-app notifications stored in PostgreSQL with 90-day retention, then archived to S3 in Parquet format for compliance.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["Elena"],
+    "expected_top_result": {
+      "content_contains": "Elena"
+    }
+  },
+  {
+    "id": "q59",
+    "query": "Who suggested adding a digest mode for low-priority notifications?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Raj Mehta suggested adding a digest mode where low-priority notifications are batched and sent as a daily summary instead of individually.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["Raj"],
+    "expected_top_result": {
+      "content_contains": "Raj"
+    }
+  },
+  {
+    "id": "q60",
+    "query": "Who asked about the rollback plan for the notification migration?",
+    "expected_sources": ["design-review.md"],
+    "reference_answer": "Dana asked about the rollback plan. Elena said the old cron job could be re-enabled within minutes if something went wrong.",
+    "category": "pronoun_resolution",
+    "expected_content_contains": ["Dana"],
+    "expected_top_result": {
+      "content_contains": "Dana"
+    }
   }
 ]

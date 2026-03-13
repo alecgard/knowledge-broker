@@ -103,7 +103,7 @@ If fragments come from multiple unrelated projects, answer based on the most rel
 			if f.ConfidenceAdj != 0 {
 				fmt.Fprintf(&b, "- Confidence adjustment: %.2f (from user feedback)\n", f.ConfidenceAdj)
 			}
-			fmt.Fprintf(&b, "\n%s\n\n---\n\n", f.Content)
+			fmt.Fprintf(&b, "\n%s\n\n---\n\n", f.RawContent)
 		}
 	}
 

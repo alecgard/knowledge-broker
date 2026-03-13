@@ -27,7 +27,7 @@ services:
 
   ollama-init:
     image: ollama/ollama
-    entrypoint: ["ollama", "pull", "${KB_OLLAMA_MODEL:-nomic-embed-text}"]
+    entrypoint: ["ollama", "pull", "${KB_EMBEDDING_MODEL:-nomic-embed-text}"]
     environment:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:

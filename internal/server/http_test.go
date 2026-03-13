@@ -448,8 +448,8 @@ func TestIngestFragmentIDConsistency(t *testing.T) {
 	if len(fragments) != 1 {
 		t.Fatalf("expected 1 fragment with ID %s, got %d", wantID, len(fragments))
 	}
-	if fragments[0].Content != "Test content" {
-		t.Fatalf("unexpected content: %s", fragments[0].Content)
+	if fragments[0].RawContent != "Test content" {
+		t.Fatalf("unexpected content: %s", fragments[0].RawContent)
 	}
 }
 
@@ -514,7 +514,7 @@ func TestHandleQueryRawMode(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "frag-raw-1",
-			Content:      "Authentication is handled via OAuth2 tokens.",
+			RawContent:   "Authentication is handled via OAuth2 tokens.",
 			SourceType:   "filesystem",
 			SourceName:   "docs",
 			SourcePath:   "docs/auth.md",
@@ -724,7 +724,7 @@ func TestHandleQueryRawModeWithFilters(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "frag-filter-1",
-			Content:      content,
+			RawContent:   content,
 			SourceType:   "filesystem",
 			SourceName:   "local-docs",
 			SourcePath:   "docs/deploy.md",
@@ -736,7 +736,7 @@ func TestHandleQueryRawModeWithFilters(t *testing.T) {
 		},
 		{
 			ID:           "frag-filter-2",
-			Content:      content,
+			RawContent:   content,
 			SourceType:   "github",
 			SourceName:   "acme/platform",
 			SourcePath:   "docs/deploy.md",
@@ -748,7 +748,7 @@ func TestHandleQueryRawModeWithFilters(t *testing.T) {
 		},
 		{
 			ID:           "frag-filter-3",
-			Content:      content,
+			RawContent:   content,
 			SourceType:   "github",
 			SourceName:   "acme/infra",
 			SourcePath:   "infra/deploy.md",

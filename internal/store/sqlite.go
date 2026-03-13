@@ -57,13 +57,7 @@ func initSchema(db *sql.DB, embeddingDim int) error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	// Backfill: add description column for databases created before it existed.
-	// ALTER TABLE ADD COLUMN errors if the column already exists; ignore that.
-	if _, err := db.Exec(`ALTER TABLE sources ADD COLUMN description TEXT NOT NULL DEFAULT ''`); err != nil {
-		if !strings.Contains(err.Error(), "duplicate column") {
-			return fmt.Errorf("add sources.description column: %w", err)
-		}
-	}
+
 
 	// Create the sqlite-vec virtual table.
 	vtableSQL := fmt.Sprintf(
@@ -155,16 +149,19 @@ func deserializeEmbedding(b []byte) []float32 {
 }
 
 // scanFragment scans a fragment row from the standard column set:
-// id, content, source_type, source_name, source_path, source_uri,
-// content_date, author, file_type, checksum, confidence_adj, ingested_at.
+// id, raw_content, enriched_content, source_type, source_name, source_path, source_uri,
+// content_date, author, file_type, checksum, confidence_adj, ingested_at,
+// enrichment_model, enrichment_version, embedding_model.
 // Additional columns (e.g., distance, embedding) must be handled by the caller
 // via the extra parameter.
 func scanFragment(scanner interface{ Scan(...any) error }, extra ...any) (model.SourceFragment, error) {
 	var f model.SourceFragment
 	var contentDate, ingestedAt string
+	var enrichedContent, enrichmentModel, enrichmentVersion, embeddingModel sql.NullString
 	dest := []any{
-		&f.ID, &f.Content, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
+		&f.ID, &f.RawContent, &enrichedContent, &f.SourceType, &f.SourceName, &f.SourcePath, &f.SourceURI,
 		&contentDate, &f.Author, &f.FileType, &f.Checksum, &f.ConfidenceAdj, &ingestedAt,
+		&enrichmentModel, &enrichmentVersion, &embeddingModel,
 	}
 	dest = append(dest, extra...)
 	if err := scanner.Scan(dest...); err != nil {
@@ -172,6 +169,10 @@ func scanFragment(scanner interface{ Scan(...any) error }, extra ...any) (model.
 	}
 	f.ContentDate, _ = time.Parse(time.RFC3339, contentDate)
 	f.IngestedAt, _ = time.Parse(time.RFC3339, ingestedAt)
+	f.EnrichedContent = enrichedContent.String
+	f.EnrichmentModel = enrichmentModel.String
+	f.EnrichmentVersion = enrichmentVersion.String
+	f.EmbeddingModel = embeddingModel.String
 	return f, nil
 }
 
@@ -192,8 +193,8 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 
 	fragStmt, err := tx.PrepareContext(ctx, `
 		INSERT OR REPLACE INTO fragments
-			(id, content, source_type, source_name, source_path, source_uri, content_date, author, file_type, checksum, confidence_adj, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			(id, raw_content, enriched_content, source_type, source_name, source_path, source_uri, content_date, author, file_type, checksum, confidence_adj, enrichment_model, enrichment_version, embedding_model, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare fragment stmt: %w", err)
@@ -218,10 +219,24 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 	defer embInsStmt.Close()
 
 	for _, f := range fragments {
+		var enrichedContent, enrichmentModel, enrichmentVersion, embeddingModel sql.NullString
+		if f.EnrichedContent != "" {
+			enrichedContent = sql.NullString{String: f.EnrichedContent, Valid: true}
+		}
+		if f.EnrichmentModel != "" {
+			enrichmentModel = sql.NullString{String: f.EnrichmentModel, Valid: true}
+		}
+		if f.EnrichmentVersion != "" {
+			enrichmentVersion = sql.NullString{String: f.EnrichmentVersion, Valid: true}
+		}
+		if f.EmbeddingModel != "" {
+			embeddingModel = sql.NullString{String: f.EmbeddingModel, Valid: true}
+		}
 		_, err := fragStmt.ExecContext(ctx,
-			f.ID, f.Content, f.SourceType, f.SourceName, f.SourcePath, f.SourceURI,
+			f.ID, f.RawContent, enrichedContent, f.SourceType, f.SourceName, f.SourcePath, f.SourceURI,
 			f.ContentDate.UTC().Format(time.RFC3339),
 			f.Author, f.FileType, f.Checksum, f.ConfidenceAdj,
+			enrichmentModel, enrichmentVersion, embeddingModel,
 		)
 		if err != nil {
 			return fmt.Errorf("upsert fragment %s: %w", f.ID, err)
@@ -245,8 +260,9 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 // SearchByVector finds the nearest fragments to the given embedding vector.
 func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, limit int) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
 		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
 		       fe.distance
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
@@ -308,8 +324,9 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 	}
 
 	query := fmt.Sprintf(`
-		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
 		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
 		       fe.distance
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
@@ -352,8 +369,9 @@ func (s *SQLiteStore) GetFragments(ctx context.Context, ids []string) ([]model.S
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, content, source_type, source_name, source_path, source_uri,
-		       content_date, author, file_type, checksum, confidence_adj, ingested_at
+		SELECT id, raw_content, enriched_content, source_type, source_name, source_path, source_uri,
+		       content_date, author, file_type, checksum, confidence_adj, ingested_at,
+		       enrichment_model, enrichment_version, embedding_model
 		FROM fragments
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -460,14 +478,45 @@ func (s *SQLiteStore) deleteByPathsOnce(ctx context.Context, sourceType, sourceN
 // ExportFragments returns all fragments joined with their embeddings.
 func (s *SQLiteStore) ExportFragments(ctx context.Context) ([]model.SourceFragment, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
 		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
 		       fe.embedding
 		FROM fragments f
 		INNER JOIN fragment_embeddings fe ON fe.fragment_id = f.id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("export fragments: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.SourceFragment
+	for rows.Next() {
+		var embBytes []byte
+		f, err := scanFragment(rows, &embBytes)
+		if err != nil {
+			return nil, fmt.Errorf("scan fragment: %w", err)
+		}
+		f.Embedding = deserializeEmbedding(embBytes)
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
+// GetFragmentsBySource returns all fragments for a given source name, with embeddings.
+func (s *SQLiteStore) GetFragmentsBySource(ctx context.Context, sourceName string) ([]model.SourceFragment, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
+		       fe.embedding
+		FROM fragments f
+		INNER JOIN fragment_embeddings fe ON fe.fragment_id = f.id
+		WHERE f.source_name = ?
+		ORDER BY f.source_path, f.id
+	`, sourceName)
+	if err != nil {
+		return nil, fmt.Errorf("get fragments by source: %w", err)
 	}
 	defer rows.Close()
 

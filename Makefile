@@ -82,7 +82,12 @@ run-mcp: build
 
 eval:
 	@echo "Running evaluation..."
-	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus --skip-enrichment
+	@rm -f eval.db eval.db-shm eval.db-wal
+
+eval-enriched:
+	@echo "Running evaluation with enrichment (requires Ollama)..."
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus $(if $(ENRICH_MODEL),--enrich-model $(ENRICH_MODEL),)
 	@rm -f eval.db eval.db-shm eval.db-wal
 
 ## Dependencies

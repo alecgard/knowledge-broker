@@ -23,7 +23,7 @@ func TestMCPQueryRaw(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "rawfrag0001",
-			Content:      "Authentication uses JWT tokens.",
+			RawContent:   "Authentication uses JWT tokens.",
 			SourceType:   "filesystem",
 			SourceName:   "docs",
 			SourcePath:   "docs/auth.md",
@@ -36,7 +36,7 @@ func TestMCPQueryRaw(t *testing.T) {
 		},
 		{
 			ID:           "rawfrag0002",
-			Content:      "Authorization checks user roles.",
+			RawContent:   "Authorization checks user roles.",
 			SourceType:   "filesystem",
 			SourceName:   "docs",
 			SourcePath:   "docs/authz.md",
@@ -339,7 +339,7 @@ func TestMCPHandleQueryRawMode(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "hq_raw_001",
-			Content:      "Deploy using Docker containers.",
+			RawContent:   "Deploy using Docker containers.",
 			SourceType:   "filesystem",
 			SourceName:   "docs",
 			SourcePath:   "docs/deploy.md",
@@ -391,7 +391,7 @@ func TestMCPHandleQueryCustomLimit(t *testing.T) {
 		content := strings.Repeat("x", i+1) + " API endpoint docs"
 		frag := model.SourceFragment{
 			ID:           fmt.Sprintf("hq_limit_%03d", i),
-			Content:      content,
+			RawContent:   content,
 			SourceType:   "filesystem",
 			SourceName:   "docs",
 			SourcePath:   fmt.Sprintf("docs/api%d.md", i),
@@ -440,7 +440,7 @@ func TestMCPHandleQueryCSVFilters(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "hq_csv_001",
-			Content:      "Git repo auth docs",
+			RawContent:   "Git repo auth docs",
 			SourceType:   "git",
 			SourceName:   "owner/repo",
 			SourcePath:   "auth.md",
@@ -452,7 +452,7 @@ func TestMCPHandleQueryCSVFilters(t *testing.T) {
 		},
 		{
 			ID:           "hq_csv_002",
-			Content:      "Filesystem auth docs",
+			RawContent:   "Filesystem auth docs",
 			SourceType:   "filesystem",
 			SourceName:   "local-docs",
 			SourcePath:   "auth.md",
@@ -574,7 +574,7 @@ func TestMCPHandleListSourcesWithData(t *testing.T) {
 	frags := []model.SourceFragment{
 		{
 			ID:           "ls_001",
-			Content:      "Fragment one",
+			RawContent:   "Fragment one",
 			SourceType:   "git",
 			SourceName:   "owner/repo",
 			SourcePath:   "file1.go",
@@ -584,7 +584,7 @@ func TestMCPHandleListSourcesWithData(t *testing.T) {
 		},
 		{
 			ID:           "ls_002",
-			Content:      "Fragment two",
+			RawContent:   "Fragment two",
 			SourceType:   "git",
 			SourceName:   "owner/repo",
 			SourcePath:   "file2.go",

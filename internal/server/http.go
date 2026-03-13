@@ -288,7 +288,7 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 		fragments[i] = model.SourceFragment{
 			ID:           model.FragmentID(f.SourceType, f.SourcePath, nf.origIdx),
-			Content:      f.Content,
+			RawContent:   f.Content,
 			SourceType:   f.SourceType,
 			SourceName:   f.SourceName,
 			SourcePath:   f.SourcePath,

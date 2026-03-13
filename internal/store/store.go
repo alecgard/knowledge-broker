@@ -38,6 +38,9 @@ type Store interface {
 	// ExportFragments returns all fragments with their embeddings.
 	ExportFragments(ctx context.Context) ([]model.SourceFragment, error)
 
+	// GetFragmentsBySource returns all fragments for a given source name, with embeddings.
+	GetFragmentsBySource(ctx context.Context, sourceName string) ([]model.SourceFragment, error)
+
 	// RegisterSource inserts or updates a registered source.
 	RegisterSource(ctx context.Context, src model.Source) error
 

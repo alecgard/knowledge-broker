@@ -40,6 +40,11 @@ type IngestFragment struct {
 	Checksum    string    `json:"checksum"`
 }
 
+// RawContent returns the fragment's content (alias for the JSON field name).
+func (f IngestFragment) RawContent() string {
+	return f.Content
+}
+
 // IngestDeletedPath identifies a source type, source name, and path to delete.
 type IngestDeletedPath struct {
 	SourceType string `json:"source_type"`
@@ -90,8 +95,9 @@ type Chunk struct {
 // SourceFragment is a chunk of content extracted from a single source.
 type SourceFragment struct {
 	ID            string
-	Content       string
-	SourceType    string // "filesystem", "git"
+	RawContent    string
+	EnrichedContent string // enriched version for embedding/search; empty if unenriched
+	SourceType    string   // "filesystem", "git"
 	SourceName    string
 	SourcePath    string
 	SourceURI     string
@@ -102,6 +108,17 @@ type SourceFragment struct {
 	Checksum      string
 	Embedding     []float32
 	ConfidenceAdj float64 // cumulative adjustment from feedback
+	EnrichmentModel   string // model used for enrichment (e.g., "qwen2.5:0.5b")
+	EnrichmentVersion string // version of the enrichment prompt (e.g., "v1")
+	EmbeddingModel    string // model used for embedding (e.g., "nomic-embed-text")
+}
+
+// Content returns the best available content: enriched if present, raw otherwise.
+func (f SourceFragment) Content() string {
+	if f.EnrichedContent != "" {
+		return f.EnrichedContent
+	}
+	return f.RawContent
 }
 
 // Message represents a single message in a conversation.
@@ -192,17 +209,18 @@ type KnowledgeUnit struct {
 
 // RawFragment is a single fragment returned by raw retrieval mode.
 type RawFragment struct {
-	FragmentID  string     `json:"fragment_id"`
-	Content     string     `json:"content"`
-	SourcePath  string     `json:"source_path"`
-	SourceURI   string     `json:"source_uri"`
-	SourceName  string     `json:"source_name,omitempty"`
-	SourceType  string     `json:"source_type"`
-	FileType    string     `json:"file_type"`
-	ContentDate time.Time  `json:"content_date"`
-	IngestedAt  time.Time  `json:"ingested_at"`
-	Author      string     `json:"author"`
-	Confidence  Confidence `json:"confidence"`
+	FragmentID      string     `json:"fragment_id"`
+	Content         string     `json:"content"`
+	EnrichedContent string     `json:"enriched_content,omitempty"`
+	SourcePath      string     `json:"source_path"`
+	SourceURI       string     `json:"source_uri"`
+	SourceName      string     `json:"source_name,omitempty"`
+	SourceType      string     `json:"source_type"`
+	FileType        string     `json:"file_type"`
+	ContentDate     time.Time  `json:"content_date"`
+	IngestedAt      time.Time  `json:"ingested_at"`
+	Author          string     `json:"author"`
+	Confidence      Confidence `json:"confidence"`
 }
 
 // RawKnowledgeUnit is a knowledge unit returned in raw retrieval results.

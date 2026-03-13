@@ -62,13 +62,13 @@ func TestUpsertAndGetFragments(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "hello world", SourceType: "filesystem",
+			ID: "f1", RawContent: "hello world", SourceType: "filesystem",
 			SourcePath: "/a/b.txt", SourceURI: "file:///a/b.txt",
 			ContentDate: now, Author: "alice", FileType: "txt",
 			Checksum: "abc123", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "f2", Content: "goodbye world", SourceType: "filesystem",
+			ID: "f2", RawContent: "goodbye world", SourceType: "filesystem",
 			SourcePath: "/a/c.txt", SourceURI: "file:///a/c.txt",
 			ContentDate: now, Author: "bob", FileType: "txt",
 			Checksum: "def456", Embedding: []float32{0, 1, 0, 0},
@@ -92,8 +92,8 @@ func TestUpsertAndGetFragments(t *testing.T) {
 	for _, f := range got {
 		byID[f.ID] = f
 	}
-	if byID["f1"].Content != "hello world" {
-		t.Errorf("f1 content = %q", byID["f1"].Content)
+	if byID["f1"].RawContent != "hello world" {
+		t.Errorf("f1 content = %q", byID["f1"].RawContent)
 	}
 	if byID["f2"].Author != "bob" {
 		t.Errorf("f2 author = %q", byID["f2"].Author)
@@ -106,7 +106,7 @@ func TestUpsertUpdatesExisting(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	frag := model.SourceFragment{
-		ID: "f1", Content: "v1", SourceType: "filesystem",
+		ID: "f1", RawContent: "v1", SourceType: "filesystem",
 		SourcePath: "/a.txt", SourceURI: "file:///a.txt",
 		ContentDate: now, FileType: "txt", Checksum: "c1",
 		Embedding: []float32{1, 0, 0, 0},
@@ -116,14 +116,14 @@ func TestUpsertUpdatesExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	frag.Content = "v2"
+	frag.RawContent = "v2"
 	frag.Checksum = "c2"
 	if err := s.UpsertFragments(ctx, []model.SourceFragment{frag}); err != nil {
 		t.Fatal(err)
 	}
 
 	got, _ := s.GetFragments(ctx, []string{"f1"})
-	if len(got) != 1 || got[0].Content != "v2" {
+	if len(got) != 1 || got[0].RawContent != "v2" {
 		t.Errorf("expected updated content v2, got %v", got)
 	}
 }
@@ -135,19 +135,19 @@ func TestSearchByVector(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "one", SourceType: "fs",
+			ID: "f1", RawContent: "one", SourceType: "fs",
 			SourcePath: "/1", SourceURI: "f:///1",
 			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "f2", Content: "two", SourceType: "fs",
+			ID: "f2", RawContent: "two", SourceType: "fs",
 			SourcePath: "/2", SourceURI: "f:///2",
 			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0, 1, 0, 0},
 		},
 		{
-			ID: "f3", Content: "three", SourceType: "fs",
+			ID: "f3", RawContent: "three", SourceType: "fs",
 			SourcePath: "/3", SourceURI: "f:///3",
 			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0, 0, 1, 0},
@@ -179,19 +179,19 @@ func TestSearchByVectorFiltered(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "alpha", SourceType: "git", SourceName: "org/repo-a",
+			ID: "f1", RawContent: "alpha", SourceType: "git", SourceName: "org/repo-a",
 			SourcePath: "/1", SourceURI: "g:///1",
 			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "f2", Content: "beta", SourceType: "git", SourceName: "org/repo-b",
+			ID: "f2", RawContent: "beta", SourceType: "git", SourceName: "org/repo-b",
 			SourcePath: "/2", SourceURI: "g:///2",
 			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0.9, 0.1, 0, 0},
 		},
 		{
-			ID: "f3", Content: "gamma", SourceType: "git", SourceName: "org/repo-c",
+			ID: "f3", RawContent: "gamma", SourceType: "git", SourceName: "org/repo-c",
 			SourcePath: "/3", SourceURI: "g:///3",
 			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0.8, 0.2, 0, 0},
@@ -253,19 +253,19 @@ func TestSearchByVectorFilteredBySourceType(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "t1", Content: "alpha", SourceType: "git", SourceName: "org/repo",
+			ID: "t1", RawContent: "alpha", SourceType: "git", SourceName: "org/repo",
 			SourcePath: "/1", SourceURI: "g:///1",
 			ContentDate: now, FileType: "txt", Checksum: "a",
 			Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "t2", Content: "beta", SourceType: "confluence", SourceName: "ENGINEERING",
+			ID: "t2", RawContent: "beta", SourceType: "confluence", SourceName: "ENGINEERING",
 			SourcePath: "/2", SourceURI: "c:///2",
 			ContentDate: now, FileType: "txt", Checksum: "b",
 			Embedding: []float32{0.9, 0.1, 0, 0},
 		},
 		{
-			ID: "t3", Content: "gamma", SourceType: "filesystem", SourceName: "/tmp/docs",
+			ID: "t3", RawContent: "gamma", SourceType: "filesystem", SourceName: "/tmp/docs",
 			SourcePath: "/3", SourceURI: "f:///3",
 			ContentDate: now, FileType: "txt", Checksum: "c",
 			Embedding: []float32{0.8, 0.2, 0, 0},
@@ -319,12 +319,12 @@ func TestGetChecksums(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "a", SourceType: "filesystem",
+			ID: "f1", RawContent: "a", SourceType: "filesystem",
 			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa",
 		},
 		{
-			ID: "f2", Content: "b", SourceType: "github",
+			ID: "f2", RawContent: "b", SourceType: "github",
 			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb",
 		},
@@ -350,12 +350,12 @@ func TestDeleteByPaths(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "a", SourceType: "filesystem",
+			ID: "f1", RawContent: "a", SourceType: "filesystem",
 			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "f2", Content: "b", SourceType: "filesystem",
+			ID: "f2", RawContent: "b", SourceType: "filesystem",
 			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb", Embedding: []float32{0, 1, 0, 0},
 		},
@@ -405,17 +405,17 @@ func TestDeleteFragmentsBySource(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	frags := []model.SourceFragment{
 		{
-			ID: "f1", Content: "a", SourceType: "filesystem", SourceName: "proj1",
+			ID: "f1", RawContent: "a", SourceType: "filesystem", SourceName: "proj1",
 			SourcePath: "/a.txt", SourceURI: "f:///a", ContentDate: now,
 			FileType: "txt", Checksum: "aaa", Embedding: []float32{1, 0, 0, 0},
 		},
 		{
-			ID: "f2", Content: "b", SourceType: "filesystem", SourceName: "proj1",
+			ID: "f2", RawContent: "b", SourceType: "filesystem", SourceName: "proj1",
 			SourcePath: "/b.txt", SourceURI: "f:///b", ContentDate: now,
 			FileType: "txt", Checksum: "bbb", Embedding: []float32{0, 1, 0, 0},
 		},
 		{
-			ID: "f3", Content: "c", SourceType: "github", SourceName: "repo1",
+			ID: "f3", RawContent: "c", SourceType: "github", SourceName: "repo1",
 			SourcePath: "/c.txt", SourceURI: "f:///c", ContentDate: now,
 			FileType: "txt", Checksum: "ccc", Embedding: []float32{0, 0, 1, 0},
 		},
@@ -505,7 +505,7 @@ func TestConcurrentUpserts(t *testing.T) {
 			for i := 0; i < fragsPerWorker; i++ {
 				id := fmt.Sprintf("w%d-f%d", workerID, i)
 				frags = append(frags, model.SourceFragment{
-					ID: id, Content: fmt.Sprintf("content-%s", id),
+					ID: id, RawContent: fmt.Sprintf("content-%s", id),
 					SourceType: "test", SourcePath: fmt.Sprintf("/w%d/%d.txt", workerID, i),
 					SourceURI: "test://", ContentDate: now,
 					FileType: "txt", Checksum: fmt.Sprintf("ck-%s", id),
@@ -561,7 +561,7 @@ func TestConcurrentUpsertSameID(t *testing.T) {
 			defer s.Close()
 
 			frag := model.SourceFragment{
-				ID: "shared-id", Content: fmt.Sprintf("version-%d", workerID),
+				ID: "shared-id", RawContent: fmt.Sprintf("version-%d", workerID),
 				SourceType: "test", SourcePath: "/shared.txt",
 				SourceURI: "test://", ContentDate: now,
 				FileType: "txt", Checksum: fmt.Sprintf("v%d", workerID),
@@ -607,7 +607,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		id := fmt.Sprintf("seed-%d", i)
 		err := s.UpsertFragments(context.Background(), []model.SourceFragment{{
-			ID: id, Content: "seed", SourceType: "test", SourcePath: fmt.Sprintf("/%d.txt", i),
+			ID: id, RawContent: "seed", SourceType: "test", SourcePath: fmt.Sprintf("/%d.txt", i),
 			SourceURI: "test://", ContentDate: now, FileType: "txt", Checksum: "s",
 			Embedding: []float32{1, 0, 0, 0},
 		}})
@@ -632,7 +632,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 
 			id := fmt.Sprintf("new-%d", workerID)
 			errs <- ws.UpsertFragments(context.Background(), []model.SourceFragment{{
-				ID: id, Content: "new", SourceType: "test",
+				ID: id, RawContent: "new", SourceType: "test",
 				SourcePath: fmt.Sprintf("/new/%d.txt", workerID),
 				SourceURI: "test://", ContentDate: now, FileType: "txt", Checksum: "n",
 				Embedding: []float32{0, 1, 0, 0},

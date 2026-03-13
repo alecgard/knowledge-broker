@@ -31,7 +31,7 @@ func TestBuildSystemPrompt_WithFragments(t *testing.T) {
 	fragments := []model.SourceFragment{
 		{
 			ID:            "frag-001",
-			Content:       "This is the content of fragment one.",
+			RawContent:       "This is the content of fragment one.",
 			SourceType:    "filesystem",
 			SourcePath:    "/docs/readme.md",
 			SourceURI:     "file:///docs/readme.md",
@@ -42,7 +42,7 @@ func TestBuildSystemPrompt_WithFragments(t *testing.T) {
 		},
 		{
 			ID:           "frag-002",
-			Content:      "Second fragment content here.",
+			RawContent:      "Second fragment content here.",
 			SourceType:   "github",
 			SourcePath:   "repo/src/main.go",
 			SourceURI:    "https://github.com/org/repo/blob/main/src/main.go",
@@ -137,7 +137,7 @@ func TestBuildSystemPrompt_AgeFormatting(t *testing.T) {
 			fragments := []model.SourceFragment{
 				{
 					ID:           "test-frag",
-					Content:      "test",
+					RawContent:      "test",
 					SourcePath:   "/test",
 					ContentDate: tt.modified,
 				},

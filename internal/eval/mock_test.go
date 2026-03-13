@@ -36,7 +36,7 @@ func (m *mockStore) SearchByVector(ctx context.Context, embedding []float32, lim
 		results = append(results, model.SourceFragment{
 			ID:          f.id,
 			SourcePath:  f.sourcePath,
-			Content:     f.content,
+			RawContent:  f.content,
 			FileType:    f.fileType,
 			ContentDate: f.contentDate,
 			SourceName:  f.sourceName,
@@ -62,13 +62,17 @@ func (m *mockStore) DeleteByPaths(ctx context.Context, sourceType, sourceName st
 	return nil
 }
 
+func (m *mockStore) GetFragmentsBySource(ctx context.Context, sourceName string) ([]model.SourceFragment, error) {
+	return nil, nil
+}
+
 func (m *mockStore) ExportFragments(ctx context.Context) ([]model.SourceFragment, error) {
 	var results []model.SourceFragment
 	for _, f := range m.fragments {
 		results = append(results, model.SourceFragment{
 			ID:           f.id,
 			SourcePath:   f.sourcePath,
-			Content:      f.content,
+			RawContent:   f.content,
 			ContentDate: time.Now(),
 			Embedding:    []float32{0.1, 0.2, 0.3, 0.4},
 		})

@@ -732,6 +732,236 @@ func TestSourceDescription(t *testing.T) {
 	}
 }
 
+func TestSearchByFTS(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "f1", RawContent: "the quick brown fox jumps over the lazy dog", SourceType: "fs", SourceName: "docs",
+			SourcePath: "/1.txt", SourceURI: "f:///1",
+			ContentDate: now, FileType: "txt", Checksum: "a",
+			Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "f2", RawContent: "kubernetes deployment strategies and rolling updates", SourceType: "git", SourceName: "infra",
+			SourcePath: "/2.txt", SourceURI: "f:///2",
+			ContentDate: now, FileType: "txt", Checksum: "b",
+			Embedding: []float32{0, 1, 0, 0},
+		},
+		{
+			ID: "f3", RawContent: "the fox ran quickly through the forest", SourceType: "fs", SourceName: "docs",
+			SourcePath: "/3.txt", SourceURI: "f:///3",
+			ContentDate: now, FileType: "txt", Checksum: "c",
+			Embedding: []float32{0, 0, 1, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Search for "fox" — should match f1 and f3.
+	results, err := s.SearchByFTS(ctx, "fox", 10)
+	if err != nil {
+		t.Fatalf("SearchByFTS: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results for 'fox', got %d", len(results))
+	}
+	resultIDs := map[string]bool{}
+	for _, r := range results {
+		resultIDs[r.ID] = true
+	}
+	if !resultIDs["f1"] || !resultIDs["f3"] {
+		t.Errorf("expected f1 and f3, got %v", ids(results))
+	}
+
+	// Search for "kubernetes" — should match f2 only.
+	results, err = s.SearchByFTS(ctx, "kubernetes", 10)
+	if err != nil {
+		t.Fatalf("SearchByFTS kubernetes: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "f2" {
+		t.Errorf("expected [f2], got %v", ids(results))
+	}
+
+	// Search for non-existent term.
+	results, err = s.SearchByFTS(ctx, "nonexistentterm", 10)
+	if err != nil {
+		t.Fatalf("SearchByFTS no match: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestSearchByFTSFiltered(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "f1", RawContent: "deploying services to production", SourceType: "fs", SourceName: "docs",
+			SourcePath: "/1.txt", SourceURI: "f:///1",
+			ContentDate: now, FileType: "txt", Checksum: "a",
+			Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "f2", RawContent: "deploying containers with docker", SourceType: "git", SourceName: "infra",
+			SourcePath: "/2.txt", SourceURI: "f:///2",
+			ContentDate: now, FileType: "txt", Checksum: "b",
+			Embedding: []float32{0, 1, 0, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by source name — only "docs".
+	results, err := s.SearchByFTSFiltered(ctx, "deploying", 10, []string{"docs"}, nil)
+	if err != nil {
+		t.Fatalf("SearchByFTSFiltered: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "f1" {
+		t.Errorf("expected [f1], got %v", ids(results))
+	}
+
+	// Filter by source type — only "git".
+	results, err = s.SearchByFTSFiltered(ctx, "deploying", 10, nil, []string{"git"})
+	if err != nil {
+		t.Fatalf("SearchByFTSFiltered by type: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "f2" {
+		t.Errorf("expected [f2], got %v", ids(results))
+	}
+
+	// No filters — should delegate to SearchByFTS and return both.
+	results, err = s.SearchByFTSFiltered(ctx, "deploying", 10, nil, nil)
+	if err != nil {
+		t.Fatalf("SearchByFTSFiltered no filter: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+}
+
+func TestFTSDeleteSync(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frags := []model.SourceFragment{
+		{
+			ID: "f1", RawContent: "alpha bravo charlie", SourceType: "fs", SourceName: "proj1",
+			SourcePath: "/a.txt", SourceURI: "f:///a",
+			ContentDate: now, FileType: "txt", Checksum: "a",
+			Embedding: []float32{1, 0, 0, 0},
+		},
+		{
+			ID: "f2", RawContent: "alpha delta echo", SourceType: "fs", SourceName: "proj1",
+			SourcePath: "/b.txt", SourceURI: "f:///b",
+			ContentDate: now, FileType: "txt", Checksum: "b",
+			Embedding: []float32{0, 1, 0, 0},
+		},
+	}
+
+	if err := s.UpsertFragments(ctx, frags); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both should appear in FTS search for "alpha".
+	results, err := s.SearchByFTS(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results before delete, got %d", len(results))
+	}
+
+	// Delete f1 by path.
+	if err := s.DeleteByPaths(ctx, "fs", "proj1", []string{"/a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only f2 should remain in FTS.
+	results, err = s.SearchByFTS(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].ID != "f2" {
+		t.Errorf("expected [f2] after DeleteByPaths, got %v", ids(results))
+	}
+
+	// Delete by source.
+	if err := s.DeleteFragmentsBySource(ctx, "fs", "proj1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// No results should remain.
+	results, err = s.SearchByFTS(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results after DeleteFragmentsBySource, got %d", len(results))
+	}
+}
+
+func TestFTSUpsertUpdate(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	frag := model.SourceFragment{
+		ID: "f1", RawContent: "original content about databases", SourceType: "fs",
+		SourcePath: "/a.txt", SourceURI: "f:///a",
+		ContentDate: now, FileType: "txt", Checksum: "a",
+		Embedding: []float32{1, 0, 0, 0},
+	}
+
+	if err := s.UpsertFragments(ctx, []model.SourceFragment{frag}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should find by "databases".
+	results, err := s.SearchByFTS(ctx, "databases", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for 'databases', got %d", len(results))
+	}
+
+	// Update content.
+	frag.RawContent = "updated content about networking"
+	frag.Checksum = "b"
+	if err := s.UpsertFragments(ctx, []model.SourceFragment{frag}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Old term should no longer match.
+	results, err = s.SearchByFTS(ctx, "databases", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for old term 'databases', got %d", len(results))
+	}
+
+	// New term should match.
+	results, err = s.SearchByFTS(ctx, "networking", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result for 'networking', got %d", len(results))
+	}
+}
+
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }

@@ -874,6 +874,7 @@ func queryCmd() *cobra.Command {
 
 			sources, _ := cmd.Flags().GetStringArray("source")
 			sourceTypes, _ := cmd.Flags().GetStringArray("source-type")
+			noExpand, _ := cmd.Flags().GetBool("no-expand")
 
 			question := strings.Join(args, " ")
 			req := model.QueryRequest{
@@ -885,6 +886,7 @@ func queryCmd() *cobra.Command {
 				Topics:      topics,
 				Sources:     sources,
 				SourceTypes: sourceTypes,
+				NoExpand:    noExpand,
 			}
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -911,6 +913,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().StringArray("source", nil, "Filter results to this source name (repeatable, e.g., --source owner/repo)")
 	cmd.Flags().StringArray("source-type", nil, "Filter results to this source type (repeatable: filesystem, git, confluence, slack, github_wiki)")
 	cmd.Flags().String("llm", "", "LLM provider override: claude, openai, ollama (default from KB_LLM_PROVIDER or claude)")
+	cmd.Flags().Bool("no-expand", false, "Disable multi-query expansion (useful for precise queries)")
 	return cmd
 }
 
@@ -1282,6 +1285,17 @@ func evalCmd() *cobra.Command {
 
 			// Run evaluation.
 			runner := eval.NewRunner(s, emb)
+
+			// Always create the engine so evals use the same retrieval pipeline
+			// (expansion + hybrid search + RRF) as real queries. LLM is optional
+			// — without it, expansion is skipped but BM25 hybrid still runs.
+			var llmClient query.LLM
+			apiKey := os.Getenv("ANTHROPIC_API_KEY")
+			if apiKey != "" {
+				llmClient = llm.NewClaudeClient(apiKey, cfg.ClaudeModel, client, logger)
+			}
+			engine := query.NewEngine(s, emb, llmClient, limit, logger)
+			runner.SetQueryEngine(engine)
 			summary, err := runner.Run(ctx, cases, limit)
 			if err != nil {
 				return fmt.Errorf("run eval: %w", err)

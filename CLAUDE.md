@@ -28,3 +28,5 @@ Before starting any work that could affect retrieval quality, ranking, ingestion
 3. **Run `make eval` after the feature work.** Verify that the new eval cases improve and that existing cases don't regress. The pre-commit hook enforces this automatically.
 
 Eval test cases live in `eval/testset.json`. Corpus files live in `eval/corpus/`. Categories: `direct_extraction`, `cross_document`, `knowledge_update`, `abstention`, `pronoun_resolution`, `vocabulary_mismatch`.
+
+When finishing a task that could affect eval scores, include a before/after summary table showing how key metrics changed (Hit@1, Hit@3, Hit@5, MRR) at both the overall and per-category level. Highlight regressions.

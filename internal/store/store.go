@@ -26,6 +26,12 @@ type Store interface {
 	// If both sourceNames and sourceTypes are empty, it behaves identically to SearchByVector.
 	SearchByVectorFiltered(ctx context.Context, embedding []float32, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error)
 
+	// SearchByFTS performs full-text keyword search using BM25 ranking.
+	SearchByFTS(ctx context.Context, query string, limit int) ([]model.SourceFragment, error)
+
+	// SearchByFTSFiltered performs full-text search filtered by source names and/or types.
+	SearchByFTSFiltered(ctx context.Context, query string, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error)
+
 	// GetFragments retrieves fragments by ID.
 	GetFragments(ctx context.Context, ids []string) ([]model.SourceFragment, error)
 

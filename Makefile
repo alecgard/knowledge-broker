@@ -7,10 +7,10 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 ## Build
 
 build:
-	CGO_CFLAGS="-Wno-deprecated-declarations" go build $(LDFLAGS) -o $(BINARY) ./cmd/kb
+	CGO_CFLAGS="-Wno-deprecated-declarations" go build -tags sqlite_fts5 $(LDFLAGS) -o $(BINARY) ./cmd/kb
 
 install:
-	CGO_CFLAGS="-Wno-deprecated-declarations" go install $(LDFLAGS) ./cmd/kb
+	CGO_CFLAGS="-Wno-deprecated-declarations" go install -tags sqlite_fts5 $(LDFLAGS) ./cmd/kb
 	@if ! command -v kb >/dev/null 2>&1; then \
 		GOBIN=$$(go env GOPATH)/bin; \
 		LINE="export PATH=\"$$GOBIN:\$$PATH\""; \
@@ -57,10 +57,10 @@ clean:
 ## Test
 
 test:
-	CGO_CFLAGS="-Wno-deprecated-declarations" go test ./... -count=1
+	CGO_CFLAGS="-Wno-deprecated-declarations" go test -tags sqlite_fts5 ./... -count=1
 
 test-v:
-	CGO_CFLAGS="-Wno-deprecated-declarations" go test ./... -count=1 -v
+	CGO_CFLAGS="-Wno-deprecated-declarations" go test -tags sqlite_fts5 ./... -count=1 -v
 
 ## Lint
 
@@ -82,12 +82,12 @@ run-mcp: build
 
 eval:
 	@echo "Running evaluation..."
-	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus --skip-enrichment
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run -tags sqlite_fts5 ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus --skip-enrichment
 	@rm -f eval.db eval.db-shm eval.db-wal
 
 eval-enriched:
 	@echo "Running evaluation with enrichment (requires Ollama)..."
-	CGO_CFLAGS="-Wno-deprecated-declarations" go run ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus $(if $(ENRICH_MODEL),--enrich-model $(ENRICH_MODEL),)
+	CGO_CFLAGS="-Wno-deprecated-declarations" go run -tags sqlite_fts5 ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus $(if $(ENRICH_MODEL),--enrich-model $(ENRICH_MODEL),)
 	@rm -f eval.db eval.db-shm eval.db-wal
 
 ## Dependencies

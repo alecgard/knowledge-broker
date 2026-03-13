@@ -500,5 +500,30 @@
     "expected_top_result": {
       "content_contains": "Dana"
     }
+  },
+
+  {
+    "id": "q61",
+    "query": "What is the end-to-end request lifecycle in the Widget Service?",
+    "expected_sources": ["architecture.md", "README.md"],
+    "reference_answer": "A request flows through NGINX (TLS termination), then to the Widget Service where the rate limiter checks Redis, authentication middleware validates the API key via bcrypt comparison against the database, the handler processes the request, and the response is cached in Redis with a 10-minute TTL.",
+    "category": "cross_document",
+    "expected_content_contains": ["NGINX", "rate limit", "bcrypt", "Redis"]
+  },
+  {
+    "id": "q62",
+    "query": "What is the WIDGET_DB_MAX_CONNS setting and why was it changed?",
+    "expected_sources": ["config.go", "deploy/kubernetes.yaml", "incident-review.md"],
+    "reference_answer": "WIDGET_DB_MAX_CONNS controls the database connection pool size. The default was 25 but Marcus Rivera observed it approaching 20 during normal peaks. The Kubernetes deployment sets it to 50. Marcus suggested bumping it to 50 to match, noting the default of 25 was too conservative for current traffic.",
+    "category": "cross_document",
+    "expected_content_contains": ["WIDGET_DB_MAX_CONNS", "25", "50"]
+  },
+  {
+    "id": "q63",
+    "query": "How does the system protect itself from downstream failures?",
+    "expected_sources": ["architecture.md", "incident-review.md"],
+    "reference_answer": "The service handles downstream failures through multiple mechanisms: transient errors are automatically retried up to 3 times with exponential backoff, a circuit breaker is being added to the write path so the service returns 503 immediately when the database rejects connections, and the cache layer already bypasses Redis when it's down rather than blocking.",
+    "category": "vocabulary_mismatch",
+    "expected_content_contains": ["circuit breaker", "retry"]
   }
 ]

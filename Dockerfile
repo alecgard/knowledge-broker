@@ -13,7 +13,7 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=1 CGO_CFLAGS="-Wno-deprecated-declarations" \
-    go build -ldflags "-s -w -X main.version=0.1.0" -o /kb ./cmd/kb
+    go build -tags sqlite_fts5 -ldflags "-s -w -X main.version=0.1.0" -o /kb ./cmd/kb
 
 # --- Runtime stage ---
 FROM debian:bookworm-slim

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
 func TestRecallAtK(t *testing.T) {
@@ -665,6 +667,55 @@ func TestConfidenceMetrics(t *testing.T) {
 		t.Errorf("Category AvgConfidence = %.2f, want > 0", cb.AvgConfidence)
 	}
 }
+
+// mockQueryEngine implements QueryEngine for testing.
+type mockQueryEngine struct {
+	answer string
+	err    error
+}
+
+func (m *mockQueryEngine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error) {
+	return &model.RawResult{}, nil
+}
+
+func (m *mockQueryEngine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &model.Answer{Content: m.answer}, nil
+}
+
+func TestRunnerWithQueryEngine(t *testing.T) {
+	s := &mockStore{
+		fragments: []mockFragment{
+			{id: "f1", sourcePath: "eval/corpus/config.go", content: "PostgreSQL", fileType: ".go", contentDate: time.Now().Add(-24 * time.Hour), sourceName: "test-source"},
+		},
+	}
+	embedder := &mockEmbedder{dim: 4}
+	runner := NewRunner(s, embedder)
+	runner.SetQueryEngine(&mockQueryEngine{answer: "The database is PostgreSQL."})
+
+	cases := []TestCase{
+		{
+			ID:              "q01",
+			Query:           "What database?",
+			ExpectedSources: []string{"config.go"},
+			Category:        "direct_extraction",
+		},
+	}
+
+	// With QueryEngine set, retrieval should go through QueryRaw (hybrid pipeline).
+	summary, err := runner.Run(context.Background(), cases, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// QueryRaw returns empty fragments, so no hits expected.
+	if len(summary.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(summary.Results))
+	}
+}
+
 
 func TestFormatSummaryTableWithDelta(t *testing.T) {
 	current := &Summary{

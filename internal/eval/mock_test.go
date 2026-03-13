@@ -50,6 +50,14 @@ func (m *mockStore) SearchByVectorFiltered(ctx context.Context, embedding []floa
 	return m.SearchByVector(ctx, embedding, limit)
 }
 
+func (m *mockStore) SearchByFTS(ctx context.Context, query string, limit int) ([]model.SourceFragment, error) {
+	return nil, nil
+}
+
+func (m *mockStore) SearchByFTSFiltered(ctx context.Context, query string, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error) {
+	return nil, nil
+}
+
 func (m *mockStore) GetFragments(ctx context.Context, ids []string) ([]model.SourceFragment, error) {
 	return nil, nil
 }

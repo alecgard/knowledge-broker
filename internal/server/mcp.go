@@ -64,6 +64,9 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 		mcp.WithString("source_types",
 			mcp.Description("Optional comma-separated source types to filter results. Valid types: filesystem, git, confluence, slack, github_wiki"),
 		),
+		mcp.WithBoolean("no_expand",
+			mcp.Description("If true, disable multi-query expansion. Useful for precise queries where you know the exact terms."),
+		),
 	), s.handleQuery)
 
 	s.server.AddTool(mcp.NewTool("list-sources",
@@ -162,6 +165,11 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		rawMode = rawVal
 	}
 
+	noExpand := false
+	if v, ok := args["no_expand"].(bool); ok {
+		noExpand = v
+	}
+
 	// If synthesis is requested but no LLM is configured, return a clear error.
 	if !rawMode && !s.engine.HasLLM() {
 		return mcp.NewToolResultError("Synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use raw=true for retrieval without LLM."), nil
@@ -176,6 +184,7 @@ func (s *MCPServer) handleQuery(ctx context.Context, request mcp.CallToolRequest
 		Topics:      topics,
 		Sources:     sources,
 		SourceTypes: sourceTypes,
+		NoExpand:    noExpand,
 	}
 
 	if rawMode {

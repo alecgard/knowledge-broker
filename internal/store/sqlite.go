@@ -79,6 +79,27 @@ func initSchema(db *sql.DB, embeddingDim int) error {
 		return fmt.Errorf("create unit vec0 virtual table: %w", err)
 	}
 
+	// Create FTS5 full-text search table.
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS fragment_fts USING fts5(
+		fragment_id UNINDEXED,
+		content,
+		tokenize='porter unicode61'
+	)`); err != nil {
+		return fmt.Errorf("create fts5 virtual table: %w", err)
+	}
+
+	// Backfill FTS index for existing databases upgrading to hybrid search.
+	var ftsCount, fragCount int
+	db.QueryRow("SELECT COUNT(*) FROM fragment_fts").Scan(&ftsCount)
+	db.QueryRow("SELECT COUNT(*) FROM fragments").Scan(&fragCount)
+	if ftsCount == 0 && fragCount > 0 {
+		_, err := db.Exec(`INSERT INTO fragment_fts(fragment_id, content)
+			SELECT id, COALESCE(enriched_content, raw_content) FROM fragments`)
+		if err != nil {
+			return fmt.Errorf("backfill fts: %w", err)
+		}
+	}
+
 	// Validate or store embedding dimension in metadata.
 	if err := validateOrSetMeta(db, "embedding_dim", fmt.Sprintf("%d", embeddingDim)); err != nil {
 		return err
@@ -218,6 +239,18 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 	}
 	defer embInsStmt.Close()
 
+	ftsDelStmt, err := tx.PrepareContext(ctx, `DELETE FROM fragment_fts WHERE fragment_id = ?`)
+	if err != nil {
+		return fmt.Errorf("prepare fts del stmt: %w", err)
+	}
+	defer ftsDelStmt.Close()
+
+	ftsInsStmt, err := tx.PrepareContext(ctx, `INSERT INTO fragment_fts(fragment_id, content) VALUES (?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare fts ins stmt: %w", err)
+	}
+	defer ftsInsStmt.Close()
+
 	for _, f := range fragments {
 		var enrichedContent, enrichmentModel, enrichmentVersion, embeddingModel sql.NullString
 		if f.EnrichedContent != "" {
@@ -251,6 +284,18 @@ func (s *SQLiteStore) upsertFragmentsOnce(ctx context.Context, fragments []model
 			if _, err = embInsStmt.ExecContext(ctx, f.ID, serializeEmbedding(f.Embedding)); err != nil {
 				return fmt.Errorf("upsert embedding %s: %w", f.ID, err)
 			}
+		}
+
+		// Sync FTS index.
+		ftsContent := f.RawContent
+		if f.EnrichedContent != "" {
+			ftsContent = f.EnrichedContent
+		}
+		if _, err = ftsDelStmt.ExecContext(ctx, f.ID); err != nil {
+			return fmt.Errorf("delete fts %s: %w", f.ID, err)
+		}
+		if _, err = ftsInsStmt.ExecContext(ctx, f.ID, ftsContent); err != nil {
+			return fmt.Errorf("insert fts %s: %w", f.ID, err)
 		}
 	}
 
@@ -302,26 +347,9 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 		overFetch = 50
 	}
 
+	filterSQL, filterArgs := buildSourceFilters(sourceNames, sourceTypes)
 	args := []interface{}{serializeEmbedding(embedding), overFetch}
-	var conditions []string
-
-	if len(sourceNames) > 0 {
-		placeholders := make([]string, len(sourceNames))
-		for i, name := range sourceNames {
-			placeholders[i] = "?"
-			args = append(args, name)
-		}
-		conditions = append(conditions, fmt.Sprintf("f.source_name IN (%s)", strings.Join(placeholders, ",")))
-	}
-
-	if len(sourceTypes) > 0 {
-		placeholders := make([]string, len(sourceTypes))
-		for i, typ := range sourceTypes {
-			placeholders[i] = "?"
-			args = append(args, typ)
-		}
-		conditions = append(conditions, fmt.Sprintf("f.source_type IN (%s)", strings.Join(placeholders, ",")))
-	}
+	args = append(args, filterArgs...)
 
 	query := fmt.Sprintf(`
 		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
@@ -334,7 +362,7 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 		  AND %s
 		ORDER BY fe.distance
 		LIMIT ?
-	`, strings.Join(conditions, " AND "))
+	`, filterSQL)
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -349,6 +377,129 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 		f, err := scanFragment(rows, &distance)
 		if err != nil {
 			return nil, fmt.Errorf("scan fragment: %w", err)
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
+// sanitizeFTSQuery converts a natural language query into a safe FTS5 MATCH
+// expression. It quotes each word to treat special characters as literals,
+// then joins with implicit AND.
+func sanitizeFTSQuery(query string) string {
+	words := strings.Fields(query)
+	var quoted []string
+	for _, w := range words {
+		// Remove characters that break FTS5 even inside quotes.
+		clean := strings.Map(func(r rune) rune {
+			if r == '"' {
+				return -1
+			}
+			return r
+		}, w)
+		if clean != "" {
+			quoted = append(quoted, `"`+clean+`"`)
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
+// SearchByFTS performs full-text keyword search using BM25 ranking.
+func (s *SQLiteStore) SearchByFTS(ctx context.Context, query string, limit int) ([]model.SourceFragment, error) {
+	sanitized := sanitizeFTSQuery(query)
+	if sanitized == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
+		       fts.rank
+		FROM fragment_fts fts
+		INNER JOIN fragments f ON f.id = fts.fragment_id
+		WHERE fragment_fts MATCH ?
+		ORDER BY fts.rank
+		LIMIT ?
+	`, sanitized, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search by fts: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.SourceFragment
+	for rows.Next() {
+		var rank float64
+		f, err := scanFragment(rows, &rank)
+		if err != nil {
+			return nil, fmt.Errorf("scan fts fragment: %w", err)
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
+// buildSourceFilters constructs SQL WHERE conditions and args for source name/type filtering.
+func buildSourceFilters(sourceNames, sourceTypes []string) (string, []interface{}) {
+	var conditions []string
+	var args []interface{}
+	if len(sourceNames) > 0 {
+		placeholders := make([]string, len(sourceNames))
+		for i, n := range sourceNames {
+			placeholders[i] = "?"
+			args = append(args, n)
+		}
+		conditions = append(conditions, fmt.Sprintf("f.source_name IN (%s)", strings.Join(placeholders, ",")))
+	}
+	if len(sourceTypes) > 0 {
+		placeholders := make([]string, len(sourceTypes))
+		for i, t := range sourceTypes {
+			placeholders[i] = "?"
+			args = append(args, t)
+		}
+		conditions = append(conditions, fmt.Sprintf("f.source_type IN (%s)", strings.Join(placeholders, ",")))
+	}
+	return strings.Join(conditions, " AND "), args
+}
+
+// SearchByFTSFiltered performs full-text search filtered by source names and/or types.
+func (s *SQLiteStore) SearchByFTSFiltered(ctx context.Context, query string, limit int, sourceNames []string, sourceTypes []string) ([]model.SourceFragment, error) {
+	if len(sourceNames) == 0 && len(sourceTypes) == 0 {
+		return s.SearchByFTS(ctx, query, limit)
+	}
+
+	sanitized := sanitizeFTSQuery(query)
+	if sanitized == "" {
+		return nil, nil
+	}
+	filterSQL, filterArgs := buildSourceFilters(sourceNames, sourceTypes)
+	args := []interface{}{sanitized}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+
+	q := fmt.Sprintf(`
+		SELECT f.id, f.raw_content, f.enriched_content, f.source_type, f.source_name, f.source_path, f.source_uri,
+		       f.content_date, f.author, f.file_type, f.checksum, f.confidence_adj, f.ingested_at,
+		       f.enrichment_model, f.enrichment_version, f.embedding_model,
+		       fts.rank
+		FROM fragment_fts fts
+		INNER JOIN fragments f ON f.id = fts.fragment_id
+		WHERE fragment_fts MATCH ? AND %s
+		ORDER BY fts.rank
+		LIMIT ?
+	`, filterSQL)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search by fts filtered: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.SourceFragment
+	for rows.Next() {
+		var rank float64
+		f, err := scanFragment(rows, &rank)
+		if err != nil {
+			return nil, fmt.Errorf("scan fts fragment: %w", err)
 		}
 		results = append(results, f)
 	}
@@ -453,7 +604,18 @@ func (s *SQLiteStore) deleteByPathsOnce(ctx context.Context, sourceType, sourceN
 		nameFilter = " AND source_name = ?"
 	}
 
-	// Delete from fragment_embeddings first (referencing fragment IDs).
+	// Delete from fragment_fts first (referencing fragment IDs).
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+		DELETE FROM fragment_fts
+		WHERE fragment_id IN (
+			SELECT id FROM fragments WHERE source_type = ?%s AND source_path IN (%s)
+		)
+	`, nameFilter, inClause), args...)
+	if err != nil {
+		return fmt.Errorf("delete fts: %w", err)
+	}
+
+	// Delete from fragment_embeddings (referencing fragment IDs).
 	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
 		DELETE FROM fragment_embeddings
 		WHERE fragment_id IN (
@@ -620,7 +782,18 @@ func (s *SQLiteStore) DeleteFragmentsBySource(ctx context.Context, sourceType, s
 	}
 	defer tx.Rollback()
 
-	// Delete from fragment_embeddings first (referencing fragment IDs).
+	// Delete from fragment_fts first (referencing fragment IDs).
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM fragment_fts
+		WHERE fragment_id IN (
+			SELECT id FROM fragments WHERE source_type = ? AND source_name = ?
+		)
+	`, sourceType, sourceName)
+	if err != nil {
+		return fmt.Errorf("delete fts: %w", err)
+	}
+
+	// Delete from fragment_embeddings (referencing fragment IDs).
 	_, err = tx.ExecContext(ctx, `
 		DELETE FROM fragment_embeddings
 		WHERE fragment_id IN (

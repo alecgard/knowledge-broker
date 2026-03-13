@@ -62,6 +62,7 @@ func (e *Engine) HasLLM() bool {
 }
 
 // embedAndSearch validates the request, embeds the query, and searches for fragments.
+// It performs hybrid search (vector + BM25) with optional multi-query expansion.
 // Returns the last user message, the query embedding, and matching fragments.
 func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (model.Message, []float32, []model.SourceFragment, error) {
 	if len(req.Messages) == 0 {
@@ -78,37 +79,124 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		return model.Message{}, nil, nil, fmt.Errorf("last message must be from user")
 	}
 
-	// Embed the query (and topics if present) in a single batch call.
-	var queryEmb []float32
-	if len(req.Topics) > 0 {
-		topicsText := strings.Join(req.Topics, " ")
-		vecs, err := e.embedder.EmbedBatch(ctx, []string{lastMsg.Content, topicsText})
-		if err != nil {
-			return model.Message{}, nil, nil, fmt.Errorf("embed query+topics: %w", err)
+	hasFilters := len(req.Sources) > 0 || len(req.SourceTypes) > 0
+	skipExpand := req.Mode == model.ModeRaw || req.NoExpand
+
+	// Step 1: Embed the original query. This embedding is reused for both
+	// the vocabulary scout and the main search, avoiding a redundant Ollama call.
+	queryEmb, err := e.embedder.Embed(ctx, lastMsg.Content)
+	if err != nil {
+		return model.Message{}, nil, nil, fmt.Errorf("embed query: %w", err)
+	}
+
+	// Step 2: Multi-query expansion (skip in raw mode or when NoExpand is set).
+	// Scout with both vector and BM25 to extract domain vocabulary, then ask
+	// the LLM to rephrase using those terms.
+	allQueries := []string{lastMsg.Content}
+	if !skipExpand && e.llm != nil {
+		var scoutFrags []model.SourceFragment
+		if hasFilters {
+			vecFrags, _ := e.store.SearchByVectorFiltered(ctx, queryEmb, 5, req.Sources, req.SourceTypes)
+			scoutFrags = append(scoutFrags, vecFrags...)
+			ftsFrags, _ := e.store.SearchByFTSFiltered(ctx, lastMsg.Content, 5, req.Sources, req.SourceTypes)
+			scoutFrags = append(scoutFrags, ftsFrags...)
+		} else {
+			vecFrags, _ := e.store.SearchByVector(ctx, queryEmb, 5)
+			scoutFrags = append(scoutFrags, vecFrags...)
+			ftsFrags, _ := e.store.SearchByFTS(ctx, lastMsg.Content, 5)
+			scoutFrags = append(scoutFrags, ftsFrags...)
 		}
-		queryEmb = combineEmbeddings(vecs[0], vecs[1], 0.3)
-	} else {
-		var err error
-		queryEmb, err = e.embedder.Embed(ctx, lastMsg.Content)
+		vocabHints := extractVocabHints(dedup(scoutFrags), 5)
+
+		expandCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		expansions, err := expandQuery(expandCtx, e.llm, lastMsg.Content, vocabHints)
+		cancel()
 		if err != nil {
-			return model.Message{}, nil, nil, fmt.Errorf("embed query: %w", err)
+			if e.logger != nil {
+				e.logger.Warn("query expansion failed, continuing without", "error", err)
+			}
+		} else if len(expansions) > 0 {
+			allQueries = append(allQueries, expansions...)
+			if e.logger != nil {
+				e.logger.Debug("query expanded", "original", lastMsg.Content, "expansions", expansions)
+			}
 		}
 	}
 
-	var (
-		fragments []model.SourceFragment
-		searchErr error
-	)
-	if len(req.Sources) > 0 || len(req.SourceTypes) > 0 {
-		fragments, searchErr = e.store.SearchByVectorFiltered(ctx, queryEmb, limit, req.Sources, req.SourceTypes)
-	} else {
-		fragments, searchErr = e.store.SearchByVector(ctx, queryEmb, limit)
-	}
-	if searchErr != nil {
-		return model.Message{}, nil, nil, fmt.Errorf("search: %w", searchErr)
+	// Step 3: Embed expansion queries (original already embedded in Step 1).
+	allEmbeddings := [][]float32{queryEmb}
+	if len(allQueries) > 1 {
+		expansionTexts := allQueries[1:]
+		if len(req.Topics) > 0 {
+			topicsText := strings.Join(req.Topics, " ")
+			texts := append(append([]string(nil), expansionTexts...), topicsText)
+			vecs, err := e.embedder.EmbedBatch(ctx, texts)
+			if err != nil {
+				return model.Message{}, nil, nil, fmt.Errorf("embed expansions+topics: %w", err)
+			}
+			topicsEmb := vecs[len(vecs)-1]
+			// Blend topics into the original query embedding.
+			allEmbeddings[0] = combineEmbeddings(queryEmb, topicsEmb, 0.3)
+			for i := 0; i < len(vecs)-1; i++ {
+				allEmbeddings = append(allEmbeddings, combineEmbeddings(vecs[i], topicsEmb, 0.3))
+			}
+		} else {
+			vecs, err := e.embedder.EmbedBatch(ctx, expansionTexts)
+			if err != nil {
+				return model.Message{}, nil, nil, fmt.Errorf("embed expansions: %w", err)
+			}
+			allEmbeddings = append(allEmbeddings, vecs...)
+		}
+	} else if len(req.Topics) > 0 {
+		topicsEmb, err := e.embedder.Embed(ctx, strings.Join(req.Topics, " "))
+		if err != nil {
+			return model.Message{}, nil, nil, fmt.Errorf("embed topics: %w", err)
+		}
+		allEmbeddings[0] = combineEmbeddings(queryEmb, topicsEmb, 0.3)
 	}
 
-	return lastMsg, queryEmb, fragments, nil
+	// Step 4: Vector search for each embedding.
+	var resultLists []rankedList
+	for _, emb := range allEmbeddings {
+		var frags []model.SourceFragment
+		var searchErr error
+		if hasFilters {
+			frags, searchErr = e.store.SearchByVectorFiltered(ctx, emb, limit, req.Sources, req.SourceTypes)
+		} else {
+			frags, searchErr = e.store.SearchByVector(ctx, emb, limit)
+		}
+		if searchErr != nil {
+			return model.Message{}, nil, nil, fmt.Errorf("vector search: %w", searchErr)
+		}
+		if len(frags) > 0 {
+			resultLists = append(resultLists, rankedList(frags))
+		}
+	}
+
+	// Step 5: BM25 keyword search for each query.
+	for _, q := range allQueries {
+		var frags []model.SourceFragment
+		var searchErr error
+		if hasFilters {
+			frags, searchErr = e.store.SearchByFTSFiltered(ctx, q, limit, req.Sources, req.SourceTypes)
+		} else {
+			frags, searchErr = e.store.SearchByFTS(ctx, q, limit)
+		}
+		if searchErr != nil {
+			if e.logger != nil {
+				e.logger.Warn("BM25 search failed, continuing without", "error", searchErr)
+			}
+			continue
+		}
+		if len(frags) > 0 {
+			resultLists = append(resultLists, rankedList(frags))
+		}
+	}
+
+	// Step 6: Merge all result lists via RRF.
+	fragments := mergeRRF(resultLists, limit)
+
+	return lastMsg, allEmbeddings[0], fragments, nil
 }
 
 // Query processes a query request and streams the answer.

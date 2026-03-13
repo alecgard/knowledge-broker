@@ -137,6 +137,7 @@ type QueryRequest struct {
 	Mode     string    `json:"mode,omitempty"`    // "raw" for raw retrieval without LLM synthesis
 	Sources     []string `json:"sources,omitempty"`      // filter results to these source names
 	SourceTypes []string `json:"source_types,omitempty"` // filter results to these source types (e.g., "git", "confluence")
+	NoExpand    bool     `json:"no_expand,omitempty"`    // skip multi-query expansion
 }
 
 // Answer is the response from the query engine.

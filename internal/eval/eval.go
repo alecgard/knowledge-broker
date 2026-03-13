@@ -199,16 +199,31 @@ type Summary struct {
 	System             *SystemInfo          `json:"system,omitempty"`
 }
 
+// QueryEngine is the interface for retrieval and answer generation during eval.
+// When set on the Runner, eval uses the same query path as users.
+type QueryEngine interface {
+	QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error)
+	Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error)
+}
+
 // Runner executes evaluation against the store using the embedder.
 type Runner struct {
 	store    store.Store
 	embedder embedding.Embedder
+	engine   QueryEngine
 }
 
 // NewRunner creates a new evaluation runner.
 func NewRunner(s store.Store, e embedding.Embedder) *Runner {
 	return &Runner{store: s, embedder: e}
 }
+
+// SetQueryEngine enables hybrid retrieval and answer generation during eval.
+// When set, evals use the same query pipeline as users (expansion + BM25 + vector + RRF).
+func (r *Runner) SetQueryEngine(engine QueryEngine) {
+	r.engine = engine
+}
+
 
 // LoadTestSet reads and parses a test set JSON file.
 func LoadTestSet(path string) ([]TestCase, error) {
@@ -249,16 +264,47 @@ func (r *Runner) Run(ctx context.Context, cases []TestCase, limit int) (*Summary
 }
 
 func (r *Runner) evalOne(ctx context.Context, tc TestCase, limit int) (*Result, error) {
-	// Embed the query.
-	queryEmb, err := r.embedder.Embed(ctx, tc.Query)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+	req := model.QueryRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: tc.Query}},
+		Limit:    limit,
+		Concise:  true,
 	}
 
-	// Search for relevant fragments.
-	fragments, err := r.store.SearchByVector(ctx, queryEmb, limit)
-	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+	// Retrieve fragments — use the engine (full hybrid pipeline) when available,
+	// otherwise fall back to direct vector search.
+	var fragments []model.SourceFragment
+	if r.engine != nil {
+		raw, err := r.engine.QueryRaw(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("retrieve: %w", err)
+		}
+		// Convert RawFragments back to SourceFragments for metric computation.
+		for _, rf := range raw.Fragments {
+			fragments = append(fragments, model.SourceFragment{
+				ID:              rf.FragmentID,
+				RawContent:      rf.Content,
+				EnrichedContent: rf.EnrichedContent,
+				SourcePath:      rf.SourcePath,
+				SourceURI:       rf.SourceURI,
+				SourceName:      rf.SourceName,
+				SourceType:      rf.SourceType,
+				FileType:        rf.FileType,
+				ContentDate:     rf.ContentDate,
+				IngestedAt:      rf.IngestedAt,
+				Author:          rf.Author,
+				ConfidenceAdj:   rf.Confidence.Overall,
+			})
+		}
+	} else {
+		queryEmb, err := r.embedder.Embed(ctx, tc.Query)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		var searchErr error
+		fragments, searchErr = r.store.SearchByVector(ctx, queryEmb, limit)
+		if searchErr != nil {
+			return nil, fmt.Errorf("search: %w", searchErr)
+		}
 	}
 
 	// Collect retrieved source paths.

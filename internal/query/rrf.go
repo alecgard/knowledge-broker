@@ -43,7 +43,10 @@ func mergeRRF(lists []rankedList, limit int) []model.SourceFragment {
 		entries = append(entries, scored{id, s})
 	}
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].score > entries[j].score
+		if entries[i].score != entries[j].score {
+			return entries[i].score > entries[j].score
+		}
+		return entries[i].id < entries[j].id // stable tiebreaker
 	})
 
 	if len(entries) > limit {

@@ -312,7 +312,7 @@ func (s *SQLiteStore) SearchByVector(ctx context.Context, embedding []float32, l
 		FROM fragment_embeddings fe
 		INNER JOIN fragments f ON f.id = fe.fragment_id
 		WHERE fe.embedding MATCH ? AND k = ?
-		ORDER BY fe.distance
+		ORDER BY fe.distance, f.id
 	`, serializeEmbedding(embedding), limit)
 	if err != nil {
 		return nil, fmt.Errorf("search by vector: %w", err)
@@ -360,7 +360,7 @@ func (s *SQLiteStore) SearchByVectorFiltered(ctx context.Context, embedding []fl
 		INNER JOIN fragments f ON f.id = fe.fragment_id
 		WHERE fe.embedding MATCH ? AND k = ?
 		  AND %s
-		ORDER BY fe.distance
+		ORDER BY fe.distance, f.id
 		LIMIT ?
 	`, filterSQL)
 	args = append(args, limit)
@@ -418,7 +418,7 @@ func (s *SQLiteStore) SearchByFTS(ctx context.Context, query string, limit int) 
 		FROM fragment_fts fts
 		INNER JOIN fragments f ON f.id = fts.fragment_id
 		WHERE fragment_fts MATCH ?
-		ORDER BY fts.rank
+		ORDER BY fts.rank, f.id
 		LIMIT ?
 	`, sanitized, limit)
 	if err != nil {
@@ -484,7 +484,7 @@ func (s *SQLiteStore) SearchByFTSFiltered(ctx context.Context, query string, lim
 		FROM fragment_fts fts
 		INNER JOIN fragments f ON f.id = fts.fragment_id
 		WHERE fragment_fts MATCH ? AND %s
-		ORDER BY fts.rank
+		ORDER BY fts.rank, f.id
 		LIMIT ?
 	`, filterSQL)
 

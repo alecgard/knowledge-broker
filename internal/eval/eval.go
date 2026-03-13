@@ -840,18 +840,45 @@ type ResultsSummary struct {
 	CategoryBreakdowns []CategoryBreakdown `json:"categories"`
 }
 
+// r2 rounds a float to 2 decimal places.
+func r2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// roundCategory returns a copy of cb with all float fields rounded to 2 decimal places.
+func roundCategory(cb CategoryBreakdown) CategoryBreakdown {
+	cb.RecallAt5 = r2(cb.RecallAt5)
+	cb.RecallAt10 = r2(cb.RecallAt10)
+	cb.RecallAt20 = r2(cb.RecallAt20)
+	cb.PrecisionAt5 = r2(cb.PrecisionAt5)
+	cb.PrecisionAt10 = r2(cb.PrecisionAt10)
+	cb.PrecisionAt20 = r2(cb.PrecisionAt20)
+	cb.MRR = r2(cb.MRR)
+	cb.HitAt1 = r2(cb.HitAt1)
+	cb.HitAt3 = r2(cb.HitAt3)
+	cb.HitAt5 = r2(cb.HitAt5)
+	cb.AvgFreshness = r2(cb.AvgFreshness)
+	cb.AvgConfidence = r2(cb.AvgConfidence)
+	return cb
+}
+
 // SaveResultsSummary writes a compact summary alongside the full results.
+// All float values are rounded to 2 decimal places to reduce noisy diffs.
 func SaveResultsSummary(summary *Summary, path string) error {
+	cats := make([]CategoryBreakdown, len(summary.CategoryBreakdowns))
+	for i, cb := range summary.CategoryBreakdowns {
+		cats[i] = roundCategory(cb)
+	}
 	s := ResultsSummary{
 		Timestamp:          summary.Timestamp,
 		TestCount:          len(summary.Results),
-		HitAt1:             summary.HitAt1,
-		HitAt3:             summary.HitAt3,
-		HitAt5:             summary.HitAt5,
-		MRR:                summary.MRR,
-		RecallAt5:          summary.RecallAt5,
-		AvgConfidence:      summary.AvgConfidence,
-		CategoryBreakdowns: summary.CategoryBreakdowns,
+		HitAt1:             r2(summary.HitAt1),
+		HitAt3:             r2(summary.HitAt3),
+		HitAt5:             r2(summary.HitAt5),
+		MRR:                r2(summary.MRR),
+		RecallAt5:          r2(summary.RecallAt5),
+		AvgConfidence:      r2(summary.AvgConfidence),
+		CategoryBreakdowns: cats,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

@@ -1333,6 +1333,10 @@ func evalCmd() *cobra.Command {
 				} else {
 					fmt.Fprintf(os.Stderr, "Results saved to %s\n", resultsPath)
 				}
+				summaryPath := strings.TrimSuffix(resultsPath, ".json") + "-summary.json"
+				if err := eval.SaveResultsSummary(summary, summaryPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not save results summary: %v\n", err)
+				}
 			}
 
 			return nil

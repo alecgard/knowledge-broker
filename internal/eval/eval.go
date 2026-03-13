@@ -827,6 +827,42 @@ func SaveResults(summary *Summary, path string) error {
 	return nil
 }
 
+// ResultsSummary is a compact view of eval results for quick review.
+type ResultsSummary struct {
+	Timestamp          string              `json:"timestamp"`
+	TestCount          int                 `json:"test_count"`
+	HitAt1             float64             `json:"hit_at_1"`
+	HitAt3             float64             `json:"hit_at_3"`
+	HitAt5             float64             `json:"hit_at_5"`
+	MRR                float64             `json:"mrr"`
+	RecallAt5          float64             `json:"recall_at_5"`
+	AvgConfidence      float64             `json:"avg_confidence"`
+	CategoryBreakdowns []CategoryBreakdown `json:"categories"`
+}
+
+// SaveResultsSummary writes a compact summary alongside the full results.
+func SaveResultsSummary(summary *Summary, path string) error {
+	s := ResultsSummary{
+		Timestamp:          summary.Timestamp,
+		TestCount:          len(summary.Results),
+		HitAt1:             summary.HitAt1,
+		HitAt3:             summary.HitAt3,
+		HitAt5:             summary.HitAt5,
+		MRR:                summary.MRR,
+		RecallAt5:          summary.RecallAt5,
+		AvgConfidence:      summary.AvgConfidence,
+		CategoryBreakdowns: summary.CategoryBreakdowns,
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal results summary: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write results summary: %w", err)
+	}
+	return nil
+}
+
 // LoadResults reads a previously saved summary from a JSON file.
 func LoadResults(path string) (*Summary, error) {
 	data, err := os.ReadFile(path)

@@ -2,7 +2,7 @@ BINARY := kb
 VERSION := 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean test lint run-ingest run-serve run-mcp eval
+.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched
 
 ## Build
 

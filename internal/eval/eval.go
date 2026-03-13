@@ -11,7 +11,10 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,6 +94,86 @@ type CategoryBreakdown struct {
 	AvgConfidence float64 `json:"avg_confidence"`
 }
 
+// SystemInfo captures the machine details for reproducibility of timing data.
+type SystemInfo struct {
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	NumCPU    int    `json:"num_cpu"`
+	MemoryGB  int    `json:"memory_gb"`
+	GPU       string `json:"gpu,omitempty"`
+	GoVersion string `json:"go_version"`
+}
+
+// GetSystemInfo returns the current system information.
+func GetSystemInfo() SystemInfo {
+	info := SystemInfo{
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		NumCPU:    runtime.NumCPU(),
+		GoVersion: runtime.Version(),
+	}
+	info.MemoryGB = detectMemoryGB()
+	info.GPU = detectGPU()
+	return info
+}
+
+// detectMemoryGB returns total system memory in GB.
+func detectMemoryGB() int {
+	switch runtime.GOOS {
+	case "darwin":
+		out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+		if err == nil {
+			if bytes, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); err == nil {
+				return int(bytes / (1024 * 1024 * 1024))
+			}
+		}
+	case "linux":
+		data, err := os.ReadFile("/proc/meminfo")
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "MemTotal:") {
+					fields := strings.Fields(line)
+					if len(fields) >= 2 {
+						if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+							return int(kb / (1024 * 1024))
+						}
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// detectGPU returns the GPU/chip name if available.
+func detectGPU() string {
+	switch runtime.GOOS {
+	case "darwin":
+		out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output()
+		if err == nil {
+			brand := strings.TrimSpace(string(out))
+			// Apple Silicon reports generic brand; get chip name instead.
+			if strings.Contains(brand, "Apple") {
+				chip, err := exec.Command("system_profiler", "SPHardwareDataType").Output()
+				if err == nil {
+					for _, line := range strings.Split(string(chip), "\n") {
+						if strings.Contains(line, "Chip:") {
+							return strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+						}
+					}
+				}
+			}
+			return brand
+		}
+	case "linux":
+		out, err := exec.Command("nvidia-smi", "--query-gpu=name", "--format=csv,noheader").Output()
+		if err == nil {
+			return strings.TrimSpace(string(out))
+		}
+	}
+	return ""
+}
+
 // Summary holds the overall evaluation results.
 type Summary struct {
 	Results           []Result             `json:"results"`
@@ -111,7 +194,9 @@ type Summary struct {
 	Chunking           *ChunkingStats       `json:"chunking,omitempty"`
 	EnrichmentModel    string               `json:"enrichment_model,omitempty"`
 	EnrichmentVersion  string               `json:"enrichment_version,omitempty"`
+	EnrichmentTimeMS   int64                `json:"enrichment_time_ms,omitempty"`
 	EmbeddingModel     string               `json:"embedding_model,omitempty"`
+	System             *SystemInfo          `json:"system,omitempty"`
 }
 
 // Runner executes evaluation against the store using the embedder.

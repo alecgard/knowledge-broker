@@ -82,11 +82,12 @@ func (p *Pipeline) SetEnrichment(cfg EnrichmentConfig) {
 
 // Result summarises an ingestion run.
 type Result struct {
-	Added   int
-	Updated int
-	Deleted int
-	Skipped int
-	Errors  int
+	Added           int
+	Updated         int
+	Deleted         int
+	Skipped         int
+	Errors          int
+	EnrichmentTimeMS int64
 }
 
 // Run executes the ingestion pipeline for a connector.
@@ -139,7 +140,9 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, 
 		if len(fragments) > 0 {
 			// Per-batch phasing: enrich all chunks first, then embed all chunks.
 			if p.enrichment != nil {
+				enrichStart := time.Now()
 				p.enrichBatch(ctx, fragments)
+				result.EnrichmentTimeMS += time.Since(enrichStart).Milliseconds()
 			}
 
 			if err := p.embedBatch(ctx, fragments); err != nil {

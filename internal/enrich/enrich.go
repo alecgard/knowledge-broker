@@ -21,9 +21,20 @@ import (
 
 const (
 	defaultBaseURL = "http://localhost:11434"
-	// PromptVersion is bumped when the enrichment prompt changes meaningfully.
-	PromptVersion = "v1"
 )
+
+// Supported prompt versions.
+const (
+	PromptV1 = "v1" // full rewrite: resolve pronouns, inject context
+	PromptV2 = "v2" // append-only: keep original text, append resolved entities and keywords
+
+	// DefaultPromptVersion is the default when none is specified.
+	DefaultPromptVersion = PromptV2
+)
+
+// PromptVersion is the currently active prompt version. It is set by the CLI
+// based on --prompt-version flag, and used for cache keying and metadata.
+var PromptVersion = DefaultPromptVersion
 
 // Enricher rewrites chunks to be self-contained using an LLM.
 type Enricher interface {
@@ -37,20 +48,25 @@ type Enricher interface {
 
 // OllamaEnricher implements Enricher using the Ollama chat API.
 type OllamaEnricher struct {
-	baseURL    string
-	model      string
-	httpClient *http.Client
-	logger     *slog.Logger
+	baseURL       string
+	model         string
+	promptVersion string
+	httpClient    *http.Client
+	logger        *slog.Logger
 }
 
 // NewOllamaEnricher creates an enricher backed by Ollama.
-func NewOllamaEnricher(baseURL, model string, httpClient *http.Client, logger *slog.Logger) *OllamaEnricher {
+func NewOllamaEnricher(baseURL, model, promptVersion string, httpClient *http.Client, logger *slog.Logger) *OllamaEnricher {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
 	if model == "" {
 		panic("enrich: model must be provided (set KB_ENRICH_MODEL or pass --enrich-model)")
 	}
+	if promptVersion == "" {
+		promptVersion = DefaultPromptVersion
+	}
+	PromptVersion = promptVersion
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -58,19 +74,31 @@ func NewOllamaEnricher(baseURL, model string, httpClient *http.Client, logger *s
 		logger = slog.Default()
 	}
 	return &OllamaEnricher{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		model:      model,
-		httpClient: httpClient,
-		logger:     logger,
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		model:         model,
+		promptVersion: promptVersion,
+		httpClient:    httpClient,
+		logger:        logger,
 	}
 }
 
 func (e *OllamaEnricher) Model() string { return e.model }
 
-func (e *OllamaEnricher) Enrich(ctx context.Context, chunk model.Chunk, prev, next []model.Chunk) (string, error) {
-	prompt := buildEnrichmentPrompt(chunk, prev, next)
+// maxOutputTokens returns the max output token limit for the prompt version.
+// v2 (annotations) needs far fewer tokens than full rewrites.
+func maxOutputTokens(version string) int {
+	switch version {
+	case PromptV2:
+		return 128 // short entity/keyword annotations only
+	default:
+		return 512 // full rewrite; caps runaway generation
+	}
+}
 
-	resp, err := e.generate(ctx, prompt)
+func (e *OllamaEnricher) Enrich(ctx context.Context, chunk model.Chunk, prev, next []model.Chunk) (string, error) {
+	prompt := buildEnrichmentPrompt(e.promptVersion, chunk, prev, next)
+
+	resp, err := e.generate(ctx, prompt, maxOutputTokens(e.promptVersion))
 	if err != nil {
 		return "", fmt.Errorf("enrich: %w", err)
 	}
@@ -79,10 +107,25 @@ func (e *OllamaEnricher) Enrich(ctx context.Context, chunk model.Chunk, prev, ne
 	if resp == "" {
 		return chunk.Content, nil
 	}
+
+	// For append-only prompts, prepend the original content.
+	if e.promptVersion == PromptV2 {
+		return chunk.Content + "\n\n" + resp, nil
+	}
+
 	return resp, nil
 }
 
-func buildEnrichmentPrompt(chunk model.Chunk, prev, next []model.Chunk) string {
+func buildEnrichmentPrompt(version string, chunk model.Chunk, prev, next []model.Chunk) string {
+	switch version {
+	case PromptV2:
+		return buildPromptV2(chunk, prev, next)
+	default:
+		return buildPromptV1(chunk, prev, next)
+	}
+}
+
+func buildPromptV1(chunk model.Chunk, prev, next []model.Chunk) string {
 	var b strings.Builder
 
 	b.WriteString("You are a text enrichment tool. Your job is to rewrite the TARGET PASSAGE so it is fully self-contained.\n\n")
@@ -117,11 +160,53 @@ func buildEnrichmentPrompt(chunk model.Chunk, prev, next []model.Chunk) string {
 	return b.String()
 }
 
+func buildPromptV2(chunk model.Chunk, prev, next []model.Chunk) string {
+	var b strings.Builder
+
+	b.WriteString("You are a text annotation tool. Given a TARGET PASSAGE and its surrounding CONTEXT, output a brief annotation block to append after the passage.\n\n")
+	b.WriteString("Rules:\n")
+	b.WriteString("- List key entities mentioned or referenced (including by pronoun) with their roles/descriptions from the CONTEXT.\n")
+	b.WriteString("- List 3-5 search keywords or synonyms that someone might use to find this passage.\n")
+	b.WriteString("- Do NOT rewrite or repeat the passage.\n")
+	b.WriteString("- Do NOT add information not in the CONTEXT or TARGET.\n")
+	b.WriteString("- Use this exact format:\n")
+	b.WriteString("  [Entities: Name1 (role), Name2 (role), ...]\n")
+	b.WriteString("  [Keywords: keyword1, keyword2, ...]\n\n")
+
+	if len(prev) > 0 {
+		b.WriteString("PRECEDING CONTEXT:\n")
+		for _, p := range prev {
+			b.WriteString(p.Content)
+			b.WriteString("\n\n")
+		}
+	}
+
+	b.WriteString("TARGET PASSAGE:\n")
+	b.WriteString(chunk.Content)
+	b.WriteString("\n\n")
+
+	if len(next) > 0 {
+		b.WriteString("FOLLOWING CONTEXT:\n")
+		for _, n := range next {
+			b.WriteString(n.Content)
+			b.WriteString("\n\n")
+		}
+	}
+
+	b.WriteString("Annotation:")
+	return b.String()
+}
+
 // ollamaChatRequest is the JSON body for the Ollama chat API.
 type ollamaChatRequest struct {
 	Model    string            `json:"model"`
 	Messages []ollamaChatMsg   `json:"messages"`
 	Stream   bool              `json:"stream"`
+	Options  *ollamaOptions    `json:"options,omitempty"`
+}
+
+type ollamaOptions struct {
+	NumPredict int `json:"num_predict,omitempty"` // max output tokens
 }
 
 type ollamaChatMsg struct {
@@ -136,13 +221,16 @@ type ollamaChatResponse struct {
 	Done bool `json:"done"`
 }
 
-func (e *OllamaEnricher) generate(ctx context.Context, prompt string) (string, error) {
+func (e *OllamaEnricher) generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
 	reqBody := ollamaChatRequest{
 		Model: e.model,
 		Messages: []ollamaChatMsg{
 			{Role: "user", Content: prompt},
 		},
 		Stream: false,
+	}
+	if maxTokens > 0 {
+		reqBody.Options = &ollamaOptions{NumPredict: maxTokens}
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)

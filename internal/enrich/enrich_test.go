@@ -81,7 +81,7 @@ func TestBuildEnrichmentPrompt(t *testing.T) {
 		{Content: "The team agreed."},
 	}
 
-	prompt := buildEnrichmentPrompt(chunk, prev, next)
+	prompt := buildEnrichmentPrompt(PromptV1, chunk, prev, next)
 
 	if !strings.Contains(prompt, "TARGET PASSAGE:") {
 		t.Error("prompt should contain TARGET PASSAGE header")
@@ -105,3 +105,23 @@ func TestPromptVersion(t *testing.T) {
 		t.Error("PromptVersion should not be empty")
 	}
 }
+
+func TestBuildPromptV2(t *testing.T) {
+	chunk := model.Chunk{Content: "He proposed adding a circuit breaker."}
+	prev := []model.Chunk{
+		{Content: "Marcus Rivera is the backend engineer."},
+	}
+
+	prompt := buildEnrichmentPrompt(PromptV2, chunk, prev, nil)
+
+	if !strings.Contains(prompt, "annotation tool") {
+		t.Error("v2 prompt should mention annotation tool")
+	}
+	if !strings.Contains(prompt, "Annotation:") {
+		t.Error("v2 prompt should end with Annotation:")
+	}
+	if !strings.Contains(prompt, "circuit breaker") {
+		t.Error("v2 prompt should contain the chunk content")
+	}
+}
+

@@ -103,14 +103,14 @@ func newEmbedder(cfg config.Config, client *http.Client) *embedding.OllamaEmbedd
 }
 
 // configureEnrichment sets up enrichment on a pipeline if not skipped.
-func configureEnrichment(pipeline *ingest.Pipeline, cfg config.Config, client *http.Client, logger *slog.Logger, skipEnrichment bool, enrichModel string) {
+func configureEnrichment(pipeline *ingest.Pipeline, cfg config.Config, client *http.Client, logger *slog.Logger, skipEnrichment bool, enrichModel string, promptVersion string) {
 	if skipEnrichment {
 		return
 	}
 	if enrichModel == "" {
 		enrichModel = cfg.EnrichModel
 	}
-	enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, client, logger)
+	enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, promptVersion, client, logger)
 	pipeline.SetEnrichment(ingest.EnrichmentConfig{
 		Enricher: enricher,
 	})
@@ -234,6 +234,7 @@ func ingestCmd() *cobra.Command {
 			skipEnrichment, _ := cmd.Flags().GetBool("skip-enrichment")
 			enrichModel, _ := cmd.Flags().GetString("enrich-model")
 			reEnrich, _ := cmd.Flags().GetBool("re-enrich")
+			promptVersion, _ := cmd.Flags().GetString("prompt-version")
 
 			if all && remote != "" {
 				return fmt.Errorf("--all and --remote cannot be combined")
@@ -264,7 +265,7 @@ func ingestCmd() *cobra.Command {
 				if err := emb.CheckHealth(ctx); err != nil {
 					return err
 				}
-				enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, client, logger)
+				enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, promptVersion, client, logger)
 
 				// Determine which source names to re-enrich.
 				var sourceNames []string
@@ -341,7 +342,7 @@ func ingestCmd() *cobra.Command {
 							fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
+							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnBatchDone = makeBatchFunc()
 							r, err := pipeline.Run(ctx, conn)
@@ -376,7 +377,7 @@ func ingestCmd() *cobra.Command {
 						fmt.Fprintf(os.Stderr, "Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
+						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
@@ -541,7 +542,7 @@ func ingestCmd() *cobra.Command {
 
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
+						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn)
@@ -589,7 +590,7 @@ func ingestCmd() *cobra.Command {
 
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
+					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					pipeline.OnBatchDone = makeBatchFunc()
 					r, err := pipeline.Run(ctx, conn)
@@ -631,7 +632,7 @@ func ingestCmd() *cobra.Command {
 				}
 				fmt.Fprintln(os.Stderr, "Watching for changes... (press Ctrl+C to stop)")
 				watchPipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-				configureEnrichment(watchPipeline, cfg, client, logger, skipEnrichment, enrichModel)
+				configureEnrichment(watchPipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 				watcher := ingest.NewWatcher(watchPipeline, logger)
 				return watcher.Watch(ctx, watchPaths)
 			}
@@ -653,6 +654,7 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment (faster ingestion)")
 	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
 	cmd.Flags().Bool("re-enrich", false, "Re-run enrichment on already-ingested chunks, then re-embed")
+	cmd.Flags().String("prompt-version", "", "Enrichment prompt version: v1 (full rewrite), v2 (append keywords)")
 	return cmd
 }
 
@@ -1198,6 +1200,7 @@ func evalCmd() *cobra.Command {
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			skipEnrichment, _ := cmd.Flags().GetBool("skip-enrichment")
 			enrichModel, _ := cmd.Flags().GetString("enrich-model")
+			promptVersion, _ := cmd.Flags().GetString("prompt-version")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
@@ -1217,6 +1220,7 @@ func evalCmd() *cobra.Command {
 			defer cancel()
 
 			// Optionally ingest the eval corpus first.
+			var enrichTimeMS int64
 			if doIngest {
 				absCorpus, err := filepath.Abs(corpusPath)
 				if err != nil {
@@ -1226,7 +1230,7 @@ func evalCmd() *cobra.Command {
 
 				reg := newExtractorRegistry(cfg)
 				pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-				configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel)
+				configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 				conn := connector.NewFilesystemConnector(absCorpus)
 
 				result, err := pipeline.Run(ctx, conn)
@@ -1235,6 +1239,10 @@ func evalCmd() *cobra.Command {
 				}
 				fmt.Fprintf(os.Stderr, "Ingested: %d added, %d deleted, %d skipped, %d errors\n",
 					result.Added, result.Deleted, result.Skipped, result.Errors)
+				enrichTimeMS = result.EnrichmentTimeMS
+				if enrichTimeMS > 0 {
+					fmt.Fprintf(os.Stderr, "Enrichment time: %dms (%.1fs)\n", enrichTimeMS, float64(enrichTimeMS)/1000)
+				}
 			}
 
 			noSave, _ := cmd.Flags().GetBool("no-save")
@@ -1252,6 +1260,10 @@ func evalCmd() *cobra.Command {
 					resultsFile = fmt.Sprintf("results-enriched-%s.json", enrichModel)
 				} else {
 					resultsFile = "results-enriched.json"
+				}
+				// Include prompt version in filename only when explicitly overridden.
+				if promptVersion != "" {
+					resultsFile = strings.TrimSuffix(resultsFile, ".json") + "-" + promptVersion + ".json"
 				}
 			}
 			resultsPath := filepath.Join(filepath.Dir(testsetPath), resultsFile)
@@ -1283,11 +1295,14 @@ func evalCmd() *cobra.Command {
 				summary.Chunking = chunkStats
 			}
 
-			// Populate enrichment and embedding metadata.
+			// Populate enrichment, embedding, and system metadata.
 			summary.EmbeddingModel = cfg.EmbeddingModel
+			sysInfo := eval.GetSystemInfo()
+			summary.System = &sysInfo
 			if !skipEnrichment {
 				summary.EnrichmentModel = effectiveEnrichModel
 				summary.EnrichmentVersion = enrich.PromptVersion
+				summary.EnrichmentTimeMS = enrichTimeMS
 			}
 
 			if jsonOutput {
@@ -1318,6 +1333,7 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Bool("no-save", false, "Do not save results to results.json")
 	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment during eval ingestion")
 	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
+	cmd.Flags().String("prompt-version", "", "Enrichment prompt version: v1 (full rewrite), v2 (append keywords)")
 	return cmd
 }
 

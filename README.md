@@ -1,10 +1,15 @@
 # Knowledge Broker
 
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License](https://img.shields.io/badge/License-BSL_1.1-blue)](LICENSE)
+
 > **Pre-release** — under active development. APIs and defaults may change.
 
-A knowledge engine that gives AI agents reliable, structured access to your team's knowledge. Connect it to your repos, docs, and knowledge bases — agents can query it over MCP or HTTP and get back answers with confidence signals, so they know when to act, when to hedge, and when to escalate.
+Knowledge Broker is an open-source CLI tool for team knowledge retrieval, built in Go with SQLite. It provides hybrid search (BM25 + vector) over ingested documents, an MCP server for integration with AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
 
-Works equally well as a human-facing tool.
+Zero infrastructure. Self-hosted. No data leaves your environment.
+
+**[Documentation](https://knowledgebroker.dev)** | **[Getting Started](https://knowledgebroker.dev/quickstart/)** | **[Architecture](https://knowledgebroker.dev/architecture/)**
 
 ```jsonc
 $ kb query "What database does the inventory service use and what port does it run on?"
@@ -44,7 +49,7 @@ Agents receive the same structured JSON response shown above — a synthesised a
 
 Raw mode is also available for cases where you want fragments without synthesis — useful for debugging retrieval, feeding a separate pipeline, or when no API key is configured. Pass `raw=true` to the `query` tool, or use `--raw` on the CLI.
 
-See [docs/mcp.md](docs/mcp.md) for full setup and tool reference.
+See [MCP Server](https://knowledgebroker.dev/mcp/) for full setup and tool reference.
 
 KB also exposes a `kb-instructions` prompt that teaches agents when and how to query it — including a dynamically generated list of available sources with descriptions. MCP clients that support prompts will pick this up automatically.
 
@@ -96,7 +101,7 @@ curl -X POST localhost:8080/v1/query \
 
 ## How it works
 
-1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki — see [docs/connectors.md](docs/connectors.md))
+1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki — see [Connectors](https://knowledgebroker.dev/connectors/))
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Enrichment** (optional) annotates chunks with entities and keywords using a local LLM
 4. **Embeddings** (via Ollama) convert chunks to vectors; raw text is indexed with FTS5 for keyword search
@@ -136,7 +141,7 @@ kb ingest --source ./repo-a --source ./repo-b                             # mult
 kb ingest --all                                                           # re-ingest all registered local sources
 ```
 
-Connectors are also available for Confluence, Slack, and GitHub Wiki. See [docs/connectors.md](docs/connectors.md) for setup instructions.
+Connectors are also available for Confluence, Slack, and GitHub Wiki. See [Connectors](https://knowledgebroker.dev/connectors/) for setup instructions.
 
 Ingestion is incremental — unchanged files are skipped based on checksums.
 
@@ -200,7 +205,7 @@ kb mcp --addr :9090     # stdio + SSE on custom port
 
 The SSE endpoint is available at `http://<addr>/sse` and accepts messages at `http://<addr>/message`.
 
-Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM synthesis. See [docs/mcp.md](docs/mcp.md) for setup and tool reference.
+Exposes tools: `query`, `list-sources`. Synthesis is the default; pass `raw=true` for retrieval without LLM synthesis. See [MCP Server](https://knowledgebroker.dev/mcp/) for setup and tool reference.
 
 ### `kb sources list`
 
@@ -233,7 +238,7 @@ kb eval --db eval.db --corpus eval/corpus --ingest  # ingest corpus first
 kb eval --db eval.db --json                        # structured output
 ```
 
-Reports recall@K, precision@K, MRR, and chunking statistics. See [docs/eval.md](docs/eval.md) for details.
+Reports recall@K, precision@K, MRR, and chunking statistics. See [Evaluation](https://knowledgebroker.dev/eval/) for details.
 
 ## Configuration
 
@@ -254,7 +259,7 @@ Copy `.env.example` to `.env` and fill in your values. Environment variables als
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
 | `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
 
-Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [docs/connectors.md](docs/connectors.md).
+Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [Connectors](https://knowledgebroker.dev/connectors/).
 
 ## Architecture
 
@@ -325,7 +330,7 @@ KB is designed to be useful with only Ollama (local, free). An Anthropic API key
 
 Without an API key, queries run in raw mode by default — you get ranked fragments with metadata and confidence scores, but no synthesised answer or query expansion. Multi-query expansion and synthesis are the only features that require an external API.
 
-See [knowledge-broker.md](knowledge-broker.md) for the full spec and design decisions.
+See the [full documentation](https://knowledgebroker.dev) for architecture details, connector setup, and the evaluation framework.
 
 ## License
 

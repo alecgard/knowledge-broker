@@ -2,7 +2,7 @@ BINARY := kb
 VERSION := 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched
+.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched docs
 
 ## Build
 
@@ -90,6 +90,14 @@ eval-enriched:
 	CGO_CFLAGS="-Wno-deprecated-declarations" go run -tags sqlite_fts5 ./cmd/kb eval --db eval.db --testset eval/testset.json --ingest --corpus eval/corpus $(if $(ENRICH_MODEL),--enrich-model $(ENRICH_MODEL),)
 	@rm -f eval.db eval.db-shm eval.db-wal
 
+## Docs
+
+docs:
+	mkdocs serve
+
+docs-build:
+	mkdocs build
+
 ## Dependencies
 
 deps:
@@ -111,3 +119,5 @@ help:
 	@echo "  make run-serve    Build and start HTTP server"
 	@echo "  make run-mcp      Build and start MCP server"
 	@echo "  make eval         Ingest eval corpus and run evaluation"
+	@echo "  make docs         Serve docs site locally (localhost:8000)"
+	@echo "  make docs-build   Build docs site to site/"

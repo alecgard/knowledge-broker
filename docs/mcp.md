@@ -1,3 +1,7 @@
+---
+description: Set up the Knowledge Broker MCP server for Claude Code and other MCP clients. Stdio and SSE transports for local and team use.
+---
+
 # MCP Server
 
 Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. Both stdio and SSE transports run simultaneously.

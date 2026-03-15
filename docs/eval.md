@@ -1,3 +1,7 @@
+---
+description: Measure retrieval quality with Knowledge Broker's evaluation framework. Recall, precision, MRR metrics across test categories.
+---
+
 # Evaluation Framework
 
 A repeatable eval harness for measuring retrieval quality. Run evals before and after changes to chunking, embedding models, or prompts.

@@ -1,3 +1,7 @@
+---
+description: Connect Knowledge Broker to Git repos, Confluence, Slack, and GitHub Wiki. Setup instructions and authentication for each source type.
+---
+
 # Connectors
 
 KB uses pluggable connectors to ingest content from different sources. Each connector scans a source, produces documents, and supports incremental re-ingestion via checksums.

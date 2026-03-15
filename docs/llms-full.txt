@@ -1,0 +1,941 @@
+# Knowledge Broker — Complete Documentation
+
+Source: https://knowledgebroker.dev
+Generated: 2026-03-15
+
+
+# Knowledge Broker
+
+Knowledge Broker is an open-source CLI tool for team knowledge retrieval, built in Go with SQLite. It provides hybrid search (BM25 + vector) over ingested documents, an MCP server for integration with AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
+
+## Why Knowledge Broker
+
+Teams accumulate knowledge across repos, wikis, Confluence, Slack, and local docs. When someone asks a question, the answer exists — scattered across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where the sources disagree.
+
+**Zero infrastructure.** SQLite for storage, Ollama for embeddings. No Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file.
+
+**Self-hosted and private.** Your data never leaves your environment. Embeddings run locally via Ollama. The only external call is to Claude for answer synthesis — and that's optional. Raw mode gives you ranked fragments with confidence scores using only local compute.
+
+**Built for AI agents.** The MCP server gives agents structured access to your knowledge base. Agents receive confidence scores they can branch on — answering confidently above 0.85, hedging between 0.6–0.85, or escalating contradictions to the user below 0.6.
+
+**Contradictions are surfaced, not hidden.** When sources disagree, Knowledge Broker flags the contradiction explicitly. Agents and humans can decide what to do with ambiguity rather than receiving false certainty.
+
+## What it looks like
+
+```jsonc
+$ kb query "What database does the inventory service use?"
+{
+  "answer": "The inventory service uses PostgreSQL (v16 on RDS, r6g.2xlarge).",
+  "confidence": {
+    "overall": 0.93,
+    "breakdown": {
+      "freshness": 0.94,
+      "corroboration": 0.85,
+      "consistency": 1.00,
+      "authority": 0.95
+    }
+  },
+  "sources": [
+    { "source_type": "confluence", "source_name": "ACME", "source_path": "Internal Services" },
+    { "source_type": "slack", "source_name": "acme", "source_path": "#platform-engineering/2026-03-06" }
+  ],
+  "contradictions": []
+}
+```
+
+The answer is synthesised from Confluence docs and Slack history. Every response includes a confidence breakdown and source attribution.
+
+## Who it's for
+
+- **Engineering teams** that want a shared, queryable knowledge base across repos, docs, and chat history
+- **AI agent builders** who need structured knowledge retrieval with confidence signals
+- **Teams using Claude Code** who want a shared MCP knowledge server
+- **Anyone** who wants local-first, private knowledge retrieval without SaaS dependencies
+
+## Get started
+
+Install and run your first query in under 5 minutes: [Getting Started](quickstart.md)
+
+## How it works
+
+1. **[Connectors](connectors.md)** pull content from sources — local filesystem, Git, Confluence, Slack, GitHub Wiki
+2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
+3. **Embeddings** via Ollama convert chunks to vectors; raw text is indexed with FTS5 for keyword search
+4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
+5. **[Confidence signals](architecture.md)** assess trust across four dimensions — freshness, corroboration, consistency, authority
+6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
+
+Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
+
+## License
+
+[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE) — free to use and self-host. Converts to Apache 2.0 after 4 years.
+
+---
+
+
+# Getting Started
+
+## Prerequisites
+
+- **Go 1.24+** — [install Go](https://go.dev/doc/install)
+- **Ollama** running locally — [install Ollama](https://ollama.com)
+
+## Install
+
+```bash
+# Clone and install
+git clone https://github.com/alecgard/knowledge-broker.git
+cd knowledge-broker
+make install
+
+# Pull the embedding model
+ollama pull nomic-embed-text
+```
+
+`make install` builds the `kb` binary and adds it to your PATH.
+
+## Ingest your first source
+
+Point KB at a local directory or a Git repo:
+
+```bash
+# Local directory
+kb ingest --source ./my-project
+
+# Git repo by URL
+kb ingest --git https://github.com/owner/repo
+
+# Add a description so agents know what this source contains
+kb ingest --source ./my-project --description "Payment processing service"
+```
+
+KB walks the source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a local SQLite database.
+
+Ingestion is incremental — re-running the same command only processes new or changed files.
+
+## Query
+
+### Raw mode (no API key needed)
+
+Raw mode runs the full retrieval pipeline — embedding, hybrid search, confidence scoring — using only Ollama. No external API key required.
+
+```bash
+kb query --raw "how does authentication work?"
+```
+
+Returns ranked fragments with content, source metadata, and per-fragment confidence scores.
+
+### Synthesis mode (requires Anthropic API key)
+
+For synthesised answers with cross-fragment confidence assessment and contradiction detection:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+kb query "how does authentication work?"
+```
+
+Returns a natural-language answer with an overall confidence score, source citations, and any contradictions between sources.
+
+### Human-readable streaming
+
+```bash
+kb query --human "how does authentication work?"
+```
+
+Streams the answer to the terminal as it's generated.
+
+## Start the MCP server
+
+Connect KB to Claude Code or any MCP-compatible client:
+
+```bash
+kb mcp
+```
+
+This starts both stdio and SSE transports. Configure your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "knowledge-broker": {
+      "command": "kb",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+See [MCP Server](mcp.md) for the full setup guide.
+
+## Start the HTTP server
+
+```bash
+kb serve
+
+# Query via HTTP
+curl -s -X POST localhost:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}]}'
+
+# Raw mode via HTTP
+curl -s -X POST localhost:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
+```
+
+## What requires an API key
+
+KB is designed to work with only Ollama. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+
+| Capability | Ollama only | With API key |
+|------------|:-----------:|:------------:|
+| Ingestion, embedding, hybrid search | :material-check: | :material-check: |
+| Raw retrieval with confidence signals | :material-check: | :material-check: |
+| Chunk enrichment (entity/keyword annotations) | :material-check: | :material-check: |
+| **Multi-query expansion** | | :material-check: |
+| **Answer synthesis** | | :material-check: |
+| **Cross-fragment confidence assessment** | | :material-check: |
+| **Contradiction detection** | | :material-check: |
+
+## Next steps
+
+- [Connect more sources](connectors.md) — Confluence, Slack, GitHub Wiki
+- [Understand the trust layer](architecture.md) — how confidence signals work
+- [Set up MCP for your team](mcp.md) — shared knowledge server
+- [CLI Reference](cli.md) — all commands and flags
+
+---
+
+
+# Architecture
+
+## Design principles
+
+**Surface uncertainty, don't hide it.** Most knowledge tools give you an answer and hope it's right. Knowledge Broker tells you *how much* to trust the answer and *why* — and when sources disagree, it flags the contradiction explicitly rather than silently picking one.
+
+**Local-first.** Embeddings and search run entirely on your machine via Ollama and SQLite. The only external call is to Claude for answer synthesis, and that's optional.
+
+**Pluggable at every layer.** Connectors, extractors, embedding models, and LLM providers are all swappable. New source types and file formats don't require core changes.
+
+## Ingestion pipeline
+
+```
+Source (filesystem, Git, Confluence, Slack, GitHub Wiki)
+  → Connector        Pull content, track what's changed via checksums
+  → Extractor         Chunk at semantic boundaries per file type
+  → Enrichment        LLM adds context annotations to each chunk (optional)
+  → Embedding         Ollama converts chunks to vectors
+  → Storage           SQLite + sqlite-vec (vectors) + FTS5 (keyword index)
+```
+
+### Connectors
+
+Pluggable adapters that pull content from sources. Each source is registered with a type and name. The connector handles authentication, pagination, and change detection.
+
+Ingestion is incremental: unchanged files (by SHA-256 checksum) are skipped. Documents that no longer exist at the source are removed from the database.
+
+Supported connectors: local filesystem, Git (GitHub, GitLab, any Git host), Confluence Cloud, Slack, GitHub Wiki. See [Connectors](connectors.md) for setup details.
+
+### Extractors
+
+Files are chunked at semantic boundaries based on file type:
+
+| File type | Strategy |
+|-----------|----------|
+| Markdown (`.md`) | Split on headings |
+| Code (`.go`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.java`, `.rs`, `.rb`) | Split on function/class boundaries |
+| PDF (`.pdf`) | Text extraction |
+| Jupyter (`.ipynb`) | Cell boundaries |
+| Config (`.yaml`, `.yml`, `.toml`, `.json`, `.ini`, `.conf`, `.env`, `.properties`) | Logical sections |
+| Everything else | Paragraph-based fallback |
+
+Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CHUNK_SIZE`, `KB_CHUNK_OVERLAP`).
+
+### Enrichment (optional)
+
+A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
+
+Enrichment runs entirely on Ollama — no external API calls. Enable it by having the enrichment model pulled in Ollama.
+
+### Embedding and storage
+
+Each chunk is embedded via Ollama (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
+
+Everything lives in a single SQLite database file. No external database infrastructure.
+
+## Query pipeline
+
+```
+User query
+  → Multi-query expansion     LLM generates alternative phrasings (optional)
+  → Embedding                 Ollama embeds original + expanded queries
+  → Hybrid search             Vector similarity (sqlite-vec) + BM25 keyword (FTS5)
+  → RRF merge                 Reciprocal Rank Fusion across all result lists
+  → Synthesis / Raw return    Claude synthesises an answer, or return fragments directly
+```
+
+### Multi-query expansion
+
+When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch — when the user says "auth" but the docs say "authentication middleware."
+
+Each expanded query variant is searched independently. Results are merged in the RRF step.
+
+### Hybrid search
+
+Every query runs through both **vector similarity** (semantic meaning) and **BM25 keyword search** (exact term matching). This catches both conceptual matches and precise terminology.
+
+Results from all search paths are merged via **Reciprocal Rank Fusion** (RRF), which boosts fragments that appear in multiple result lists without requiring score normalization.
+
+### Synthesis vs raw mode
+
+**Synthesis mode** (default, requires API key) sends the top fragments to Claude with a system prompt that instructs it to:
+
+- Synthesise a direct answer from the retrieved fragments
+- Assess confidence signals across the full context
+- Cite specific sources
+- Flag contradictions between sources explicitly
+
+**Raw mode** (no API key needed) returns fragments directly with per-fragment confidence scores computed locally. Useful for debugging retrieval, feeding a separate pipeline, or when no API key is configured.
+
+## The trust layer
+
+Every Knowledge Broker response includes confidence signals — a composite trust score and four independent dimensions that explain *why* the score is what it is.
+
+### Confidence signals
+
+| Signal | Weight | What it measures |
+|--------|--------|-----------------|
+| **Freshness** | 0.20 | How recently were the sources modified, relative to the corpus age distribution |
+| **Corroboration** | 0.25 | How many independent sources support the answer |
+| **Consistency** | 0.30 | Do the sources agree, or are there contradictions |
+| **Authority** | 0.25 | How authoritative are the source types for this kind of query |
+
+The **overall** score is a weighted composite:
+
+```
+overall = freshness × 0.20 + corroboration × 0.25 + consistency × 0.30 + authority × 0.25
+```
+
+### How confidence is computed
+
+In **raw mode**, confidence is computed per fragment using local heuristics:
+
+- **Freshness** is scored relative to the corpus age distribution — a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
+- **Corroboration** reflects how many distinct sources contain similar information
+- **Consistency** is based on embedding similarity between fragments about the same topic
+- **Authority** weights source types based on query characteristics (e.g., code repos are more authoritative for implementation questions, Confluence for process questions)
+
+In **synthesis mode**, the LLM assesses confidence across the full retrieved context, considering cross-fragment agreement, source diversity, and information completeness.
+
+### Contradictions
+
+When sources disagree, Knowledge Broker flags the contradiction explicitly in the response. The `contradictions` array contains natural-language descriptions of what the sources disagree about and which sources are involved.
+
+This is a deliberate design choice. Most knowledge tools silently pick one answer. Knowledge Broker surfaces the disagreement so that agents can escalate to a human and humans can investigate which source is correct.
+
+### Using confidence signals
+
+Agents can use the overall score to decide how to proceed:
+
+| Score range | Suggested behavior |
+|-------------|-------------------|
+| 0.85+ | Answer confidently |
+| 0.6–0.85 | Answer with caveats, note uncertainty |
+| Below 0.6 | Surface the contradiction or uncertainty to the user |
+
+These thresholds are suggestions — agents and applications can define their own logic based on the confidence breakdown.
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KB_DB` | `kb.db` | SQLite database path |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Ollama model for chunk enrichment |
+| `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
+| `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (synthesis mode only) |
+| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
+| `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
+| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
+| `KB_WORKERS` | `4` | Parallel ingestion workers |
+| `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
+
+---
+
+
+# Connectors
+
+KB uses pluggable connectors to ingest content from different sources. Each connector scans a source, produces documents, and supports incremental re-ingestion via checksums.
+
+## Local Filesystem
+
+Ingest files from a local directory. Walks the directory tree recursively, respects `.gitignore` patterns.
+
+```bash
+kb ingest --source ./path/to/dir
+kb ingest --source ./repo-a --source ./repo-b   # multiple directories
+```
+
+No configuration needed. This is the default if no flags are given — `kb ingest` ingests the current directory.
+
+## Git
+
+Clone and ingest a Git repository by URL. Supports public repos directly; private repos authenticate via `KB_GITHUB_TOKEN`, the `gh` CLI, or GitHub device flow. GitLab and other Git hosts are also supported.
+
+```bash
+kb ingest --git https://github.com/owner/repo
+kb ingest --git https://github.com/owner/private-repo   # uses gh CLI or device flow
+kb ingest --git https://gitlab.com/owner/repo            # uses KB_GITLAB_TOKEN
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_GITHUB_TOKEN` | No | GitHub personal access token for private repos |
+| `KB_GITLAB_TOKEN` | No | GitLab personal access token for private repos |
+| `KB_GIT_TOKEN` | No | Generic Git token (works with any host) |
+| `KB_GITHUB_CLIENT_ID` | No | GitHub OAuth app client ID for device flow auth |
+
+For GitHub, if no token is set, KB tries the `gh` CLI's cached token, then falls back to device flow if a client ID is configured.
+
+## Confluence
+
+Ingest pages from an Atlassian Confluence Cloud space. Fetches all pages via the REST API with pagination, extracts body content, and supports incremental sync.
+
+```bash
+kb ingest --confluence ENGINEERING
+kb ingest --confluence ENGINEERING --confluence PRODUCT   # multiple spaces
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_CONFLUENCE_BASE_URL` | Yes | Your Confluence instance URL (e.g., `https://yoursite.atlassian.net`) |
+| `KB_CONFLUENCE_EMAIL` | Yes | Email address for API authentication |
+| `KB_CONFLUENCE_TOKEN` | Yes | Atlassian API token ([create one here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+
+The `--confluence` flag takes a **space key** (the short code visible in Confluence URLs, e.g., `ENGINEERING`). Each space is ingested as a separate source.
+
+Pages that are deleted in Confluence are automatically detected and removed from the knowledge base on re-ingestion.
+
+## Slack
+
+Ingest messages from Slack channels. Fetches message history via the Slack Web API. Threaded conversations become individual documents; non-threaded messages are grouped by day.
+
+```bash
+kb ingest --slack C0ABC123DEF
+kb ingest --slack C0ABC123DEF --slack C0XYZ789GHI   # multiple channels
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_SLACK_TOKEN` | Yes | Bot User OAuth Token (`xoxb-...`) |
+| `KB_SLACK_WORKSPACE` | No | Workspace name for display (e.g., `acme-org`) |
+
+### Slack app setup
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
+2. Add the following **Bot Token Scopes** under OAuth & Permissions:
+   - `channels:history` — read message history
+   - `channels:read` — list channels and get channel info
+   - `channels:join` — join public channels (if the bot isn't already a member)
+3. Install the app to your workspace
+4. Copy the **Bot User OAuth Token** (`xoxb-...`) to `KB_SLACK_TOKEN`
+5. Find channel IDs: right-click a channel name in Slack → "View channel details" → the ID is at the bottom
+
+By default, Slack ingestion looks back **90 days**. Messages older than that are not fetched.
+
+### How messages are structured
+
+- **Threaded conversations** (messages with replies): each thread becomes a single document containing the parent message and all replies
+- **Non-threaded messages**: grouped into daily documents per channel
+
+## GitHub Wiki
+
+Ingest pages from a GitHub repository's wiki. The wiki is a separate Git repo (`{repoURL}.wiki.git`) that KB clones and scans. Page links are rewritten to point to the GitHub wiki web UI.
+
+```bash
+kb ingest --wiki https://github.com/owner/repo
+kb ingest --wiki https://github.com/owner/repo --wiki https://github.com/owner/other-repo
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_GITHUB_TOKEN` | No | Required for private repos |
+
+The `--wiki` flag takes the **main repository URL** (not the wiki URL). KB automatically derives the wiki clone URL.
+
+Authentication works the same as the Git connector — `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
+
+## Combining sources
+
+All connector flags can be mixed in a single ingest command:
+
+```bash
+kb ingest \
+  --source ./local-docs \
+  --git https://github.com/acme/backend \
+  --confluence ENGINEERING \
+  --slack C0ABC123DEF \
+  --wiki https://github.com/acme/platform
+```
+
+Each source is tracked independently. Re-running the same command only processes new or changed content.
+
+## Incremental ingestion
+
+All connectors support incremental ingestion via SHA-256 checksums. On each run:
+
+1. KB loads known checksums from the database
+2. The connector scans the source and compares against known checksums
+3. Only new or changed documents are extracted, embedded, and stored
+4. Documents that existed previously but are no longer present are deleted from the database
+
+To force a full re-ingestion, remove the source first:
+
+```bash
+kb sources remove confluence/ENGINEERING
+kb ingest --confluence ENGINEERING
+```
+
+## Re-ingesting all sources
+
+To re-ingest all previously registered local sources:
+
+```bash
+kb ingest --all
+```
+
+This is useful after upgrading KB or changing chunking/embedding settings.
+
+---
+
+
+# MCP Server
+
+Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. Both stdio and SSE transports run simultaneously.
+
+## Setup
+
+### stdio (local)
+
+Most MCP clients launch servers as subprocesses via stdio. Point your client at `kb mcp`:
+
+```json
+{
+  "mcpServers": {
+    "knowledge-broker": {
+      "command": "/path/to/kb",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If `kb` is on your PATH, you can use `"command": "kb"` directly.
+
+### SSE (remote)
+
+`kb mcp` also starts an SSE transport on `:8082` by default:
+
+```bash
+kb mcp                  # stdio + SSE on :8082
+kb mcp --addr :9090     # custom SSE port
+```
+
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For remote access over HTTPS, put a reverse proxy or tunnel in front.
+
+### Shared server
+
+For team use, run the HTTP server and push content from local checkouts:
+
+```bash
+kb serve --addr :8080
+
+# Push content from a local checkout
+kb ingest --source ./my-repo --remote http://server:8080
+```
+
+## Tools
+
+### query
+
+Query the knowledge base and get an answer.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | yes | — | The query to search for |
+| `topics` | string | no | — | Comma-separated topics to boost relevance |
+| `limit` | number | no | 20 | Max fragments to retrieve |
+| `raw` | boolean | no | false | Return raw fragments instead of synthesised answer |
+| `sources` | string | no | — | Comma-separated source names to filter results |
+| `source_types` | string | no | — | Comma-separated source types to filter results |
+
+**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
+
+**Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
+
+### list-sources
+
+List all ingested sources with fragment counts and last sync time. Takes no parameters.
+
+Returns an array of sources with `source_type`, `source_name`, `description`, `fragment_count`, and `last_ingest`.
+
+## Prompts
+
+### kb-instructions
+
+A prompt that returns instructions teaching the agent when and how to use the knowledge base. Takes no arguments.
+
+The response includes:
+- When to query the knowledge base (missing context, unfamiliar patterns, before making assumptions)
+- A dynamically generated list of available sources with descriptions and fragment counts
+- Tips for using synthesis vs raw mode, topics, and source filtering
+
+MCP clients that support prompts will show this in their prompt list. Use it to bootstrap agent context without manually writing instructions.
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
+| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama server for embeddings |
+| `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
+| `KB_DB` | No (default `kb.db`) | Database path |
+
+## Workflow
+
+1. Ingest content: `kb ingest --source /path/to/project`
+2. Configure your MCP client to run `kb mcp`
+3. Query the knowledge base — synthesis mode returns answers, raw mode returns fragments
+4. Use `list-sources` to see what's been ingested
+
+---
+
+
+# CLI Reference
+
+## kb ingest
+
+Ingest documents from one or more sources into the knowledge base.
+
+```bash
+kb ingest --source ./path/to/dir
+kb ingest --git https://github.com/owner/repo
+kb ingest --confluence ENGINEERING
+kb ingest --slack C0ABC123DEF
+kb ingest --wiki https://github.com/owner/repo
+kb ingest --all
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Local directory path (repeatable) |
+| `--git` | Git repository URL (repeatable) |
+| `--confluence` | Confluence space key (repeatable) |
+| `--slack` | Slack channel ID (repeatable) |
+| `--wiki` | GitHub Wiki repository URL (repeatable) |
+| `--all` | Re-ingest all registered local sources |
+| `--remote` | Send fragments to a remote KB server for embedding |
+| `--description` | Human-readable description of the source (shown to agents) |
+| `--db` | SQLite database path (default: `kb.db`) |
+
+All connector flags can be combined in a single command. Ingestion is incremental — unchanged files are skipped based on checksums.
+
+See [Connectors](connectors.md) for detailed setup instructions per source type.
+
+## kb query
+
+Query the knowledge base.
+
+```bash
+# Raw retrieval (no API key needed)
+kb query --raw "how does auth work?"
+
+# Synthesised answer (requires ANTHROPIC_API_KEY)
+kb query "what is the billing retry policy?"
+
+# Human-readable streaming
+kb query --human "how does deployment work?"
+
+# With filters
+kb query --raw --limit 10 --topics "billing,payments" "retry policy"
+kb query --raw --source-type git "deployment process"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--raw` | Return ranked fragments without LLM synthesis |
+| `--human` | Stream the answer in human-readable format |
+| `--limit` | Maximum number of fragments to retrieve |
+| `--topics` | Comma-separated topics to boost relevance |
+| `--source-type` | Filter by source type (`filesystem`, `git`, `confluence`, `slack`, `github_wiki`) |
+| `--db` | SQLite database path (default: `kb.db`) |
+
+## kb serve
+
+Start the HTTP API server.
+
+```bash
+kb serve
+kb serve --addr :9090
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--addr` | `:8080` | Listen address |
+| `--db` | `kb.db` | SQLite database path |
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/query` | POST | Query with optional SSE streaming |
+| `/v1/ingest` | POST | Receive fragments from remote ingestion |
+| `/v1/sources` | GET | List registered sources |
+| `/v1/health` | GET | Health check (verifies Ollama connectivity) |
+
+### Query request format
+
+```json
+{
+  "messages": [{"role": "user", "content": "how does auth work?"}],
+  "limit": 20,
+  "mode": "raw",
+  "stream": true,
+  "topics": ["billing", "payments"],
+  "sources": ["my-repo"],
+  "source_types": ["git", "confluence"],
+  "no_expand": false
+}
+```
+
+- Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
+- Set `"stream": true` for SSE streaming (synthesis mode only).
+- The `messages` array follows the same format as the Claude API — pass conversation history for multi-turn queries.
+
+## kb mcp
+
+Start the MCP server. Both stdio and SSE transports run simultaneously.
+
+```bash
+kb mcp
+kb mcp --addr :9090
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--addr` | `:8082` | SSE listen address |
+| `--db` | `kb.db` | SQLite database path |
+
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`.
+
+See [MCP Server](mcp.md) for the full tool reference and client configuration.
+
+## kb sources
+
+Manage registered ingestion sources.
+
+### kb sources list
+
+List all registered sources with type, name, description, fragment count, and last ingest time.
+
+```bash
+kb sources list
+```
+
+### kb sources describe
+
+Set a description for an existing source. Descriptions appear in `list-sources` results and the `kb-instructions` prompt.
+
+```bash
+kb sources describe filesystem/my-repo "Payment processing microservice"
+kb sources describe git/owner/repo "Main backend API"
+```
+
+### kb sources export
+
+Export registered sources to a JSON file.
+
+```bash
+kb sources export sources.json
+```
+
+### kb sources import
+
+Import sources from a JSON file.
+
+```bash
+kb sources import sources.json
+```
+
+### kb sources remove
+
+Remove a registered source and all its fragments from the database.
+
+```bash
+kb sources remove confluence/ENGINEERING
+kb sources remove git/owner/repo
+```
+
+## kb export
+
+Export fragment embeddings for visualization with TensorBoard Embedding Projector.
+
+```bash
+kb export --out ./export/
+```
+
+Produces `tensors.tsv` and `metadata.tsv` files that can be loaded into the [Embedding Projector](https://projector.tensorflow.org/).
+
+## kb eval
+
+Run the evaluation framework to measure retrieval quality.
+
+```bash
+make eval                                            # one-command eval
+kb eval --db eval.db --testset eval/testset.json     # manual
+kb eval --db eval.db --corpus eval/corpus --ingest   # ingest corpus first
+kb eval --db eval.db --json                          # structured output
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | `kb.db` | Database path |
+| `--testset` | `eval/testset.json` | Path to test set |
+| `--corpus` | `eval/corpus` | Path to eval corpus |
+| `--limit` | `20` | Top-K retrieval limit |
+| `--ingest` | `false` | Ingest corpus before running eval |
+| `--json` | `false` | Output structured JSON |
+| `--skip-enrichment` | `false` | Skip chunk enrichment during ingestion |
+
+See [Evaluation](eval.md) for details on metrics, test cases, and extending the eval suite.
+
+## kb cluster
+
+Run k-means clustering on fragment embeddings to discover topic groups.
+
+```bash
+kb cluster
+```
+
+### kb cluster viz
+
+Generate an interactive HTML visualization of fragment clusters.
+
+```bash
+kb cluster viz
+```
+
+## kb version
+
+Print the KB version.
+
+```bash
+kb version
+```
+
+---
+
+
+# Evaluation Framework
+
+A repeatable eval harness for measuring retrieval quality. Run evals before and after changes to chunking, embedding models, or prompts.
+
+## Quick start
+
+```bash
+make eval
+```
+
+This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally — no Anthropic API key needed.
+
+## Manual usage
+
+```bash
+# Ingest the eval corpus into a fresh database
+kb ingest --source eval/corpus --db eval.db
+
+# Run evaluation
+kb eval --db eval.db
+
+# Run with custom options
+kb eval --db eval.db --testset eval/testset.json --limit 10 --json
+
+# Ingest and eval in one step
+kb eval --db eval.db --corpus eval/corpus --ingest
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | `kb.db` | Database path |
+| `--testset` | `eval/testset.json` | Path to query/answer test set |
+| `--corpus` | `eval/corpus` | Path to eval corpus directory |
+| `--limit` | `20` | K value for retrieval (top-K fragments) |
+| `--ingest` | false | Ingest the corpus before running eval |
+| `--json` | false | Output structured JSON instead of a table |
+
+## Metrics
+
+### Retrieval metrics (reported at K=5, K=10, K=20)
+
+- **Recall@K** — Did the expected source files appear in the top-K retrieved fragments?
+- **Precision@K** — What fraction of top-K fragments came from expected source files?
+- **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across queries.
+
+### Chunking stats
+
+- Total fragment count
+- Fragments per file
+- Mean, median, and P95 token length (whitespace-approximated)
+
+These track chunking quality over time — a change that produces 3x more fragments or halves average length is immediately visible.
+
+## Eval corpus
+
+Located in `eval/corpus/`. A set of fictional files about an "Acme Widget Service" designed to exercise different retrieval scenarios:
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview, features, quick start |
+| `config.go` | Go config structs and validation |
+| `api.go` | HTTP API handlers |
+| `architecture.md` | System design (intentionally contradicts README on some details) |
+| `runbook.md` | Operational procedures and troubleshooting |
+
+The corpus is checked into the repo and should not change between eval runs unless you're intentionally updating it.
+
+## Test set
+
+Located in `eval/testset.json`. Each entry has:
+
+```json
+{
+  "id": "q01",
+  "query": "What database does the widget service use?",
+  "expected_sources": ["config.go", "architecture.md"],
+  "reference_answer": "PostgreSQL, configured via DATABASE_URL.",
+  "category": "factual"
+}
+```
+
+Categories:
+- **factual** — single-source lookup
+- **cross-file** — requires information from multiple files
+- **contradiction** — sources disagree on the answer
+- **unanswerable** — no good answer exists in the corpus
+
+## Extending the eval
+
+**Adding queries:** Edit `eval/testset.json`. Include `expected_sources` (filenames that should appear in results) and a `reference_answer` for human comparison.
+
+**Adding corpus files:** Add files to `eval/corpus/` and write questions that reference them. Re-run `make eval` to see the impact.
+
+**Comparing configurations:** Run eval with different embedding models or chunk sizes by changing `KB_EMBEDDING_MODEL` or `KB_MAX_CHUNK_SIZE`, then compare the summary tables.
+
+---
+

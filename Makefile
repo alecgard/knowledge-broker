@@ -93,9 +93,11 @@ eval-enriched:
 ## Docs
 
 docs:
+	./scripts/gen-llms-full.sh
 	mkdocs serve
 
 docs-build:
+	./scripts/gen-llms-full.sh
 	mkdocs build
 
 ## Dependencies

@@ -6,6 +6,7 @@ repo_name: alecgard/knowledge-broker
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     scheme: default
   features:
@@ -44,6 +45,7 @@ extra_css:
   - stylesheets/custom.css
 
 extra:
+  generator: true
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/alecgard/knowledge-broker

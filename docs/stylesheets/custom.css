@@ -259,3 +259,83 @@ body,
   color: var(--kb-text2);
   font-size: 0.75rem;
 }
+
+/* Mobile responsive adjustments */
+@media screen and (max-width: 76.1875em) {
+  .md-typeset {
+    font-size: 0.75rem;
+  }
+
+  .md-typeset h1 {
+    font-size: 1rem;
+  }
+
+  .md-typeset h2 {
+    font-size: 0.85rem;
+  }
+
+  .md-typeset h3 {
+    font-size: 0.75rem;
+  }
+
+  .md-typeset table:not([class]) {
+    font-size: 0.65rem;
+  }
+
+  .md-typeset table:not([class]) th,
+  .md-typeset table:not([class]) td {
+    padding: 4px 6px;
+  }
+
+  .md-typeset code {
+    font-size: 0.65rem;
+  }
+
+  .md-typeset pre > code {
+    font-size: 0.65rem;
+  }
+
+  /* Ensure mobile nav keeps the monospace style */
+  .md-nav {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  }
+
+  /* Mobile header */
+  .md-header__title {
+    font-size: 0.65rem;
+  }
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset {
+    font-size: 0.7rem;
+  }
+
+  /* Allow horizontal scroll on tables rather than squishing */
+  .md-typeset__scrollwrap {
+    overflow-x: auto;
+  }
+
+  /* Footer link layout */
+  .md-footer-meta .md-footer-meta__inner {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+/* Hide GitHub stars/forks count */
+.md-source__facts {
+  display: none;
+}
+
+/* Footer "Made with Material for MkDocs" — use dark text, not hidden */
+.md-footer-meta .md-copyright,
+.md-footer-meta .md-footer-copyright,
+.md-footer-meta a,
+.md-footer-meta {
+  color: var(--kb-text);
+}
+
+.md-footer-meta a:hover {
+  color: var(--kb-accent-hover);
+}

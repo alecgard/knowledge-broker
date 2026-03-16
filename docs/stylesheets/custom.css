@@ -329,13 +329,17 @@ body,
 }
 
 /* Footer "Made with Material for MkDocs" — use dark text, not hidden */
+.md-footer-meta,
 .md-footer-meta .md-copyright,
+.md-footer-meta .md-copyright a,
 .md-footer-meta .md-footer-copyright,
-.md-footer-meta a,
-.md-footer-meta {
-  color: var(--kb-text);
+.md-footer-meta .md-footer-copyright a,
+.md-copyright,
+.md-copyright a {
+  color: #1a1a1a !important;
 }
 
-.md-footer-meta a:hover {
-  color: var(--kb-accent-hover);
+.md-footer-meta a:hover,
+.md-copyright a:hover {
+  color: #444444 !important;
 }

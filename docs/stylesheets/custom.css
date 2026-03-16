@@ -183,6 +183,15 @@ body,
   .md-nav--primary .md-nav__item--nested > .md-nav__link {
     color: var(--kb-text);
   }
+
+  .md-source {
+    background-color: transparent !important;
+    color: var(--kb-text) !important;
+  }
+
+  .md-source__repository {
+    color: var(--kb-text) !important;
+  }
 }
 
 /* Mobile header button (hamburger) */

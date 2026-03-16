@@ -233,10 +233,36 @@ body,
   background-color: var(--kb-surface);
 }
 
-/* Search */
+/* Search — match brutalist style */
 .md-search__input {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
   font-size: 0.7rem;
   border-radius: 0;
+  background-color: var(--kb-bg);
+  border: 1px solid var(--kb-border);
+  color: var(--kb-text);
+}
+
+.md-search__form {
+  border-radius: 0;
+  background-color: var(--kb-bg);
+  box-shadow: none;
+  border: 1px solid var(--kb-border);
+}
+
+.md-search__output {
+  border-radius: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.md-search-result__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.md-search-result__teaser {
+  font-size: 0.65rem;
+  color: var(--kb-text2);
 }
 
 /* Content area max width */

@@ -41,7 +41,7 @@ Query the knowledge base.
 # Raw retrieval (no API key needed)
 kb query --raw "how does auth work?"
 
-# Synthesised answer (requires ANTHROPIC_API_KEY)
+# Synthesised answer (requires an LLM provider, Claude by default)
 kb query "what is the billing retry policy?"
 
 # Human-readable streaming

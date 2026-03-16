@@ -54,9 +54,9 @@ kb query --raw "how does authentication work?"
 
 Returns ranked fragments with content, source metadata, and per-fragment confidence scores.
 
-### Synthesis mode (requires Anthropic API key)
+### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Claude is the default:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...

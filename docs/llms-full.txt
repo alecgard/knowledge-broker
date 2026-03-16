@@ -125,9 +125,9 @@ kb query --raw "how does authentication work?"
 
 Returns ranked fragments with content, source metadata, and per-fragment confidence scores.
 
-### Synthesis mode (requires Anthropic API key)
+### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Claude is the default:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -412,7 +412,7 @@ These thresholds are suggestions. Agents and applications can define their own l
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key (synthesis mode only) |
+| `ANTHROPIC_API_KEY` | — | Required for synthesis with Claude (default provider) |
 | `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
 | `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
 | `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
@@ -633,7 +633,7 @@ Query the knowledge base and get an answer.
 | `source_types` | string | no | — | Comma-separated source types to filter results |
 | `no_expand` | boolean | no | false | Disable multi-query expansion |
 
-**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
+**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires an LLM provider (`ANTHROPIC_API_KEY` for Claude, or configure `KB_LLM_PROVIDER`).
 
 **Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
 
@@ -660,7 +660,7 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
+| `ANTHROPIC_API_KEY` | For synthesis with Claude (default) | Not needed when `raw=true` or using another provider |
 | `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |
@@ -715,7 +715,7 @@ Query the knowledge base.
 # Raw retrieval (no API key needed)
 kb query --raw "how does auth work?"
 
-# Synthesised answer (requires ANTHROPIC_API_KEY)
+# Synthesised answer (requires an LLM provider, Claude by default)
 kb query "what is the billing retry policy?"
 
 # Human-readable streaming

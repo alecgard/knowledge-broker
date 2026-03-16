@@ -207,7 +207,7 @@ These thresholds are suggestions. Agents and applications can define their own l
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key (synthesis mode only) |
+| `ANTHROPIC_API_KEY` | — | Required for synthesis with Claude (default provider) |
 | `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
 | `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
 | `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |

@@ -66,7 +66,7 @@ Query the knowledge base and get an answer.
 | `source_types` | string | no | — | Comma-separated source types to filter results |
 | `no_expand` | boolean | no | false | Disable multi-query expansion |
 
-**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
+**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires an LLM provider (`ANTHROPIC_API_KEY` for Claude, or configure `KB_LLM_PROVIDER`).
 
 **Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
 
@@ -93,7 +93,7 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
+| `ANTHROPIC_API_KEY` | For synthesis with Claude (default) | Not needed when `raw=true` or using another provider |
 | `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |

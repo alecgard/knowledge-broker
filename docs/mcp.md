@@ -61,6 +61,7 @@ Query the knowledge base and get an answer.
 | `raw` | boolean | no | false | Return raw fragments instead of synthesised answer |
 | `sources` | string | no | — | Comma-separated source names to filter results |
 | `source_types` | string | no | — | Comma-separated source types to filter results |
+| `no_expand` | boolean | no | false | Disable multi-query expansion |
 
 **Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
 

@@ -257,6 +257,7 @@ Copy `.env.example` to `.env` and fill in your values. Environment variables als
 | `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
 | `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
 | `KB_WORKERS` | `4` | Parallel ingestion workers |
+| `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
 | `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
 
 Connector-specific variables (Git, Confluence, Slack, etc.) are documented in [Connectors](https://knowledgebroker.dev/connectors/).
@@ -299,16 +300,15 @@ User query
 
 **Synthesis mode** sends the top fragments to Claude with a system prompt that instructs it to assess confidence signals, cite sources, and flag contradictions. **Raw mode** returns fragments directly with per-fragment confidence scores computed locally.
 
-### Knowledge clustering (optional)
+### Clustering (optional)
 
 ```
 All fragments
   → K-means clustering on embeddings
   → Topic labeling per cluster
-  → Knowledge units with centroid embeddings
 ```
 
-`kb compute-units` groups fragments into topic clusters, producing knowledge units with summaries and confidence signals. These are searchable alongside individual fragments.
+`kb cluster` groups fragments into topic clusters using k-means on embeddings. `kb cluster viz` generates an interactive HTML visualization of the clusters.
 
 ## What requires an API key
 
@@ -322,7 +322,7 @@ KB is designed to be useful with only Ollama (local, free). An Anthropic API key
 | Vector + BM25 hybrid search | Yes | Yes |
 | Per-fragment confidence signals | Yes | Yes |
 | Raw retrieval (`--raw`) | Yes | Yes |
-| Knowledge clustering | Yes | Yes |
+| Clustering | Yes | Yes |
 | **Multi-query expansion** | — | Yes |
 | **Answer synthesis** | — | Yes |
 | **Cross-fragment confidence assessment** | — | Yes |

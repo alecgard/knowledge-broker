@@ -45,9 +45,12 @@ kb eval --db eval.db --corpus eval/corpus --ingest
 
 ### Retrieval metrics (reported at K=5, K=10, K=20)
 
+- **Hit@K** — Was at least one expected source file found in the top-K results?
 - **Recall@K** — Did the expected source files appear in the top-K retrieved fragments?
 - **Precision@K** — What fraction of top-K fragments came from expected source files?
 - **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across queries.
+- **Avg confidence** — Mean confidence score across retrieved fragments.
+- **Avg freshness** — Mean freshness score across retrieved fragments.
 
 ### Chunking stats
 
@@ -68,6 +71,11 @@ Located in `eval/corpus/`. A set of fictional files about an "Acme Widget Servic
 | `api.go` | HTTP API handlers |
 | `architecture.md` | System design (intentionally contradicts README on some details) |
 | `runbook.md` | Operational procedures and troubleshooting |
+| `CHANGELOG.md` | Version history and release notes |
+| `CONTRIBUTING.md` | Contribution guidelines |
+| `deploy/kubernetes.yaml` | Kubernetes deployment manifests |
+| `design-review.md` | Design review discussion |
+| `incident-review.md` | Incident post-mortem |
 
 The corpus is checked into the repo and should not change between eval runs unless you're intentionally updating it.
 
@@ -81,15 +89,17 @@ Located in `eval/testset.json`. Each entry has:
   "query": "What database does the widget service use?",
   "expected_sources": ["config.go", "architecture.md"],
   "reference_answer": "PostgreSQL, configured via DATABASE_URL.",
-  "category": "factual"
+  "category": "direct_extraction"
 }
 ```
 
 Categories:
-- **factual** — single-source lookup
-- **cross-file** — requires information from multiple files
-- **contradiction** — sources disagree on the answer
-- **unanswerable** — no good answer exists in the corpus
+- **direct_extraction** — single-source factual lookup
+- **cross_document** — requires information from multiple files
+- **knowledge_update** — tests whether newer information is preferred
+- **abstention** — no good answer exists in the corpus
+- **pronoun_resolution** — requires resolving references across context
+- **vocabulary_mismatch** — query uses different terms than the corpus
 
 ## Extending the eval
 

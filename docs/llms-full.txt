@@ -127,10 +127,21 @@ Returns ranked fragments with content, source metadata, and per-fragment confide
 
 ### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection. Claude is the default:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Set an API key for your preferred provider:
 
 ```bash
+# Claude (default)
 export ANTHROPIC_API_KEY=sk-ant-...
+
+# Or OpenAI
+export KB_LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+
+# Or use a local model via Ollama (no API key needed)
+export KB_LLM_PROVIDER=ollama
+```
+
+```bash
 kb query "how does authentication work?"
 ```
 
@@ -185,7 +196,7 @@ curl -s -X POST localhost:8080/v1/query \
 
 ## What requires an API key
 
-KB works entirely locally out of the box. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or local via Ollama) unlocks additional capabilities but is never required for core retrieval.
 
 | Capability | Local only | With API key |
 |------------|:-----------:|:------------:|
@@ -345,7 +356,7 @@ Results from all search paths are merged via **Reciprocal Rank Fusion** (RRF), w
 
 ### Synthesis vs raw mode
 
-**Synthesis mode** (default, requires API key) sends the top fragments to Claude with a system prompt that instructs it to:
+**Synthesis mode** (default, requires an LLM provider) sends the top fragments to the configured LLM with a system prompt that instructs it to:
 
 - Synthesise a direct answer from the retrieved fragments
 - Assess confidence signals across the full context
@@ -950,7 +961,7 @@ A repeatable eval harness for measuring retrieval quality. Run evals before and 
 make eval
 ```
 
-This ingests the eval corpus, runs the test set, and prints a summary table. No Anthropic API key needed.
+This ingests the eval corpus, runs the test set, and prints a summary table. No API key needed.
 
 ## Manual usage
 

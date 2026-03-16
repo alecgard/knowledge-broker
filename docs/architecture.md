@@ -140,7 +140,7 @@ Results from all search paths are merged via **Reciprocal Rank Fusion** (RRF), w
 
 ### Synthesis vs raw mode
 
-**Synthesis mode** (default, requires API key) sends the top fragments to Claude with a system prompt that instructs it to:
+**Synthesis mode** (default, requires an LLM provider) sends the top fragments to the configured LLM with a system prompt that instructs it to:
 
 - Synthesise a direct answer from the retrieved fragments
 - Assess confidence signals across the full context

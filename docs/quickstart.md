@@ -56,10 +56,21 @@ Returns ranked fragments with content, source metadata, and per-fragment confide
 
 ### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection. Claude is the default:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Set an API key for your preferred provider:
 
 ```bash
+# Claude (default)
 export ANTHROPIC_API_KEY=sk-ant-...
+
+# Or OpenAI
+export KB_LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+
+# Or use a local model via Ollama (no API key needed)
+export KB_LLM_PROVIDER=ollama
+```
+
+```bash
 kb query "how does authentication work?"
 ```
 
@@ -114,7 +125,7 @@ curl -s -X POST localhost:8080/v1/query \
 
 ## What requires an API key
 
-KB works entirely locally out of the box. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or local via Ollama) unlocks additional capabilities but is never required for core retrieval.
 
 | Capability | Local only | With API key |
 |------------|:-----------:|:------------:|

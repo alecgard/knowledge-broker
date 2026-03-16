@@ -39,6 +39,13 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            cc: gcc
+          - goarch: arm64
+            cc: aarch64-linux-gnu-gcc
     steps:
       - uses: actions/checkout@v4
 
@@ -46,20 +53,25 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build kb (linux/amd64)
+      - name: Install cross-compiler
+        if: matrix.goarch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build kb (linux/${{ matrix.goarch }})
         env:
           GOOS: linux
-          GOARCH: amd64
+          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 1
           CGO_CFLAGS: "-Wno-deprecated-declarations"
+          CC: ${{ matrix.cc }}
         run: |
           go build -tags sqlite_fts5 -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o kb ./cmd/kb
-          tar czf kb-${{ github.ref_name }}-linux-amd64.tar.gz kb
+          tar czf kb-${{ github.ref_name }}-linux-${{ matrix.goarch }}.tar.gz kb
           rm kb
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kb-linux-amd64
+          name: kb-linux-${{ matrix.goarch }}
           path: kb-*.tar.gz
 
   release:

@@ -289,6 +289,7 @@ body,
 .md-typeset .admonition-title::after,
 .md-typeset summary::after {
   color: var(--kb-text2) !important;
+  background-color: var(--kb-text2) !important;
 }
 
 /* Links */

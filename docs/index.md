@@ -51,7 +51,7 @@ Engineering orgs that want a shared, queryable knowledge base across all their r
 curl -fsSL https://knowledgebroker.dev/install.sh | sh
 ```
 
-Install and run your first query in under 5 minutes: [Getting Started](quickstart.md)
+Install and run your first query in under 5 minutes: [Getting Started](quickstart.md). Then [deploy for your team](deployment.md).
 
 ## How it works
 

@@ -9,6 +9,7 @@ OUT="$DOCS_DIR/llms-full.txt"
 pages=(
   index.md
   quickstart.md
+  deployment.md
   architecture.md
   connectors.md
   mcp.md

@@ -24,6 +24,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: quickstart.md
+  - Team Deployment: deployment.md
   - Architecture: architecture.md
   - Connectors: connectors.md
   - MCP Server: mcp.md

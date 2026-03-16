@@ -139,7 +139,8 @@ KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or lo
 
 ## Next steps
 
+- [Deploy for your team](deployment.md) — shared server, connect from developer machines
 - [Connect more sources](connectors.md) — Confluence, Slack, GitHub Wiki
 - [Understand the trust layer](architecture.md) — how confidence signals work
-- [Set up MCP for your team](mcp.md) — shared knowledge server
+- [MCP Server](mcp.md) — tools and prompts for AI agents
 - [CLI Reference](cli.md) — all commands and flags

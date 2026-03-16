@@ -86,30 +86,7 @@ Every CLI command accepts `--remote`. When set, it talks to the server over HTTP
 
 ### MCP clients (Claude Code, Cursor, Windsurf)
 
-There are two ways to connect MCP clients to a shared KB instance:
-
-**Option A: Local subprocess (recommended)**
-
-Each developer installs `kb` and configures it as a local MCP subprocess. The subprocess connects to the shared server internally.
-
-Run `kb setup mcp` to configure automatically, or add to your MCP client config manually:
-
-```json
-{
-  "mcpServers": {
-    "knowledge-broker": {
-      "command": "kb",
-      "args": ["serve", "--no-http", "--no-sse"]
-    }
-  }
-}
-```
-
-This gives the MCP client a local `kb` process communicating over stdio. The `kb` process uses its own local database. To share the org's knowledge base, each developer would need a local copy of the database, or use Option B.
-
-**Option B: SSE (remote, no local install needed)**
-
-Point MCP clients directly at the server's SSE endpoint. No local `kb` binary required.
+Point MCP clients at the server's SSE endpoint. No local `kb` binary required.
 
 For Claude Code, add to `.mcp.json`:
 
@@ -124,7 +101,7 @@ For Claude Code, add to `.mcp.json`:
 }
 ```
 
-This is the simplest setup for teams -- one server, no local installs, every developer's agent queries the same knowledge base.
+Every developer's agent queries the same shared knowledge base. No local install, no local database.
 
 ### HTTP API
 
@@ -191,16 +168,16 @@ KB does not include authentication. For production deployments:
 
 ```
                     ┌─────────────────────────────────┐
-                    │         KB Server                │
-                    │                                  │
-                    │  kb serve                        │
-                    │  ├── HTTP API    (:8080)         │
+                    │         KB Server               │
+                    │                                 │
+                    │  kb serve                       │
+                    │  ├── HTTP API    (:8080)        │
                     │  ├── MCP SSE    (:8082)         │
                     │  └── SQLite DB  (kb.db)         │
                     └──────┬──────────────┬───────────┘
                            │              │
-              ┌────────────┴──┐    ┌──────┴───────────┐
-              │  HTTP / CLI   │    │   MCP SSE        │
+              ┌────────────┴──┐    ┌──────┴────────────┐
+              │  HTTP / CLI   │    │   MCP SSE         │
               │  --remote     │    │                   │
               ├───────────────┤    ├───────────────────┤
               │ kb query      │    │ Claude Code       │

@@ -416,6 +416,58 @@ func TestIncrementalIngestion(t *testing.T) {
 	}
 }
 
+func TestForceReingestion(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content := "# Auth Guide\n\nThis document describes authentication flows.\n"
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs:          []model.RawDocument{makeDoc("docs/auth.md", content, checksum(content))},
+	}
+
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+
+	// First ingestion.
+	result1, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("First Run: %v", err)
+	}
+	if result1.Added == 0 {
+		t.Fatal("first ingestion should add fragments")
+	}
+
+	// Second ingestion without force: should skip everything.
+	result2, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Second Run: %v", err)
+	}
+	if result2.Added != 0 {
+		t.Fatalf("second ingestion without force should add 0, got %d", result2.Added)
+	}
+	if result2.Skipped == 0 {
+		t.Fatal("second ingestion without force should skip fragments")
+	}
+
+	// Third ingestion with force: should re-ingest everything.
+	result3, err := pipeline.Run(ctx, conn, ingest.Options{Force: true})
+	if err != nil {
+		t.Fatalf("Third Run (force): %v", err)
+	}
+	if result3.Added == 0 {
+		t.Fatal("force ingestion should add fragments")
+	}
+	if result3.Skipped != 0 {
+		t.Fatalf("force ingestion should skip 0, got %d", result3.Skipped)
+	}
+	if result3.Deleted != 0 {
+		t.Fatalf("force ingestion should delete 0, got %d", result3.Deleted)
+	}
+	t.Logf("Force ingestion: added=%d skipped=%d deleted=%d", result3.Added, result3.Skipped, result3.Deleted)
+}
+
 func TestDeletedFiles(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

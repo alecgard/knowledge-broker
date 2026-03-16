@@ -235,6 +235,7 @@ func ingestCmd() *cobra.Command {
 			enrichModel, _ := cmd.Flags().GetString("enrich-model")
 			reEnrich, _ := cmd.Flags().GetBool("re-enrich")
 			promptVersion, _ := cmd.Flags().GetString("prompt-version")
+			forceMode, _ := cmd.Flags().GetBool("force")
 
 			if all && remote != "" {
 				return fmt.Errorf("--all and --remote cannot be combined")
@@ -345,7 +346,7 @@ func ingestCmd() *cobra.Command {
 							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnBatchDone = makeBatchFunc()
-							r, err := pipeline.Run(ctx, conn)
+							r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 							resultCh <- reIngestResult{src: src, result: r, err: err}
 						}(src)
 					}
@@ -380,7 +381,7 @@ func ingestCmd() *cobra.Command {
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						pipeline.OnBatchDone = makeBatchFunc()
-						r, err := pipeline.Run(ctx, conn)
+						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						if err != nil {
 							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
 							continue
@@ -545,7 +546,7 @@ func ingestCmd() *cobra.Command {
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnBatchDone = makeBatchFunc()
-						r, err := pipeline.Run(ctx, conn)
+						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						srcConfig := conn.Config(model.SourceModeLocal)
 						srcConfig["mode"] = model.SourceModeLocal
 						resultCh <- ingestResult{
@@ -593,7 +594,7 @@ func ingestCmd() *cobra.Command {
 					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					pipeline.OnBatchDone = makeBatchFunc()
-					r, err := pipeline.Run(ctx, conn)
+					r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("ingest %s: %v", name, err))
 						continue
@@ -1352,6 +1353,7 @@ func evalCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment during eval ingestion")
 	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
 	cmd.Flags().String("prompt-version", "", "Enrichment prompt version: v1 (full rewrite), v2 (append keywords)")
+	cmd.Flags().Bool("force", false, "Force full re-ingestion, bypassing checksum-based skipping")
 	return cmd
 }
 

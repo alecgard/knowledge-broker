@@ -80,6 +80,13 @@ func (p *Pipeline) SetEnrichment(cfg EnrichmentConfig) {
 	p.enrichment = &cfg
 }
 
+// Options controls pipeline behaviour for a single Run.
+type Options struct {
+	// Force bypasses checksum-based skipping, causing all files to be
+	// re-ingested regardless of whether their content has changed.
+	Force bool
+}
+
 // Result summarises an ingestion run.
 type Result struct {
 	Added           int
@@ -91,13 +98,26 @@ type Result struct {
 }
 
 // Run executes the ingestion pipeline for a connector.
-func (p *Pipeline) Run(ctx context.Context, conn connector.Connector) (*Result, error) {
+func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Options) (*Result, error) {
 	result := &Result{}
 
+	var opt Options
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	// Get known checksums for incremental ingestion.
-	known, err := p.store.GetChecksums(ctx, conn.Name(), conn.SourceName())
-	if err != nil {
-		return nil, fmt.Errorf("get checksums: %w", err)
+	// When Force is set, use an empty map so connectors treat every file as new
+	// and deletion detection is naturally skipped.
+	var known map[string]string
+	if opt.Force {
+		known = make(map[string]string)
+	} else {
+		var err error
+		known, err = p.store.GetChecksums(ctx, conn.Name(), conn.SourceName())
+		if err != nil {
+			return nil, fmt.Errorf("get checksums: %w", err)
+		}
 	}
 
 	// Scan for new/changed documents and deleted paths.

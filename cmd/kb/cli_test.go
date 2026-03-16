@@ -19,6 +19,7 @@ func newTestRoot() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().Bool("debug", false, "Enable debug mode (log all API calls)")
+	root.PersistentFlags().Bool("no-setup", false, "Skip automatic Ollama management")
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(ingestCmd())
@@ -29,7 +30,7 @@ func newTestRoot() *cobra.Command {
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
 	root.AddCommand(clusterCmd())
-	root.AddCommand(setupCmd())
+	root.AddCommand(newSetupCmd())
 
 	return root
 }

@@ -216,6 +216,32 @@ Generate an interactive HTML visualization of fragment clusters.
 kb cluster viz
 ```
 
+## kb setup
+
+Verify Ollama installation and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
+
+```bash
+kb setup
+```
+
+```
+Checking Ollama... running at http://localhost:11434
+Checking models...
+  nomic-embed-text... available
+  qwen2.5:0.5b... available
+Ready.
+```
+
+### kb setup mcp
+
+Configure MCP settings for Claude Code or Cursor.
+
+```bash
+kb setup mcp
+kb setup mcp --client claude --global
+kb setup mcp --client cursor --local
+```
+
 ## kb version
 
 Print the KB version.
@@ -223,3 +249,22 @@ Print the KB version.
 ```bash
 kb version
 ```
+
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--debug` | Enable debug mode (log all API calls) |
+| `--no-setup` | Skip automatic Ollama management (useful for CI or remote Ollama) |
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
+| `KB_SKIP_SETUP` | `false` | Skip automatic Ollama management |
+| `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
+| `KB_DB` | `kb.db` | Default database path |
+| `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |

@@ -6,24 +6,26 @@ description: Install Knowledge Broker and run your first query in under 5 minute
 
 The typical setup: one person (or a CI job) deploys a KB instance and ingests the org's sources. Everyone else queries it via MCP or HTTP.
 
-## Prerequisites
-
-- **Go 1.24+** — [install Go](https://go.dev/doc/install)
-- **Ollama** running locally — [install Ollama](https://ollama.com)
-
 ## Install
 
 ```bash
-# Clone and install
-git clone https://github.com/alecgard/knowledge-broker.git
-cd knowledge-broker
-make install
-
-# Pull the embedding model
-ollama pull nomic-embed-text
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
 ```
 
-`make install` builds the `kb` binary and adds it to your PATH.
+This downloads the latest `kb` binary for your platform (macOS or Linux) and places it on your PATH.
+
+Ollama is installed and configured automatically on first run -- you don't need to set it up separately.
+
+??? note "Build from source"
+    Requires Go 1.24+:
+
+    ```bash
+    git clone https://github.com/alecgard/knowledge-broker.git
+    cd knowledge-broker
+    make install
+    ```
+
+    `make install` builds the `kb` binary and adds it to your PATH.
 
 ## Ingest your org's sources
 

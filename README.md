@@ -11,14 +11,19 @@ Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. T
 
 ## Install
 
-**Prerequisites:** Go 1.24+, [Ollama](https://ollama.com) running locally
+```bash
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
+```
+
+Or build from source (requires Go 1.24+):
 
 ```bash
 git clone https://github.com/alecgard/knowledge-broker.git
 cd knowledge-broker
 make install
-ollama pull nomic-embed-text
 ```
+
+Ollama is installed and configured automatically on first run.
 
 ## Ingest
 

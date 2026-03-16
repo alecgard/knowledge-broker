@@ -132,11 +132,11 @@ func formatEntryJSON(entry mcpServerEntry) string {
 	return fmt.Sprintf("  \"knowledge-broker\": %s", string(b))
 }
 
-func setupCmd() *cobra.Command {
+func setupMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "setup",
+		Use:   "mcp",
 		Short: "Configure MCP settings for Claude Code or Cursor",
-		RunE:  runSetup,
+		RunE:  runSetupMCP,
 	}
 	cmd.Flags().String("client", "", "MCP client to configure: claude or cursor")
 	cmd.Flags().Bool("global", false, "Write to global (home directory) config")
@@ -144,7 +144,7 @@ func setupCmd() *cobra.Command {
 	return cmd
 }
 
-func runSetup(cmd *cobra.Command, args []string) error {
+func runSetupMCP(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Resolve client.

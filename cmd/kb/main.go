@@ -23,6 +23,7 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/cluster"
 	"github.com/knowledge-broker/knowledge-broker/internal/config"
+	ollamaRT "github.com/knowledge-broker/knowledge-broker/internal/runtime"
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/debug"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
@@ -49,6 +50,7 @@ func main() {
 	}
 
 	root.PersistentFlags().Bool("debug", false, "Enable debug mode (log all API calls)")
+	root.PersistentFlags().Bool("no-setup", false, "Skip automatic Ollama management")
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(ingestCmd())
@@ -59,7 +61,7 @@ func main() {
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
 	root.AddCommand(clusterCmd())
-	root.AddCommand(setupCmd())
+	root.AddCommand(newSetupCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -80,6 +82,41 @@ func versionCmd() *cobra.Command {
 func isDebug(cmd *cobra.Command) bool {
 	d, _ := cmd.Flags().GetBool("debug")
 	return d
+}
+
+func ensureOllama(ctx context.Context, cmd *cobra.Command, cfg config.Config, verbose bool) error {
+	noSetup, _ := cmd.Flags().GetBool("no-setup")
+	rtCfg := ollamaRT.Config{
+		OllamaURL:      cfg.OllamaURL,
+		EmbeddingModel: cfg.EmbeddingModel,
+		EnrichModel:    cfg.EnrichModel,
+		SkipSetup:      cfg.SkipSetup || noSetup,
+		Verbose:        verbose,
+	}
+	return ollamaRT.EnsureReady(ctx, rtCfg)
+}
+
+func newSetupCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Verify Ollama installation and pull required models",
+		RunE:  runSetupOllama,
+	}
+	cmd.AddCommand(setupMCPCmd())
+	return cmd
+}
+
+func runSetupOllama(cmd *cobra.Command, args []string) error {
+	cfg := config.Default()
+	ctx := context.Background()
+
+	rtCfg := ollamaRT.Config{
+		OllamaURL:      cfg.OllamaURL,
+		EmbeddingModel: cfg.EmbeddingModel,
+		EnrichModel:    cfg.EnrichModel,
+		Verbose:        true,
+	}
+	return ollamaRT.EnsureReady(ctx, rtCfg)
 }
 
 func newLogger(debugMode bool) *slog.Logger {
@@ -263,7 +300,7 @@ func ingestCmd() *cobra.Command {
 				sourcePaths, _ := cmd.Flags().GetStringArray("source")
 
 				emb := newEmbedder(cfg, client)
-				if err := emb.CheckHealth(ctx); err != nil {
+				if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
 					return err
 				}
 				enricher := enrich.NewOllamaEnricher(cfg.OllamaURL, enrichModel, promptVersion, client, logger)
@@ -302,7 +339,7 @@ func ingestCmd() *cobra.Command {
 			// --all: re-ingest all registered local sources.
 			if all {
 				emb := newEmbedder(cfg, client)
-				if err := emb.CheckHealth(ctx); err != nil {
+				if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
 					return err
 				}
 
@@ -515,7 +552,7 @@ func ingestCmd() *cobra.Command {
 
 			// Local ingestion — sequential by default, parallel with --parallel.
 			emb := newEmbedder(cfg, client)
-			if err := emb.CheckHealth(ctx); err != nil {
+			if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
 				return err
 			}
 
@@ -893,7 +930,7 @@ func queryCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			if err := emb.CheckHealth(ctx); err != nil {
+			if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
 				return err
 			}
 
@@ -999,7 +1036,7 @@ func serveCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			if err := emb.CheckHealth(ctx); err != nil {
+			if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
 				return err
 			}
 
@@ -1035,7 +1072,7 @@ func mcpCmd() *cobra.Command {
 			defer s.Close()
 
 			emb := newEmbedder(cfg, client)
-			if err := emb.CheckHealth(context.Background()); err != nil {
+			if err := ensureOllama(context.Background(), cmd, cfg, true); err != nil {
 				return err
 			}
 
@@ -1222,6 +1259,10 @@ func evalCmd() *cobra.Command {
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
+
+			if err := ensureOllama(ctx, cmd, cfg, true); err != nil {
+				return err
+			}
 
 			// Optionally ingest the eval corpus first.
 			var enrichTimeMS int64

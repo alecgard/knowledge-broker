@@ -46,6 +46,9 @@ type Config struct {
 
 	// GitHub OAuth
 	GitHubClientID string
+
+	// Runtime
+	SkipSetup bool // from KB_SKIP_SETUP
 }
 
 // Default returns a config with sensible defaults, overridden by .env file
@@ -73,6 +76,7 @@ func Default() Config {
 		WorkerCount:     envOrInt("KB_WORKERS", 4),
 		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 5),
 		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
+		SkipSetup:       envOr("KB_SKIP_SETUP", "false") == "true",
 	}
 }
 

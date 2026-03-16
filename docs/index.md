@@ -12,7 +12,7 @@ Run it for your whole org or just on your laptop — either way, agents query it
 
 Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
+It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. Ollama is installed and configured automatically on first run. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
 
 The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
 
@@ -46,6 +46,10 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give every developer (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
 
 ## Get started
+
+```bash
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
+```
 
 Install and run your first query in under 5 minutes: [Getting Started](quickstart.md)
 

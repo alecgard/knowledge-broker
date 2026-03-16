@@ -261,14 +261,15 @@ body,
   border-radius: 0;
 }
 
-/* Admonitions — square, no border-radius, neutral colors */
+/* Admonitions — square, no border-radius, neutral colors.
+   Override Material's per-type color variables (note=blue, tip=green, etc.) */
 .md-typeset .admonition,
 .md-typeset details {
   border-radius: 0;
-  border: 1px solid var(--kb-border);
+  border: 1px solid var(--kb-border) !important;
+  border-left: 2px solid var(--kb-text2) !important;
   box-shadow: none;
   font-size: 0.7rem;
-  border-left: 2px solid var(--kb-text2);
 }
 
 .md-typeset .admonition-title,
@@ -278,7 +279,7 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-radius: 0;
-  background-color: var(--kb-surface);
+  background-color: var(--kb-surface) !important;
   border-bottom: 1px solid var(--kb-border);
   color: var(--kb-text);
 }

@@ -61,12 +61,10 @@ body,
   color: var(--kb-text);
 }
 
-/* Headings — uppercase, letter-spaced */
+/* Headings */
 .md-typeset h1 {
   font-size: 1.1rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
   color: var(--kb-text);
   border-bottom: 2px solid var(--kb-border);
   padding-bottom: 0.4rem;
@@ -75,8 +73,6 @@ body,
 .md-typeset h2 {
   font-size: 0.9rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
   color: var(--kb-text);
   border-bottom: 1px solid var(--kb-border);
   padding-bottom: 0.3rem;
@@ -85,8 +81,6 @@ body,
 .md-typeset h3 {
   font-size: 0.8rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   color: var(--kb-text);
 }
 
@@ -95,8 +89,6 @@ body,
 .md-typeset h6 {
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   color: var(--kb-text2);
 }
 

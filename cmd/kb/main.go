@@ -457,14 +457,14 @@ func ingestCmd() *cobra.Command {
 				email := os.Getenv("KB_CONFLUENCE_EMAIL")
 				token := os.Getenv("KB_CONFLUENCE_TOKEN")
 				if baseURL == "" || email == "" || token == "" {
-					return fmt.Errorf("--confluence requires KB_CONFLUENCE_BASE_URL, KB_CONFLUENCE_EMAIL, and KB_CONFLUENCE_TOKEN")
+					return fmt.Errorf("--confluence requires KB_CONFLUENCE_BASE_URL, KB_CONFLUENCE_EMAIL, and KB_CONFLUENCE_TOKEN (set in environment or .env file)")
 				}
 				connectors = append(connectors, connector.NewConfluenceConnector(baseURL, space, email, token))
 			}
 			if len(slackChannels) > 0 {
 				token := os.Getenv("KB_SLACK_TOKEN")
 				if token == "" {
-					return fmt.Errorf("--slack requires KB_SLACK_TOKEN")
+					return fmt.Errorf("--slack requires KB_SLACK_TOKEN (set in environment or .env file)")
 				}
 				workspace := os.Getenv("KB_SLACK_WORKSPACE")
 				connectors = append(connectors, connector.NewSlackConnector(token, slackChannels, workspace))

@@ -33,6 +33,7 @@ nav:
 markdown_extensions:
   - tables
   - admonition
+  - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences

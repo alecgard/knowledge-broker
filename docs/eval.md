@@ -12,7 +12,7 @@ A repeatable eval harness for measuring retrieval quality. Run evals before and 
 make eval
 ```
 
-This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally, no Anthropic API key needed.
+This ingests the eval corpus, runs the test set, and prints a summary table. No Anthropic API key needed.
 
 ## Manual usage
 

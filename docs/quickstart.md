@@ -14,7 +14,7 @@ curl -fsSL https://knowledgebroker.dev/install.sh | sh
 
 This downloads the latest `kb` binary for your platform (macOS or Linux) and places it on your PATH.
 
-Ollama is installed and configured automatically on first run -- you don't need to set it up separately.
+All runtime dependencies are managed automatically on first run.
 
 ??? note "Build from source"
     Requires Go 1.24+:
@@ -38,7 +38,7 @@ kb ingest --confluence ENGINEERING --description "Engineering wiki"
 kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 ```
 
-KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a single SQLite database.
+KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them locally, and stores everything in a single SQLite database.
 
 Ingestion is incremental, so re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
 
@@ -46,7 +46,7 @@ Ingestion is incremental, so re-running the same command only processes new or c
 
 ### Raw mode (no API key needed)
 
-Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) using only Ollama. No external API key required.
+Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) entirely locally. No external API key required.
 
 ```bash
 kb query --raw "how does authentication work?"
@@ -114,9 +114,9 @@ curl -s -X POST localhost:8080/v1/query \
 
 ## What requires an API key
 
-KB is designed to work with only Ollama. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+KB works entirely locally out of the box. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
 
-| Capability | Ollama only | With API key |
+| Capability | Local only | With API key |
 |------------|:-----------:|:------------:|
 | Ingestion, embedding, hybrid search | :material-check: | :material-check: |
 | Raw retrieval with confidence signals | :material-check: | :material-check: |

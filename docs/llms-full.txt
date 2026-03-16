@@ -14,7 +14,7 @@ Run it for your whole org or just on your laptop — either way, agents query it
 
 Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. Ollama is installed and configured automatically on first run. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
+It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
 
 The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
 
@@ -59,7 +59,7 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 
 1. **[Connectors](connectors.md)** pull content from sources: local filesystem, Git, Confluence, Slack, GitHub Wiki
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
-3. **Embeddings** via Ollama convert chunks to vectors; raw text is indexed with FTS5 for keyword search
+3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
 5. **[Confidence signals](architecture.md)** assess trust across four dimensions: freshness, corroboration, consistency, authority
 6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
@@ -85,7 +85,7 @@ curl -fsSL https://knowledgebroker.dev/install.sh | sh
 
 This downloads the latest `kb` binary for your platform (macOS or Linux) and places it on your PATH.
 
-Ollama is installed and configured automatically on first run -- you don't need to set it up separately.
+All runtime dependencies are managed automatically on first run.
 
 ??? note "Build from source"
     Requires Go 1.24+:
@@ -109,7 +109,7 @@ kb ingest --confluence ENGINEERING --description "Engineering wiki"
 kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 ```
 
-KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a single SQLite database.
+KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them locally, and stores everything in a single SQLite database.
 
 Ingestion is incremental, so re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
 
@@ -117,7 +117,7 @@ Ingestion is incremental, so re-running the same command only processes new or c
 
 ### Raw mode (no API key needed)
 
-Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) using only Ollama. No external API key required.
+Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) entirely locally. No external API key required.
 
 ```bash
 kb query --raw "how does authentication work?"
@@ -185,9 +185,9 @@ curl -s -X POST localhost:8080/v1/query \
 
 ## What requires an API key
 
-KB is designed to work with only Ollama. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
+KB works entirely locally out of the box. An Anthropic API key unlocks additional capabilities but is never required for core retrieval.
 
-| Capability | Ollama only | With API key |
+| Capability | Local only | With API key |
 |------------|:-----------:|:------------:|
 | Ingestion, embedding, hybrid search | :material-check: | :material-check: |
 | Raw retrieval with confidence signals | :material-check: | :material-check: |
@@ -213,7 +213,7 @@ KB is designed to work with only Ollama. An Anthropic API key unlocks additional
 
 Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
 
-Embeddings and search run on your machine via Ollama and SQLite. The only external call is to Claude for synthesis, and that's optional.
+Embeddings and search run entirely on your machine. The only external call is to Claude for synthesis, and that's optional.
 
 Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
 
@@ -245,13 +245,13 @@ Connectors, extractors, embedding models, and LLM providers are all swappable. A
  ┌────────────────────────────────────────┐                 ▼
  │         Enrichment (optional)          │    ┌──────────────────────────┐
  │  Local LLM annotates chunks with       │    │       Embedding          │
- │  entities and keywords                 │    │  Ollama embeds original  │
+ │  entities and keywords                 │    │  Embed original          │
  └──────────────────┬─────────────────────┘    │  + expanded queries      │
                     │                          └────────────┬─────────────┘
                     ▼                                       │
  ┌────────────────────────────────────────┐                 ▼
  │            Embedding                   │    ┌──────────────────────────┐
- │  Ollama (nomic-embed-text, 768d)       │    │     Hybrid Search        │
+ │  Local model (nomic-embed-text, 768d)  │    │     Hybrid Search        │
  └──────────────────┬─────────────────────┘    │                          │
                     │                          │  ┌────────┐ ┌──────────┐ │
                     ▼                          │  │Vector  │ │  BM25    │ │
@@ -317,11 +317,11 @@ Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CH
 
 A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
 
-Enrichment runs entirely on Ollama, no external API calls. Enable it by having the enrichment model pulled in Ollama.
+Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
 
 ### Embedding and storage
 
-Each chunk is embedded via Ollama (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
+Each chunk is embedded locally (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
 
 Everything lives in a single SQLite database file. No external database infrastructure.
 
@@ -407,9 +407,9 @@ These thresholds are suggestions. Agents and applications can define their own l
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KB_DB` | `kb.db` | SQLite database path |
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
-| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Ollama model for chunk enrichment |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key (synthesis mode only) |
@@ -661,7 +661,7 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
-| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama server for embeddings |
+| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |
 
@@ -768,7 +768,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/query` | POST | Query with optional SSE streaming |
 | `/v1/ingest` | POST | Receive fragments from remote ingestion |
 | `/v1/sources` | GET | List registered sources |
-| `/v1/health` | GET | Health check (verifies Ollama connectivity) |
+| `/v1/health` | GET | Health check |
 
 ### Query request format
 
@@ -886,7 +886,7 @@ kb cluster viz
 
 ## kb setup
 
-Verify Ollama installation and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
+Verify runtime dependencies and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
 
 ```bash
 kb setup
@@ -923,16 +923,16 @@ kb version
 | Flag | Description |
 |------|-------------|
 | `--debug` | Enable debug mode (log all API calls) |
-| `--no-setup` | Skip automatic Ollama management (useful for CI or remote Ollama) |
+| `--no-setup` | Skip automatic runtime management (useful for CI or custom deployments) |
 
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
-| `KB_SKIP_SETUP` | `false` | Skip automatic Ollama management |
+| `KB_SKIP_SETUP` | `false` | Skip automatic runtime management |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
 | `KB_DB` | `kb.db` | Default database path |
 | `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |
@@ -950,7 +950,7 @@ A repeatable eval harness for measuring retrieval quality. Run evals before and 
 make eval
 ```
 
-This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally, no Anthropic API key needed.
+This ingests the eval corpus, runs the test set, and prints a summary table. No Anthropic API key needed.
 
 ## Manual usage
 

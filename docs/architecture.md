@@ -8,7 +8,7 @@ description: How Knowledge Broker's trust layer, hybrid search, and confidence s
 
 Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
 
-Embeddings and search run on your machine via Ollama and SQLite. The only external call is to Claude for synthesis, and that's optional.
+Embeddings and search run entirely on your machine. The only external call is to Claude for synthesis, and that's optional.
 
 Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
 
@@ -40,13 +40,13 @@ Connectors, extractors, embedding models, and LLM providers are all swappable. A
  ┌────────────────────────────────────────┐                 ▼
  │         Enrichment (optional)          │    ┌──────────────────────────┐
  │  Local LLM annotates chunks with       │    │       Embedding          │
- │  entities and keywords                 │    │  Ollama embeds original  │
+ │  entities and keywords                 │    │  Embed original          │
  └──────────────────┬─────────────────────┘    │  + expanded queries      │
                     │                          └────────────┬─────────────┘
                     ▼                                       │
  ┌────────────────────────────────────────┐                 ▼
  │            Embedding                   │    ┌──────────────────────────┐
- │  Ollama (nomic-embed-text, 768d)       │    │     Hybrid Search        │
+ │  Local model (nomic-embed-text, 768d)  │    │     Hybrid Search        │
  └──────────────────┬─────────────────────┘    │                          │
                     │                          │  ┌────────┐ ┌──────────┐ │
                     ▼                          │  │Vector  │ │  BM25    │ │
@@ -112,11 +112,11 @@ Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CH
 
 A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
 
-Enrichment runs entirely on Ollama, no external API calls. Enable it by having the enrichment model pulled in Ollama.
+Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
 
 ### Embedding and storage
 
-Each chunk is embedded via Ollama (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
+Each chunk is embedded locally (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
 
 Everything lives in a single SQLite database file. No external database infrastructure.
 
@@ -202,9 +202,9 @@ These thresholds are suggestions. Agents and applications can define their own l
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KB_DB` | `kb.db` | SQLite database path |
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
-| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Ollama model for chunk enrichment |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
 | `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key (synthesis mode only) |

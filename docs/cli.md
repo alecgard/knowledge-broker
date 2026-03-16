@@ -94,7 +94,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/query` | POST | Query with optional SSE streaming |
 | `/v1/ingest` | POST | Receive fragments from remote ingestion |
 | `/v1/sources` | GET | List registered sources |
-| `/v1/health` | GET | Health check (verifies Ollama connectivity) |
+| `/v1/health` | GET | Health check |
 
 ### Query request format
 
@@ -212,7 +212,7 @@ kb cluster viz
 
 ## kb setup
 
-Verify Ollama installation and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
+Verify runtime dependencies and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
 
 ```bash
 kb setup
@@ -249,16 +249,16 @@ kb version
 | Flag | Description |
 |------|-------------|
 | `--debug` | Enable debug mode (log all API calls) |
-| `--no-setup` | Skip automatic Ollama management (useful for CI or remote Ollama) |
+| `--no-setup` | Skip automatic runtime management (useful for CI or custom deployments) |
 
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
-| `KB_SKIP_SETUP` | `false` | Skip automatic Ollama management |
+| `KB_SKIP_SETUP` | `false` | Skip automatic runtime management |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
 | `KB_DB` | `kb.db` | Default database path |
 | `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |

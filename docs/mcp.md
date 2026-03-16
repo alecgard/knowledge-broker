@@ -94,7 +94,7 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
-| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama server for embeddings |
+| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |
 

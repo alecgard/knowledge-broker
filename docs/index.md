@@ -12,7 +12,7 @@ Run it for your whole org or just on your laptop — either way, agents query it
 
 Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. Ollama is installed and configured automatically on first run. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
+It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
 
 The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
 
@@ -57,7 +57,7 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 
 1. **[Connectors](connectors.md)** pull content from sources: local filesystem, Git, Confluence, Slack, GitHub Wiki
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
-3. **Embeddings** via Ollama convert chunks to vectors; raw text is indexed with FTS5 for keyword search
+3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
 5. **[Confidence signals](architecture.md)** assess trust across four dimensions: freshness, corroboration, consistency, authority
 6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode

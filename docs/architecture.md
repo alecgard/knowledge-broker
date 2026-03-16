@@ -6,11 +6,11 @@ description: How Knowledge Broker's trust layer, hybrid search, and confidence s
 
 ## Design principles
 
-**Surface uncertainty, don't hide it.** Most knowledge tools give you an answer and hope it's right. Knowledge Broker tells you *how much* to trust the answer and *why* — and when sources disagree, it flags the contradiction explicitly rather than silently picking one.
+Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
 
-**Local-first.** Embeddings and search run entirely on your machine via Ollama and SQLite. The only external call is to Claude for answer synthesis, and that's optional.
+Embeddings and search run on your machine via Ollama and SQLite. The only external call is to Claude for synthesis, and that's optional.
 
-**Pluggable at every layer.** Connectors, extractors, embedding models, and LLM providers are all swappable. New source types and file formats don't require core changes.
+Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
 
 ## System overview
 
@@ -151,7 +151,7 @@ Results from all search paths are merged via **Reciprocal Rank Fusion** (RRF), w
 
 ## The trust layer
 
-Every Knowledge Broker response includes confidence signals — a composite trust score and four independent dimensions that explain *why* the score is what it is.
+Every response includes a composite trust score built from four independent dimensions.
 
 ### Confidence signals
 
@@ -183,7 +183,7 @@ In **synthesis mode**, the LLM assesses confidence across the full retrieved con
 
 When sources disagree, Knowledge Broker flags the contradiction explicitly in the response. The `contradictions` array contains natural-language descriptions of what the sources disagree about and which sources are involved.
 
-This is a deliberate design choice. Most knowledge tools silently pick one answer. Knowledge Broker surfaces the disagreement so that agents can escalate to a human and humans can investigate which source is correct.
+Most knowledge tools silently pick one answer. KB surfaces the disagreement so agents can escalate to a human and humans can figure out which source is actually right.
 
 ### Using confidence signals
 

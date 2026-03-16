@@ -8,15 +8,11 @@ Knowledge Broker is an open-source CLI tool for team knowledge retrieval, built 
 
 ## Why Knowledge Broker
 
-Teams accumulate knowledge across repos, wikis, Confluence, Slack, and local docs. When someone asks a question, the answer exists — scattered across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where the sources disagree.
+Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere — spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-**Zero infrastructure.** SQLite for storage, Ollama for embeddings. No Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file.
+It runs on SQLite and Ollama. No Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. Your data stays on your machine — the only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
 
-**Self-hosted and private.** Your data never leaves your environment. Embeddings run locally via Ollama. The only external call is to Claude for answer synthesis — and that's optional. Raw mode gives you ranked fragments with confidence scores using only local compute.
-
-**Built for AI agents.** The MCP server gives agents structured access to your knowledge base. Agents receive confidence scores they can branch on — answering confidently above 0.85, hedging between 0.6–0.85, or escalating contradictions to the user below 0.6.
-
-**Contradictions are surfaced, not hidden.** When sources disagree, Knowledge Broker flags the contradiction explicitly. Agents and humans can decide what to do with ambiguity rather than receiving false certainty.
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly — no silent tiebreaking.
 
 ## What it looks like
 
@@ -45,10 +41,7 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 
 ## Who it's for
 
-- **Engineering teams** that want a shared, queryable knowledge base across repos, docs, and chat history
-- **AI agent builders** who need structured knowledge retrieval with confidence signals
-- **Teams using Claude Code** who want a shared MCP knowledge server
-- **Anyone** who wants local-first, private knowledge retrieval without SaaS dependencies
+Engineering teams that want a single place to query across repos, docs, and chat history. Teams using Claude Code or other MCP clients that want a shared knowledge server. Anyone who wants local-first, private retrieval without SaaS dependencies.
 
 ## Get started
 

@@ -261,13 +261,14 @@ body,
   border-radius: 0;
 }
 
-/* Admonitions — square, no border-radius */
+/* Admonitions — square, no border-radius, neutral colors */
 .md-typeset .admonition,
 .md-typeset details {
   border-radius: 0;
   border: 1px solid var(--kb-border);
   box-shadow: none;
   font-size: 0.7rem;
+  border-left: 2px solid var(--kb-text2);
 }
 
 .md-typeset .admonition-title,
@@ -277,6 +278,14 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-radius: 0;
+  background-color: var(--kb-surface);
+  border-bottom: 1px solid var(--kb-border);
+  color: var(--kb-text);
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before {
+  color: var(--kb-text2) !important;
 }
 
 /* Links */

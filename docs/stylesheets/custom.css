@@ -285,7 +285,9 @@ body,
 }
 
 .md-typeset .admonition-title::before,
-.md-typeset summary::before {
+.md-typeset summary::before,
+.md-typeset .admonition-title::after,
+.md-typeset summary::after {
   color: var(--kb-text2) !important;
 }
 

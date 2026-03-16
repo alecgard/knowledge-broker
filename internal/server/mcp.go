@@ -80,58 +80,71 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 	return s
 }
 
+// MCPTransports controls which MCP transports to start.
+type MCPTransports struct {
+	Stdio bool
+	SSE   bool
+}
+
 // ServeStdio starts the MCP server on stdio only.
 func (s *MCPServer) ServeStdio() error {
 	s.logger.Info("starting MCP server on stdio")
 	return server.ServeStdio(s.server)
 }
 
-// Serve starts both stdio and SSE transports concurrently, sharing the same
-// underlying MCPServer instance. It blocks until ctx is cancelled or either
-// transport returns an error, then cleans up both.
-func (s *MCPServer) Serve(ctx context.Context, sseAddr string) error {
-	sseServer := server.NewSSEServer(s.server,
-		server.WithBaseURL("http://"+sseAddr),
-	)
+// Serve starts the requested MCP transports concurrently, sharing the same
+// underlying MCPServer instance. It blocks until ctx is cancelled or a
+// transport returns an error, then cleans up.
+func (s *MCPServer) Serve(ctx context.Context, sseAddr string, t MCPTransports) error {
+	if !t.Stdio && !t.SSE {
+		return nil
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var (
-		wg   sync.WaitGroup
-		once sync.Once
-		first error
+		wg        sync.WaitGroup
+		once      sync.Once
+		first     error
+		sseServer *server.SSEServer
 	)
 	setErr := func(err error) {
 		once.Do(func() { first = err })
 		cancel()
 	}
 
-	// Start SSE transport.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		s.logger.Info("starting MCP SSE transport", "addr", sseAddr)
-		if err := sseServer.Start(sseAddr); err != nil {
-			setErr(fmt.Errorf("sse: %w", err))
-		}
-	}()
+	if t.SSE {
+		sseServer = server.NewSSEServer(s.server,
+			server.WithBaseURL("http://"+sseAddr),
+		)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.logger.Info("starting MCP SSE transport", "addr", sseAddr)
+			if err := sseServer.Start(sseAddr); err != nil {
+				setErr(fmt.Errorf("sse: %w", err))
+			}
+		}()
+	}
 
-	// Start stdio transport.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		s.logger.Info("starting MCP stdio transport")
-		if err := server.ServeStdio(s.server); err != nil {
-			setErr(fmt.Errorf("stdio: %w", err))
-		}
-	}()
+	if t.Stdio {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.logger.Info("starting MCP stdio transport")
+			if err := server.ServeStdio(s.server); err != nil {
+				setErr(fmt.Errorf("stdio: %w", err))
+			}
+		}()
+	}
 
-	// Wait for cancellation, then shut down SSE gracefully.
 	<-ctx.Done()
 	s.logger.Info("shutting down MCP transports")
-	if err := sseServer.Shutdown(context.Background()); err != nil {
-		s.logger.Warn("SSE shutdown error", "error", err)
+	if sseServer != nil {
+		if err := sseServer.Shutdown(context.Background()); err != nil {
+			s.logger.Warn("SSE shutdown error", "error", err)
+		}
 	}
 
 	wg.Wait()

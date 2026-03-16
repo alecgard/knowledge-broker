@@ -68,7 +68,7 @@ func resolveConfigPath(client mcpClientType, scope mcpScope, homeDir, cwd string
 func buildMCPEntry(kbBinary string) mcpServerEntry {
 	return mcpServerEntry{
 		Command: kbBinary,
-		Args:    []string{"mcp"},
+		Args:    []string{"serve", "--no-http", "--no-sse"},
 	}
 }
 

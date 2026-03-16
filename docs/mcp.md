@@ -4,7 +4,7 @@ description: Set up the Knowledge Broker MCP server for Claude Code, Codex, Curs
 
 # MCP Server
 
-Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. Both stdio and SSE transports run simultaneously.
+Knowledge Broker includes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. `kb serve` runs the HTTP API, MCP stdio, and MCP SSE transports in a single process.
 
 ## Setup
 
@@ -19,7 +19,7 @@ Each developer adds KB to their MCP client config (Claude Code, Cursor, Windsurf
   "mcpServers": {
     "knowledge-broker": {
       "command": "/path/to/kb",
-      "args": ["mcp"]
+      "args": ["serve", "--no-http", "--no-sse"]
     }
   }
 }
@@ -29,11 +29,11 @@ If `kb` is on your PATH, you can use `"command": "kb"` directly. This launches K
 
 ### SSE (remote access)
 
-`kb mcp` also starts an SSE transport on `:8082` by default, so remote clients can connect without running the binary locally:
+`kb serve` also starts an SSE transport on `:8082` by default, so remote clients can connect without running the binary locally:
 
 ```bash
-kb mcp                  # stdio + SSE on :8082
-kb mcp --addr :9090     # custom SSE port
+kb serve                        # HTTP on :8080, MCP SSE on :8082
+kb serve --mcp-addr :9090       # custom MCP SSE port
 ```
 
 The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For HTTPS, put a reverse proxy or tunnel in front.
@@ -101,7 +101,7 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 ## Typical setup
 
 1. **Deploy KB** on a shared machine or in CI. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
-2. **Start the server**: `kb mcp` (and/or `kb serve` for HTTP)
+2. **Start the server**: `kb serve`
 3. **Each developer** adds KB to their MCP client config (see above)
 4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
 5. The `kb-instructions` prompt bootstraps agent context automatically, no manual prompt engineering needed

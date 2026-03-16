@@ -75,11 +75,10 @@ Streams the answer to the terminal as it's generated.
 
 ## Start the server
 
-Start the MCP and/or HTTP server so your team can query:
+Start the server so your team can query:
 
 ```bash
-kb mcp                    # MCP server (stdio + SSE on :8082)
-kb serve                  # HTTP API on :8080
+kb serve                  # HTTP API on :8080, MCP on :8082 (stdio + SSE)
 ```
 
 ### Connect your team's MCP clients
@@ -91,13 +90,13 @@ Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
   "mcpServers": {
     "knowledge-broker": {
       "command": "kb",
-      "args": ["mcp"]
+      "args": ["serve", "--no-http", "--no-sse"]
     }
   }
 }
 ```
 
-For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full setup guide.
+For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full tool reference and client configuration.
 
 ### HTTP API
 

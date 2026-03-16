@@ -63,17 +63,29 @@ kb query --raw --source-type git "deployment process"
 
 ## kb serve
 
-Start the HTTP API server.
+Start the HTTP API and MCP server. Runs the HTTP API, MCP stdio transport, and MCP SSE transport in a single process.
 
 ```bash
 kb serve
-kb serve --addr :9090
+kb serve --addr :9090 --mcp-addr :9091
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--addr` | `:8080` | Listen address |
+| `--addr` | `:8080` | HTTP listen address |
+| `--mcp-addr` | `:8082` | MCP SSE listen address |
 | `--db` | `kb.db` | SQLite database path |
+| `--no-http` | `false` | Disable HTTP API server |
+| `--no-sse` | `false` | Disable MCP SSE transport |
+| `--no-stdio` | `false` | Disable MCP stdio transport |
+
+Use `--no-*` flags to run only the transports you need:
+
+```bash
+kb serve                              # all transports (default)
+kb serve --no-http --no-sse           # stdio only (for MCP client configs)
+kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
+```
 
 ### Endpoints
 
@@ -102,24 +114,6 @@ kb serve --addr :9090
 - Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
 - Set `"stream": true` for SSE streaming (synthesis mode only).
 - The `messages` array follows the same format as the Claude API. Pass conversation history for multi-turn queries.
-
-## kb mcp
-
-Start the MCP server. Both stdio and SSE transports run simultaneously.
-
-```bash
-kb mcp
-kb mcp --addr :9090
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--addr` | `:8082` | SSE listen address |
-| `--db` | `kb.db` | SQLite database path |
-
-The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`.
-
-See [MCP Server](mcp.md) for the full tool reference and client configuration.
 
 ## kb sources
 

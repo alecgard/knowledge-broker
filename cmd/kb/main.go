@@ -56,7 +56,6 @@ func main() {
 	root.AddCommand(ingestCmd())
 	root.AddCommand(queryCmd())
 	root.AddCommand(serveCmd())
-	root.AddCommand(mcpCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
@@ -1016,14 +1015,22 @@ func queryRaw(ctx context.Context, engine *query.Engine, req model.QueryRequest)
 func serveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start HTTP API server",
+		Short: "Start HTTP API and MCP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			cfg.ListenAddr, _ = cmd.Flags().GetString("addr")
+			mcpAddr, _ := cmd.Flags().GetString("mcp-addr")
+			noHTTP, _ := cmd.Flags().GetBool("no-http")
+			noSSE, _ := cmd.Flags().GetBool("no-sse")
+			noStdio, _ := cmd.Flags().GetBool("no-stdio")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
+
+			if noHTTP && noSSE && noStdio {
+				return fmt.Errorf("all transports disabled; nothing to serve")
+			}
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -1044,52 +1051,37 @@ func serveCmd() *cobra.Command {
 			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
 			engine.SetDiskCache(s)
 
+			mcpTransports := server.MCPTransports{
+				Stdio: !noStdio,
+				SSE:   !noSSE,
+			}
+
+			// Start MCP transports in the background (if any enabled).
+			mcpServer := server.NewMCPServer(engine, s, logger)
+			if mcpTransports.Stdio || mcpTransports.SSE {
+				go func() {
+					if err := mcpServer.Serve(ctx, mcpAddr, mcpTransports); err != nil {
+						logger.Error("MCP server error", "error", err)
+					}
+				}()
+			}
+
+			if noHTTP {
+				// No HTTP server — block until ctx is cancelled.
+				<-ctx.Done()
+				return nil
+			}
+
 			httpServer := server.NewHTTPServer(engine, emb, s, logger)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
 		},
 	}
-	cmd.Flags().String("addr", ":8080", "Listen address")
+	cmd.Flags().String("addr", ":8080", "HTTP listen address")
+	cmd.Flags().String("mcp-addr", ":8082", "MCP SSE listen address")
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
-	return cmd
-}
-
-func mcpCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "mcp",
-		Short: "Start MCP server (stdio + SSE)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
-			addr, _ := cmd.Flags().GetString("addr")
-			debugMode := isDebug(cmd)
-			logger := newLogger(debugMode)
-			client := httpClient(logger, debugMode)
-
-			s, err := openStore(cfg)
-			if err != nil {
-				return fmt.Errorf("open store: %w", err)
-			}
-			defer s.Close()
-
-			emb := newEmbedder(cfg, client)
-			if err := ensureOllama(context.Background(), cmd, cfg, true); err != nil {
-				return err
-			}
-
-			// LLM client — synthesis is the default; raw mode is opt-in via raw=true parameter.
-			llmClient := newLLMClient(cfg, "", client, logger)
-			engine := query.NewEngine(s, emb, llmClient, cfg.DefaultLimit, logger)
-			engine.SetDiskCache(s)
-
-			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-			defer cancel()
-
-			mcpServer := server.NewMCPServer(engine, s, logger)
-			return mcpServer.Serve(ctx, addr)
-		},
-	}
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
-	cmd.Flags().String("addr", ":8082", "SSE listen address")
+	cmd.Flags().Bool("no-http", false, "Disable HTTP API server")
+	cmd.Flags().Bool("no-sse", false, "Disable MCP SSE transport")
+	cmd.Flags().Bool("no-stdio", false, "Disable MCP stdio transport")
 	return cmd
 }
 

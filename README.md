@@ -1,6 +1,6 @@
 # Knowledge Broker
 
-[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Version](https://img.shields.io/github/v/tag/alecgard/knowledge-broker?label=version&sort=semver)](https://github.com/alecgard/knowledge-broker/releases)
 [![License](https://img.shields.io/badge/License-BSL_1.1-blue)](LICENSE)
 
 Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
@@ -38,15 +38,15 @@ kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 
 ```bash
 # Raw retrieval — no API key needed
-kb query --raw "how does retry logic work?"
+kb query --raw "What database does the inventory service use?"
 
 # Synthesised answer (requires ANTHROPIC_API_KEY)
-kb query "how does retry logic work?"
+kb query "What database does the inventory service use?"
 ```
 
 ```jsonc
 {
-  "answer": "The inventory service runs on port 8081 and uses PostgreSQL ...",
+  "answer": "The inventory service uses PostgreSQL (v16 on RDS, r6g.2xlarge).",
   "confidence": {
     "overall": 0.93,
     "breakdown": {
@@ -56,7 +56,10 @@ kb query "how does retry logic work?"
       "authority": 0.95
     }
   },
-  "sources": [ ... ],
+  "sources": [
+    { "source_type": "confluence", "source_name": "ENGINEERING", "source_path": "Internal Services" },
+    { "source_type": "slack", "source_name": "engineering", "source_path": "#platform-engineering/2026-03-06" }
+  ],
   "contradictions": []
 }
 ```
@@ -64,8 +67,7 @@ kb query "how does retry logic work?"
 ## Serve
 
 ```bash
-kb serve                  # HTTP API on :8080
-kb mcp                    # MCP server (stdio + SSE on :8082)
+kb serve                  # HTTP API on :8080, MCP on :8082 (stdio + SSE)
 ```
 
 See the **[full documentation](https://knowledgebroker.dev)** for connector setup, MCP integration, CLI reference, configuration, and the evaluation framework.

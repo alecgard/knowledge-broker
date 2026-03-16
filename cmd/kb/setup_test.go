@@ -67,8 +67,9 @@ func TestBuildMCPEntry(t *testing.T) {
 	if entry.Command != "/usr/local/bin/kb" {
 		t.Errorf("command = %q, want /usr/local/bin/kb", entry.Command)
 	}
-	if len(entry.Args) != 1 || entry.Args[0] != "mcp" {
-		t.Errorf("args = %v, want [mcp]", entry.Args)
+	want := []string{"serve", "--no-http", "--no-sse"}
+	if len(entry.Args) != len(want) || entry.Args[0] != want[0] || entry.Args[1] != want[1] || entry.Args[2] != want[2] {
+		t.Errorf("args = %v, want %v", entry.Args, want)
 	}
 }
 
@@ -126,7 +127,7 @@ func TestMergeMCPConfig_UpdatesExistingEntry(t *testing.T) {
   "mcpServers": {
     "knowledge-broker": {
       "command": "/old/path/kb",
-      "args": ["mcp", "--db", "/old/kb.db"]
+      "args": ["serve", "--db", "/old/kb.db"]
     }
   }
 }`)

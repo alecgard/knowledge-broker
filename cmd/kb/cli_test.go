@@ -25,7 +25,6 @@ func newTestRoot() *cobra.Command {
 	root.AddCommand(ingestCmd())
 	root.AddCommand(queryCmd())
 	root.AddCommand(serveCmd())
-	root.AddCommand(mcpCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())
 	root.AddCommand(evalCmd())
@@ -78,7 +77,7 @@ func TestRootCommandHelp(t *testing.T) {
 
 	out := buf.String()
 
-	expected := []string{"ingest", "query", "serve", "mcp", "setup", "version", "sources"}
+	expected := []string{"ingest", "query", "serve", "setup", "version", "sources"}
 	for _, sub := range expected {
 		if !strings.Contains(out, sub) {
 			t.Errorf("help output should list %q subcommand, got:\n%s", sub, out)

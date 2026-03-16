@@ -228,15 +228,77 @@ KB is designed to work with only Ollama. An Anthropic API key unlocks additional
 
 **Pluggable at every layer.** Connectors, extractors, embedding models, and LLM providers are all swappable. New source types and file formats don't require core changes.
 
+## System overview
+
+```
+ INGESTION                                          QUERY
+ ─────────                                          ─────
+
+ ┌───────────┐  ┌──────────┐  ┌──────────┐
+ │   Local   │  │   Git    │  │Confluence│  ...
+ │Filesystem │  │  Repos   │  │  Slack   │
+ └────┬──────┘  └────┬─────┘  └────┬─────┘
+      │              │              │
+      ▼              ▼              ▼
+ ┌────────────────────────────────────────┐
+ │            Connectors                  │         ┌─────────────────┐
+ │  Pull content, detect changes (SHA-256)│         │   User Query    │
+ └──────────────────┬─────────────────────┘         └────────┬────────┘
+                    │                                        │
+                    ▼                                        ▼
+ ┌────────────────────────────────────────┐    ┌──────────────────────────┐
+ │            Extractors                  │    │  Multi-Query Expansion   │
+ │  Chunk at semantic boundaries per type │    │  LLM rephrases using     │
+ │  (headings, functions, paragraphs)     │    │  corpus vocabulary       │
+ └──────────────────┬─────────────────────┘    │  (optional, needs API)   │
+                    │                          └────────────┬─────────────┘
+                    ▼                                       │
+ ┌────────────────────────────────────────┐                 ▼
+ │         Enrichment (optional)          │    ┌──────────────────────────┐
+ │  Local LLM annotates chunks with       │    │       Embedding          │
+ │  entities and keywords                 │    │  Ollama embeds original  │
+ └──────────────────┬─────────────────────┘    │  + expanded queries      │
+                    │                          └────────────┬─────────────┘
+                    ▼                                       │
+ ┌────────────────────────────────────────┐                 ▼
+ │            Embedding                   │    ┌──────────────────────────┐
+ │  Ollama (nomic-embed-text, 768d)       │    │     Hybrid Search        │
+ └──────────────────┬─────────────────────┘    │                          │
+                    │                          │  ┌────────┐ ┌──────────┐ │
+                    ▼                          │  │Vector  │ │  BM25    │ │
+          ┌─────────────────┐                  │  │sqlite- │ │  FTS5    │ │
+          │                 │                  │  │vec     │ │  keyword │ │
+          │  ┌───────────┐  │                  │  └───┬────┘ └────┬─────┘ │
+          │  │sqlite-vec │  │                  │      └─────┬─────┘       │
+          │  │ (vectors) │  │◄─────────────────│            │             │
+          │  └───────────┘  │  search          │      RRF Merge           │
+          │  ┌───────────┐  │                  └────────────┬─────────────┘
+          │  │   FTS5    │  │                               │
+          │  │(keywords) │  │                               ▼
+          │  └───────────┘  │                  ┌──────────────────────────┐
+          │                 │                  │   Synthesis (Claude)     │
+          │  SQLite (.db)   │                  │   or Raw Fragments       │
+          │                 │                  └────────────┬─────────────┘
+          └─────────────────┘                               │
+                                                            ▼
+                                               ┌──────────────────────────┐
+                                               │        Response          │
+                                               │  ┌────────────────────┐  │
+                                               │  │ Answer + Sources   │  │
+                                               │  ├────────────────────┤  │
+                                               │  │ Confidence Signals │  │
+                                               │  │ (fresh/corr/cons/  │  │
+                                               │  │  auth → overall)   │  │
+                                               │  ├────────────────────┤  │
+                                               │  │ Contradictions     │  │
+                                               │  └────────────────────┘  │
+                                               └──────────────────────────┘
+```
+
 ## Ingestion pipeline
 
 ```
-Source (filesystem, Git, Confluence, Slack, GitHub Wiki)
-  → Connector        Pull content, track what's changed via checksums
-  → Extractor         Chunk at semantic boundaries per file type
-  → Enrichment        LLM adds context annotations to each chunk (optional)
-  → Embedding         Ollama converts chunks to vectors
-  → Storage           SQLite + sqlite-vec (vectors) + FTS5 (keyword index)
+Source → Connector → Extractor → Enrichment → Embedding → SQLite (sqlite-vec + FTS5)
 ```
 
 ### Connectors
@@ -277,12 +339,7 @@ Everything lives in a single SQLite database file. No external database infrastr
 ## Query pipeline
 
 ```
-User query
-  → Multi-query expansion     LLM generates alternative phrasings (optional)
-  → Embedding                 Ollama embeds original + expanded queries
-  → Hybrid search             Vector similarity (sqlite-vec) + BM25 keyword (FTS5)
-  → RRF merge                 Reciprocal Rank Fusion across all result lists
-  → Synthesis / Raw return    Claude synthesises an answer, or return fragments directly
+Query → Expansion → Embedding → Hybrid Search (vector + BM25) → RRF Merge → Synthesis/Raw
 ```
 
 ### Multi-query expansion

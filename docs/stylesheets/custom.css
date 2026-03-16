@@ -100,6 +100,11 @@ body,
   color: var(--kb-text);
 }
 
+.md-header__button.md-logo {
+  margin-right: 0;
+  padding-right: 0;
+}
+
 .md-header__title {
   font-weight: 700;
   text-transform: uppercase;

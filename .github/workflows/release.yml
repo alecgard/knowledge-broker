@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        goarch: [arm64, amd64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build kb (darwin/${{ matrix.goarch }})
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-Wno-deprecated-declarations"
+        run: |
+          go build -tags sqlite_fts5 -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o kb ./cmd/kb
+          tar czf kb-${{ github.ref_name }}-darwin-${{ matrix.goarch }}.tar.gz kb
+          rm kb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kb-darwin-${{ matrix.goarch }}
+          path: kb-*.tar.gz
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build kb (linux/amd64)
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-Wno-deprecated-declarations"
+        run: |
+          go build -tags sqlite_fts5 -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o kb ./cmd/kb
+          tar czf kb-${{ github.ref_name }}-linux-amd64.tar.gz kb
+          rm kb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kb-linux-amd64
+          path: kb-*.tar.gz
+
+  release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*.tar.gz

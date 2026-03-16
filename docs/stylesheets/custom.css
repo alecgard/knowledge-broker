@@ -14,16 +14,21 @@
   --kb-warn: #aa8800;
   --kb-danger: #cc3333;
 
-  /* Override Material theme variables */
-  --md-primary-fg-color: var(--kb-accent);
-  --md-primary-bg-color: var(--kb-bg);
-  --md-accent-fg-color: var(--kb-text2);
-  --md-default-fg-color: var(--kb-text);
-  --md-default-bg-color: var(--kb-bg);
-  --md-typeset-color: var(--kb-text);
-  --md-code-bg-color: var(--kb-surface);
-  --md-footer-bg-color: var(--kb-surface);
-  --md-footer-fg-color: var(--kb-text2);
+  /* Override Material theme variables — use raw hex, not var() refs,
+     because Material reads these at build time in some contexts */
+  --md-primary-fg-color: #1a1a1a;
+  --md-primary-fg-color--light: #444444;
+  --md-primary-fg-color--dark: #000000;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #f5f5f0;
+  --md-accent-fg-color: #707068;
+  --md-accent-fg-color--transparent: rgba(112, 112, 104, 0.1);
+  --md-default-fg-color: #1a1a1a;
+  --md-default-bg-color: #ffffff;
+  --md-typeset-color: #1a1a1a;
+  --md-code-bg-color: #f5f5f0;
+  --md-footer-bg-color: #f5f5f0;
+  --md-footer-fg-color: #707068;
 }
 
 /* Force light mode only — no dark mode */
@@ -143,6 +148,68 @@ body,
 .md-nav__link--active {
   font-weight: 700;
   color: var(--kb-text);
+}
+
+/* Mobile nav drawer overrides — inside media query to match Material's specificity */
+@media screen and (max-width: 76.2344em) {
+  .md-nav--primary .md-nav__title,
+  .md-nav--primary .md-nav__title[for="__drawer"] {
+    background-color: var(--kb-surface) !important;
+    color: var(--kb-text) !important;
+  }
+
+  .md-nav--primary .md-nav__title .md-nav__icon {
+    color: var(--kb-text);
+  }
+
+  .md-nav--primary .md-nav__title ~ .md-nav__list {
+    background-color: var(--kb-bg);
+  }
+
+  .md-nav--primary,
+  .md-nav--primary .md-nav {
+    background-color: var(--kb-bg);
+  }
+
+  .md-nav--primary .md-nav__link {
+    color: var(--kb-text);
+  }
+
+  .md-nav--primary .md-nav__link:hover {
+    color: var(--kb-accent-hover);
+  }
+
+  .md-nav--primary .md-nav__item--active > .md-nav__link,
+  .md-nav--primary .md-nav__link--active {
+    color: var(--kb-text) !important;
+    font-weight: 700;
+  }
+
+  .md-nav--primary .md-nav__item--nested > .md-nav__link {
+    color: var(--kb-text);
+  }
+}
+
+/* Mobile header button (hamburger) */
+.md-header .md-header__button {
+  color: var(--kb-text);
+}
+
+/* Source/repo link in drawer */
+.md-source {
+  background-color: var(--kb-surface2) !important;
+  color: var(--kb-text) !important;
+}
+
+.md-source__repository {
+  color: var(--kb-text) !important;
+}
+
+/* Override Material's accent color for interactive states */
+.md-nav__link:focus,
+.md-nav__link--active,
+.md-nav__item--active > .md-nav__link {
+  color: var(--kb-text) !important;
 }
 
 /* Tables — dense, full-width, collapsed borders */

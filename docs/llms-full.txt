@@ -1,7 +1,7 @@
 # Knowledge Broker — Complete Documentation
 
 Source: https://knowledgebroker.dev
-Generated: 2026-03-15
+Generated: 2026-03-16
 
 
 # Knowledge Broker

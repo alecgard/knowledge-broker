@@ -240,7 +240,15 @@ body,
   border-radius: 0;
   background-color: var(--kb-bg);
   border: 1px solid var(--kb-border);
-  color: var(--kb-text);
+  color: var(--kb-text) !important;
+}
+
+.md-search__input::placeholder {
+  color: var(--kb-text2) !important;
+}
+
+.md-search__icon {
+  color: var(--kb-text) !important;
 }
 
 .md-search__form {

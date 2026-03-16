@@ -107,7 +107,7 @@ Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
 }
 ```
 
-For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full tool reference and client configuration.
+For remote access via SSE, point clients at `http://<server>:8082/sse`. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
 
 ### HTTP API
 

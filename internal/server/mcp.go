@@ -303,13 +303,14 @@ func (s *MCPServer) handleKBInstructions(ctx context.Context, request mcp.GetPro
 	}
 
 	var sb strings.Builder
-	sb.WriteString(`You have access to a knowledge base via the "query" and "list-sources" tools.
+	sb.WriteString(`You have access to Knowledge Broker, a shared knowledge base for this organization. It is available via the "query" and "list-sources" MCP tools.
 
-When to use it:
-- When you need context about the codebase, architecture, or project decisions
-- When the user asks questions you don't have full context for
-- When you're unsure about conventions, patterns, or how something works
-- Before making assumptions — check the knowledge base first
+Use Knowledge Broker:
+- Before making assumptions about the codebase, architecture, or project conventions
+- When you need context you don't already have about how things work or why they were built a certain way
+- When the user asks questions that span multiple repos, docs, or systems
+
+Confidence scores: every response includes a confidence score between 0 and 1. If the score is below 0.5, flag the uncertainty to the user rather than treating the answer as fact. If sources contradict each other, surface both claims with their dates.
 
 `)
 
@@ -327,11 +328,7 @@ When to use it:
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(`Tips:
-- Default synthesis mode gives you a direct answer with confidence signals
-- Use raw=true for underlying fragments when you need to examine sources yourself
-- Use topics parameter to boost relevance for specific domains
-- Use sources/source_types to narrow results`)
+	sb.WriteString(`Use synthesis mode (default) for direct answers. Use raw=true when you need to examine the underlying fragments yourself. Use the topics parameter to boost relevance for specific domains (e.g., "authentication,deployment"). Use sources or source_types to narrow results to specific repos or connector types.`)
 
 	return &mcp.GetPromptResult{
 		Description: "Instructions for using the Knowledge Broker knowledge base",

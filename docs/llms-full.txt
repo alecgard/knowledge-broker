@@ -178,7 +178,7 @@ Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
 }
 ```
 
-For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full tool reference and client configuration.
+For remote access via SSE, point clients at `http://<server>:8082/sse`. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
 
 ### HTTP API
 
@@ -318,7 +318,7 @@ For Claude Code, add to `.mcp.json`:
 }
 ```
 
-Every developer's agent queries the same shared knowledge base. No local install, no local database.
+Every developer's agent queries the same shared knowledge base. No local install, no local database. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
 
 ### HTTP API
 
@@ -855,6 +855,93 @@ The response includes:
 - Tips for using synthesis vs raw mode, topics, and source filtering
 
 MCP clients that support prompts will show this in their prompt list. Use it to bootstrap agent context without manually writing instructions.
+
+## Agent prompts
+
+MCP clients discover KB's tools automatically, but agents won't reach for them unless they know the knowledge base exists. Adding a short prompt to your project config makes the difference between agents that guess and agents that check.
+
+### Claude Code
+
+Add to your project's `CLAUDE.md`:
+
+```markdown
+## Knowledge base
+
+This project is indexed in Knowledge Broker, a shared knowledge base that
+spans our repos, docs, and internal sources. It's available via MCP as the
+"knowledge-broker" server (tools: `query` and `list-sources`).
+
+Use Knowledge Broker:
+- Before asking me for context about the codebase, architecture, or how things work
+- When you encounter unfamiliar patterns, services, or conventions
+- When you need to understand why something was built a certain way
+- Instead of grepping across repos for answers that span multiple files
+
+Start with `list-sources` to see what's indexed. Use `query` for answers.
+Check the confidence score — if it's below 0.5, tell me you're uncertain
+rather than treating the answer as fact. If sources contradict each other,
+surface both claims with their dates.
+```
+
+### Codex
+
+Add to your project's `AGENTS.md` (also read by Jules, Aider, and other agents that support the format):
+
+```markdown
+## Knowledge base
+
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed.
+
+Check the confidence score in the response — if it's below 0.5, flag
+the uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Cursor
+
+Add to `.cursor/rules`:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed. Check the
+confidence score in the response — if it's below 0.5, flag the
+uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Windsurf
+
+Add to `.windsurfrules`:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed. Check the
+confidence score in the response — if it's below 0.5, flag the
+uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Generic (any MCP client)
+
+The core instruction is the same everywhere. Adapt to your client's prompt format:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker"). Use the "query" tool
+to search for answers about the codebase, architecture, and project
+conventions before making assumptions. Use "list-sources" to discover
+what's indexed. Pay attention to confidence scores in the response —
+flag anything below 0.5 as uncertain. When sources contradict each
+other, surface both claims with their dates so the user can judge
+which is current.
+```
 
 ## Environment variables
 

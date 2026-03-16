@@ -101,7 +101,7 @@ For Claude Code, add to `.mcp.json`:
 }
 ```
 
-Every developer's agent queries the same shared knowledge base. No local install, no local database.
+Every developer's agent queries the same shared knowledge base. No local install, no local database. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
 
 ### HTTP API
 

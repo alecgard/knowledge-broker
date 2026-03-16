@@ -192,7 +192,7 @@ body,
 
 /* Source/repo link in drawer */
 .md-source {
-  background-color: var(--kb-surface2) !important;
+  background-color: transparent !important;
   color: var(--kb-text) !important;
 }
 

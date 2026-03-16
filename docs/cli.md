@@ -25,7 +25,7 @@ kb ingest --all
 | `--slack` | Slack channel ID (repeatable) |
 | `--wiki` | GitHub Wiki repository URL (repeatable) |
 | `--all` | Re-ingest all registered local sources |
-| `--remote` | Send fragments to a remote KB server for embedding |
+| `--remote` | URL of a remote KB server to push fragments to |
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
 
@@ -60,6 +60,7 @@ kb query --raw --source-type git "deployment process"
 | `--topics` | Comma-separated topics to boost relevance |
 | `--source-type` | Filter by source type (`filesystem`, `git`, `confluence`, `slack`, `github_wiki`) |
 | `--db` | SQLite database path (default: `kb.db`) |
+| `--remote` | URL of a remote KB server to query |
 
 ## kb serve
 
@@ -94,6 +95,11 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/query` | POST | Query with optional SSE streaming |
 | `/v1/ingest` | POST | Receive fragments from remote ingestion |
 | `/v1/sources` | GET | List registered sources |
+| `/v1/sources` | PATCH | Update source description |
+| `/v1/sources` | DELETE | Remove a source and its fragments |
+| `/v1/sources/import` | POST | Import sources from JSON |
+| `/v1/export` | GET | Export fragment embeddings as JSON |
+| `/v1/version` | GET | Server version |
 | `/v1/health` | GET | Health check |
 
 ### Query request format
@@ -117,7 +123,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 
 ## kb sources
 
-Manage registered ingestion sources.
+Manage registered ingestion sources. All subcommands accept `--remote` to operate on a remote KB server.
 
 ### kb sources list
 
@@ -125,6 +131,7 @@ List all registered sources with type, name, description, fragment count, and la
 
 ```bash
 kb sources list
+kb sources list --remote http://server:8080
 ```
 
 ### kb sources describe
@@ -134,6 +141,7 @@ Set a description for an existing source. Descriptions appear in `list-sources` 
 ```bash
 kb sources describe filesystem/my-repo "Payment processing microservice"
 kb sources describe git/owner/repo "Main backend API"
+kb sources describe --remote http://server:8080 git/owner/repo "Main backend API"
 ```
 
 ### kb sources export
@@ -158,7 +166,7 @@ Remove a registered source and all its fragments from the database.
 
 ```bash
 kb sources remove confluence/ENGINEERING
-kb sources remove git/owner/repo
+kb sources remove --remote http://server:8080 git/owner/repo
 ```
 
 ## kb export
@@ -167,6 +175,7 @@ Export fragment embeddings for visualization with TensorBoard Embedding Projecto
 
 ```bash
 kb export --out ./export/
+kb export --remote http://server:8080 --out ./export/
 ```
 
 Produces `tensors.tsv` and `metadata.tsv` files that can be loaded into the [Embedding Projector](https://projector.tensorflow.org/).
@@ -242,6 +251,7 @@ Print the KB version.
 
 ```bash
 kb version
+kb version --remote http://server:8080
 ```
 
 ## Global flags

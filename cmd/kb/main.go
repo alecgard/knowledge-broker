@@ -69,13 +69,26 @@ func main() {
 }
 
 func versionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				var resp map[string]string
+				if err := remoteJSON(context.Background(), http.MethodGet, remote+"/v1/version", nil, &resp); err != nil {
+					return err
+				}
+				fmt.Printf("kb %s (remote: %s)\n", resp["version"], remote)
+				return nil
+			}
 			fmt.Printf("kb %s\n", version)
+			return nil
 		},
 	}
+	cmd.Flags().String("remote", "", "URL of a remote KB server")
+	return cmd
 }
 
 func isDebug(cmd *cobra.Command) bool {
@@ -874,29 +887,10 @@ func queryCmd() *cobra.Command {
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
 
-			s, err := openStore(cfg)
-			if err != nil {
-				return fmt.Errorf("open store: %w", err)
-			}
-			defer s.Close()
-
-			emb := newEmbedder(cfg, client)
-
-			// When --raw is set, LLM is not needed.
-			var llmClient query.LLM
-			if !rawMode {
-				llmClient = newLLMClient(cfg, llmFlag, client, logger)
-				if llmClient == nil {
-					return fmt.Errorf("synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use --raw for retrieval without LLM")
-				}
-			}
-
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit <= 0 {
 				limit = cfg.DefaultLimit
 			}
-			engine := query.NewEngine(s, emb, llmClient, limit, logger)
-			engine.SetDiskCache(s)
 
 			topicsRaw, _ := cmd.Flags().GetString("topics")
 			var topics []string
@@ -926,6 +920,32 @@ func queryCmd() *cobra.Command {
 				NoExpand:    noExpand,
 			}
 
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				return queryRemote(context.Background(), remote, req, rawMode, human)
+			}
+
+			s, err := openStore(cfg)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer s.Close()
+
+			emb := newEmbedder(cfg, client)
+
+			// When --raw is set, LLM is not needed.
+			var llmClient query.LLM
+			if !rawMode {
+				llmClient = newLLMClient(cfg, llmFlag, client, logger)
+				if llmClient == nil {
+					return fmt.Errorf("synthesis mode requires ANTHROPIC_API_KEY. Set it in .env, or use --raw for retrieval without LLM")
+				}
+			}
+
+			engine := query.NewEngine(s, emb, llmClient, limit, logger)
+			engine.SetDiskCache(s)
+
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
@@ -951,6 +971,7 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().StringArray("source-type", nil, "Filter results to this source type (repeatable: filesystem, git, confluence, slack, github_wiki)")
 	cmd.Flags().String("llm", "", "LLM provider override: claude, openai, ollama (default from KB_LLM_PROVIDER or claude)")
 	cmd.Flags().Bool("no-expand", false, "Disable multi-query expansion (useful for precise queries)")
+	cmd.Flags().String("remote", "", "URL of a remote KB server")
 	return cmd
 }
 
@@ -1008,6 +1029,101 @@ func queryRaw(ctx context.Context, engine *query.Engine, req model.QueryRequest)
 	}
 
 	out, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(out))
+	return nil
+}
+
+// queryRemote sends a query to a remote KB server and prints the response.
+func queryRemote(ctx context.Context, remote string, req model.QueryRequest, rawMode, human bool) error {
+	if rawMode {
+		req.Mode = model.ModeRaw
+		var result model.RawResult
+		if err := remoteJSON(ctx, http.MethodPost, remote+"/v1/query", req, &result); err != nil {
+			return err
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	if human {
+		// Use streaming (SSE) for human mode.
+		streamTrue := true
+		req.Stream = &streamTrue
+		resp, err := remoteRequest(ctx, http.MethodPost, remote+"/v1/query", req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("remote returned %d: %s", resp.StatusCode, string(body))
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			var event map[string]interface{}
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+			switch event["type"] {
+			case "text":
+				if content, ok := event["content"].(string); ok {
+					fmt.Print(content)
+				}
+			case "done":
+				fmt.Println()
+				if conf, ok := event["confidence"].(map[string]interface{}); ok {
+					fmt.Fprintf(os.Stderr, "\n--- Confidence ---\n")
+					if overall, ok := conf["overall"].(float64); ok {
+						fmt.Fprintf(os.Stderr, "Overall:       %.2f\n", overall)
+					}
+					if bd, ok := conf["breakdown"].(map[string]interface{}); ok {
+						if v, ok := bd["freshness"].(float64); ok {
+							fmt.Fprintf(os.Stderr, "Freshness:     %.2f\n", v)
+						}
+						if v, ok := bd["corroboration"].(float64); ok {
+							fmt.Fprintf(os.Stderr, "Corroboration: %.2f\n", v)
+						}
+						if v, ok := bd["consistency"].(float64); ok {
+							fmt.Fprintf(os.Stderr, "Consistency:   %.2f\n", v)
+						}
+						if v, ok := bd["authority"].(float64); ok {
+							fmt.Fprintf(os.Stderr, "Authority:     %.2f\n", v)
+						}
+					}
+				}
+				if srcs, ok := event["sources"].([]interface{}); ok && len(srcs) > 0 {
+					fmt.Fprintf(os.Stderr, "\n--- Sources ---\n")
+					for _, s := range srcs {
+						if sm, ok := s.(map[string]interface{}); ok {
+							fid, _ := sm["fragment_id"].(string)
+							sp, _ := sm["source_path"].(string)
+							fmt.Fprintf(os.Stderr, "  [%s] %s\n", fid, sp)
+						}
+					}
+				}
+			case "error":
+				if content, ok := event["content"].(string); ok {
+					return fmt.Errorf("remote error: %s", content)
+				}
+			}
+		}
+		return scanner.Err()
+	}
+
+	// Compact mode (default).
+	var answer model.Answer
+	if err := remoteJSON(ctx, http.MethodPost, remote+"/v1/query", req, &answer); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(answer)
 	fmt.Println(string(out))
 	return nil
 }
@@ -1072,7 +1188,7 @@ func serveCmd() *cobra.Command {
 				return nil
 			}
 
-			httpServer := server.NewHTTPServer(engine, emb, s, logger)
+			httpServer := server.NewHTTPServer(engine, emb, s, logger, version)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
 		},
 	}
@@ -1098,6 +1214,13 @@ func exportCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
+			outDir, _ := cmd.Flags().GetString("out")
+
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				return exportRemote(context.Background(), remote, outDir)
+			}
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -1114,8 +1237,6 @@ func exportCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "No fragments with embeddings found.")
 				return nil
 			}
-
-			outDir, _ := cmd.Flags().GetString("out")
 
 			// Write tensors.tsv
 			tensorsPath := filepath.Join(outDir, "tensors.tsv")
@@ -1175,7 +1296,122 @@ func exportCmd() *cobra.Command {
 	}
 	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
 	cmd.Flags().String("out", ".", "Output directory for TSV files")
+	cmd.Flags().String("remote", "", "URL of a remote KB server")
 	return cmd
+}
+
+// exportRemote fetches fragments from a remote server and writes TSV files locally.
+func exportRemote(ctx context.Context, remote, outDir string) error {
+	var fragments []struct {
+		SourceType string    `json:"source_type"`
+		SourceName string    `json:"source_name"`
+		SourcePath string    `json:"source_path"`
+		Content    string    `json:"content"`
+		Embedding  []float32 `json:"embedding"`
+	}
+	if err := remoteJSON(ctx, http.MethodGet, remote+"/v1/export", nil, &fragments); err != nil {
+		return err
+	}
+
+	if len(fragments) == 0 {
+		fmt.Fprintln(os.Stderr, "No fragments with embeddings found.")
+		return nil
+	}
+
+	// Write tensors.tsv
+	tensorsPath := filepath.Join(outDir, "tensors.tsv")
+	tf, err := os.Create(tensorsPath)
+	if err != nil {
+		return fmt.Errorf("create tensors.tsv: %w", err)
+	}
+	tw := bufio.NewWriter(tf)
+	for _, f := range fragments {
+		for i, v := range f.Embedding {
+			if i > 0 {
+				tw.WriteByte('\t')
+			}
+			tw.WriteString(strconv.FormatFloat(float64(v), 'f', 6, 32))
+		}
+		tw.WriteByte('\n')
+	}
+	if err := tw.Flush(); err != nil {
+		tf.Close()
+		return fmt.Errorf("write tensors.tsv: %w", err)
+	}
+	if err := tf.Close(); err != nil {
+		return fmt.Errorf("close tensors.tsv: %w", err)
+	}
+
+	// Write metadata.tsv
+	metadataPath := filepath.Join(outDir, "metadata.tsv")
+	mf, err := os.Create(metadataPath)
+	if err != nil {
+		return fmt.Errorf("create metadata.tsv: %w", err)
+	}
+	mw := bufio.NewWriter(mf)
+	mw.WriteString("source_name\tsource_path\tsource_type\tcontent\n")
+	for _, f := range fragments {
+		fmt.Fprintf(mw, "%s\t%s\t%s\t%s\n",
+			sanitizeTSV(f.SourceName),
+			sanitizeTSV(f.SourcePath),
+			sanitizeTSV(f.SourceType),
+			sanitizeTSV(f.Content),
+		)
+	}
+	if err := mw.Flush(); err != nil {
+		mf.Close()
+		return fmt.Errorf("write metadata.tsv: %w", err)
+	}
+	if err := mf.Close(); err != nil {
+		return fmt.Errorf("close metadata.tsv: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Exported %d fragments to %s and %s\n",
+		len(fragments), tensorsPath, metadataPath)
+	return nil
+}
+
+// remoteRequest makes an HTTP request to a remote KB server. If body is non-nil
+// it is JSON-encoded. Returns the response for the caller to read and close.
+func remoteRequest(ctx context.Context, method, url string, body any) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return http.DefaultClient.Do(req)
+}
+
+// remoteJSON makes a remote request and decodes the JSON response into dest.
+func remoteJSON(ctx context.Context, method, url string, body any, dest any) error {
+	resp, err := remoteRequest(ctx, method, url, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("remote returned %d: %s", resp.StatusCode, string(respBody))
+	}
+	if dest != nil {
+		if err := json.Unmarshal(respBody, dest); err != nil {
+			return fmt.Errorf("parse response: %w", err)
+		}
+	}
+	return nil
 }
 
 type pushIngestResponse struct {
@@ -1396,6 +1632,7 @@ func sourcesCmd() *cobra.Command {
 		Short: "Manage registered sources",
 	}
 	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
+	cmd.PersistentFlags().String("remote", "", "URL of a remote KB server")
 	cmd.AddCommand(sourcesListCmd())
 	cmd.AddCommand(sourcesRemoveCmd())
 	cmd.AddCommand(sourcesDescribeCmd())
@@ -1409,6 +1646,22 @@ func sourcesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List registered sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				var sources []model.Source
+				if err := remoteJSON(context.Background(), http.MethodGet, remote+"/v1/sources", nil, &sources); err != nil {
+					return err
+				}
+				if len(sources) == 0 {
+					fmt.Fprintln(os.Stderr, "No sources registered.")
+					return nil
+				}
+				out, _ := json.MarshalIndent(sources, "", "  ")
+				fmt.Println(string(out))
+				return nil
+			}
+
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
@@ -1441,6 +1694,29 @@ func sourcesDescribeCmd() *cobra.Command {
 		Short: "Set description for an existing source",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("source must be in type/name format (e.g. git/myrepo)")
+			}
+			force, _ := cmd.Flags().GetBool("force")
+
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				reqBody := map[string]interface{}{
+					"source_type": parts[0],
+					"source_name": parts[1],
+					"description": args[1],
+					"force":       force,
+				}
+				var resp map[string]string
+				if err := remoteJSON(context.Background(), http.MethodPatch, remote+"/v1/sources", reqBody, &resp); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "Updated description for %s\n", args[0])
+				return nil
+			}
+
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
@@ -1449,13 +1725,6 @@ func sourcesDescribeCmd() *cobra.Command {
 				return fmt.Errorf("open store: %w", err)
 			}
 			defer s.Close()
-
-			parts := strings.SplitN(args[0], "/", 2)
-			if len(parts) != 2 {
-				return fmt.Errorf("source must be in type/name format (e.g. git/myrepo)")
-			}
-
-			force, _ := cmd.Flags().GetBool("force")
 
 			if err := s.UpdateSourceDescription(context.Background(), parts[0], parts[1], args[1], force); err != nil {
 				return err
@@ -1478,6 +1747,47 @@ func sourcesExportCmd() *cobra.Command {
 			outFile := "sources.json"
 			if len(args) > 0 {
 				outFile = args[0]
+			}
+
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				var sources []model.Source
+				if err := remoteJSON(context.Background(), http.MethodGet, remote+"/v1/sources", nil, &sources); err != nil {
+					return err
+				}
+
+				// Use a local struct to omit last_ingest from export.
+				type exportSource struct {
+					SourceType  string            `json:"source_type"`
+					SourceName  string            `json:"source_name"`
+					Description string            `json:"description,omitempty"`
+					Config      map[string]string `json:"config"`
+				}
+				out := make([]exportSource, len(sources))
+				for i, src := range sources {
+					out[i] = exportSource{
+						SourceType:  src.SourceType,
+						SourceName:  src.SourceName,
+						Description: src.Description,
+						Config:      src.Config,
+					}
+				}
+				sort.Slice(out, func(i, j int) bool {
+					if out[i].SourceType != out[j].SourceType {
+						return out[i].SourceType < out[j].SourceType
+					}
+					return out[i].SourceName < out[j].SourceName
+				})
+				data, err := json.MarshalIndent(out, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshal sources: %w", err)
+				}
+				if err := os.WriteFile(outFile, append(data, '\n'), 0644); err != nil {
+					return fmt.Errorf("write file: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "Exported %d sources to %s\n", len(sources), outFile)
+				return nil
 			}
 
 			cfg := config.Default()
@@ -1581,6 +1891,17 @@ func sourcesImportCmd() *cobra.Command {
 			var sources []model.Source
 			if err := json.Unmarshal(data, &sources); err != nil {
 				return fmt.Errorf("parse sources: %w", err)
+			}
+
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				var resp map[string]int
+				if err := remoteJSON(context.Background(), http.MethodPost, remote+"/v1/sources/import", sources, &resp); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "Imported %d sources to %s\n", resp["imported"], remote)
+				return nil
 			}
 
 			cfg := config.Default()
@@ -1781,6 +2102,25 @@ func sourcesRemoveCmd() *cobra.Command {
 				return fmt.Errorf("argument must be in the form <type>/<name>")
 			}
 			sourceType, sourceName := parts[0], parts[1]
+
+			remote, _ := cmd.Flags().GetString("remote")
+			if remote != "" {
+				remote = strings.TrimRight(remote, "/")
+				reqBody := map[string]string{
+					"source_type": sourceType,
+					"source_name": sourceName,
+				}
+				var resp map[string]interface{}
+				if err := remoteJSON(context.Background(), http.MethodDelete, remote+"/v1/sources", reqBody, &resp); err != nil {
+					return err
+				}
+				deletedFragments := 0
+				if df, ok := resp["deleted_fragments"].(float64); ok {
+					deletedFragments = int(df)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Removed source %s/%s: deleted %d fragments\n", sourceType, sourceName, deletedFragments)
+				return nil
+			}
 
 			cfg := config.Default()
 			cfg.DBPath, _ = cmd.Flags().GetString("db")

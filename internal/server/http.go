@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
@@ -22,12 +23,17 @@ type HTTPServer struct {
 	store    store.Store
 	logger   *slog.Logger
 	mux      *http.ServeMux
+	version  string
 }
 
 // NewHTTPServer creates a new HTTP server.
-func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store, logger *slog.Logger) *HTTPServer {
+func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store, logger *slog.Logger, version ...string) *HTTPServer {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	v := "0.1.0"
+	if len(version) > 0 && version[0] != "" {
+		v = version[0]
 	}
 	s := &HTTPServer{
 		engine:   engine,
@@ -35,6 +41,7 @@ func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store,
 		store:    st,
 		logger:   logger,
 		mux:      http.NewServeMux(),
+		version:  v,
 	}
 	s.routes()
 	return s
@@ -45,13 +52,16 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/v1/ingest", s.handleIngest)
 	s.mux.HandleFunc("/v1/sources", s.handleSources)
+	s.mux.HandleFunc("/v1/sources/import", s.handleSourcesImport)
+	s.mux.HandleFunc("/v1/version", s.handleVersion)
+	s.mux.HandleFunc("/v1/export", s.handleExport)
 }
 
 // Handler returns the http.Handler with CORS support for cross-origin UI access.
 func (s *HTTPServer) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, ngrok-skip-browser-warning")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -320,13 +330,15 @@ func (s *HTTPServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]int{"ingested": len(fragments), "skipped": skipped})
 }
 
-// handleSources routes /v1/sources to GET (list) or PATCH (update).
+// handleSources routes /v1/sources to GET (list), PATCH (update), or DELETE (remove).
 func (s *HTTPServer) handleSources(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.handleListSources(w, r)
 	case http.MethodPatch:
 		s.handleUpdateSource(w, r)
+	case http.MethodDelete:
+		s.handleDeleteSource(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -375,6 +387,123 @@ func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleDeleteSource handles DELETE /v1/sources for removing a source and its fragments.
+func (s *HTTPServer) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SourceType string `json:"source_type"`
+		SourceName string `json:"source_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.SourceType == "" || req.SourceName == "" {
+		http.Error(w, "source_type and source_name are required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Count fragments before deletion.
+	counts, err := s.store.CountFragmentsBySource(ctx)
+	if err != nil {
+		s.logger.Error("count fragments failed", "error", err)
+		http.Error(w, fmt.Sprintf("count fragments failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	key := req.SourceType + "/" + req.SourceName
+	fragCount := counts[key]
+
+	if err := s.store.DeleteFragmentsBySource(ctx, req.SourceType, req.SourceName); err != nil {
+		s.logger.Error("delete fragments failed", "error", err)
+		http.Error(w, fmt.Sprintf("delete fragments failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := s.store.DeleteSource(ctx, req.SourceType, req.SourceName); err != nil {
+		s.logger.Error("delete source failed", "error", err)
+		http.Error(w, fmt.Sprintf("delete source failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":            "ok",
+		"deleted_fragments": fragCount,
+	})
+}
+
+// handleSourcesImport handles POST /v1/sources/import for importing sources from JSON.
+func (s *HTTPServer) handleSourcesImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var sources []model.Source
+	if err := json.NewDecoder(r.Body).Decode(&sources); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	for i := range sources {
+		sources[i].LastIngest = time.Time{}
+		if err := s.store.RegisterSource(ctx, sources[i]); err != nil {
+			s.logger.Error("register source failed", "error", err)
+			http.Error(w, fmt.Sprintf("register source failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"imported": len(sources)})
+}
+
+// handleVersion handles GET /v1/version.
+func (s *HTTPServer) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"version": s.version})
+}
+
+// ExportFragment is the JSON representation of a fragment for the export endpoint.
+type ExportFragment struct {
+	SourceType string    `json:"source_type"`
+	SourceName string    `json:"source_name"`
+	SourcePath string    `json:"source_path"`
+	Content    string    `json:"content"`
+	Embedding  []float32 `json:"embedding"`
+}
+
+// handleExport handles GET /v1/export for exporting fragment embeddings.
+func (s *HTTPServer) handleExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	fragments, err := s.store.ExportFragments(r.Context())
+	if err != nil {
+		s.logger.Error("export fragments failed", "error", err)
+		http.Error(w, fmt.Sprintf("export failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]ExportFragment, len(fragments))
+	for i, f := range fragments {
+		out[i] = ExportFragment{
+			SourceType: f.SourceType,
+			SourceName: f.SourceName,
+			SourcePath: f.SourcePath,
+			Content:    f.RawContent,
+			Embedding:  f.Embedding,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // ListenAndServe starts the HTTP server.

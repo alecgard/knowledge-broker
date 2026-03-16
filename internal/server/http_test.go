@@ -615,7 +615,7 @@ func TestHandleUpdateSource(t *testing.T) {
 	}
 
 	t.Run("MethodNotAllowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodDelete, "/v1/sources", nil)
+		req := httptest.NewRequest(http.MethodPut, "/v1/sources", nil)
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
@@ -858,4 +858,225 @@ func TestHandleQueryRawModeWithFilters(t *testing.T) {
 			t.Fatalf("expected source_name=acme/infra, got %s", result.Fragments[0].SourceName)
 		}
 	})
+}
+
+func TestHandleVersion(t *testing.T) {
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, nil, nil, "1.2.3")
+	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var resp map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["version"] != "1.2.3" {
+		t.Fatalf("expected version 1.2.3, got %s", resp["version"])
+	}
+}
+
+func TestHandleVersionDefault(t *testing.T) {
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var resp map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["version"] != "0.1.0" {
+		t.Fatalf("expected version 0.1.0, got %s", resp["version"])
+	}
+}
+
+func TestHandleDeleteSource(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	srv := NewHTTPServer(nil, emb, st, nil)
+
+	ctx := context.Background()
+
+	// Register a source and ingest fragments.
+	if err := st.RegisterSource(ctx, model.Source{
+		SourceType: "filesystem",
+		SourceName: "test-docs",
+		Config:     map[string]string{"path": "/docs"},
+	}); err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	vec, _ := emb.Embed(ctx, "test content")
+	frags := []model.SourceFragment{
+		{
+			ID: "del-frag-1", RawContent: "content 1",
+			SourceType: "filesystem", SourceName: "test-docs",
+			SourcePath: "docs/a.md", Checksum: "c1", Embedding: vec,
+		},
+		{
+			ID: "del-frag-2", RawContent: "content 2",
+			SourceType: "filesystem", SourceName: "test-docs",
+			SourcePath: "docs/b.md", Checksum: "c2", Embedding: vec,
+		},
+	}
+	if err := st.UpsertFragments(ctx, frags); err != nil {
+		t.Fatalf("UpsertFragments: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"source_type": "filesystem",
+		"source_name": "test-docs",
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/v1/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["status"] != "ok" {
+		t.Fatalf("expected status ok, got %v", resp["status"])
+	}
+	if df, ok := resp["deleted_fragments"].(float64); !ok || int(df) != 2 {
+		t.Fatalf("expected 2 deleted_fragments, got %v", resp["deleted_fragments"])
+	}
+
+	// Verify source and fragments are gone.
+	sources, _ := st.ListSources(ctx)
+	for _, s := range sources {
+		if s.SourceType == "filesystem" && s.SourceName == "test-docs" {
+			t.Fatal("source should have been deleted")
+		}
+	}
+	counts, _ := st.CountFragmentsBySource(ctx)
+	if counts["filesystem/test-docs"] != 0 {
+		t.Fatalf("expected 0 fragments, got %d", counts["filesystem/test-docs"])
+	}
+}
+
+func TestHandleDeleteSourceMissingFields(t *testing.T) {
+	st := newTestStore(t)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, st, nil)
+
+	body, _ := json.Marshal(map[string]string{"source_type": "filesystem"})
+	req := httptest.NewRequest(http.MethodDelete, "/v1/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSourcesImport(t *testing.T) {
+	st := newTestStore(t)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, st, nil)
+
+	sources := []model.Source{
+		{SourceType: "git", SourceName: "org/repo1", Description: "Repo 1", Config: map[string]string{"url": "https://github.com/org/repo1"}},
+		{SourceType: "filesystem", SourceName: "local-docs", Config: map[string]string{"path": "/docs"}},
+	}
+	body, _ := json.Marshal(sources)
+	req := httptest.NewRequest(http.MethodPost, "/v1/sources/import", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]int
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["imported"] != 2 {
+		t.Fatalf("expected 2 imported, got %d", resp["imported"])
+	}
+
+	// Verify sources are registered.
+	registered, _ := st.ListSources(context.Background())
+	if len(registered) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(registered))
+	}
+}
+
+func TestHandleSourcesImportMethodNotAllowed(t *testing.T) {
+	st := newTestStore(t)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, st, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/sources/import", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleExport(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	srv := NewHTTPServer(nil, emb, st, nil)
+
+	ctx := context.Background()
+
+	// Insert a fragment.
+	vec, _ := emb.Embed(ctx, "export test content")
+	frags := []model.SourceFragment{
+		{
+			ID: "exp-1", RawContent: "export test content",
+			SourceType: "filesystem", SourceName: "docs",
+			SourcePath: "docs/test.md", Checksum: "exp1", Embedding: vec,
+		},
+	}
+	if err := st.UpsertFragments(ctx, frags); err != nil {
+		t.Fatalf("UpsertFragments: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/export", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result []ExportFragment
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(result) == 0 {
+		t.Fatal("expected at least one fragment")
+	}
+	if result[0].SourcePath != "docs/test.md" {
+		t.Fatalf("expected source_path docs/test.md, got %s", result[0].SourcePath)
+	}
+	if result[0].Content != "export test content" {
+		t.Fatalf("expected content 'export test content', got %s", result[0].Content)
+	}
+	if len(result[0].Embedding) != testEmbeddingDim {
+		t.Fatalf("expected %d-dim embedding, got %d", testEmbeddingDim, len(result[0].Embedding))
+	}
+}
+
+func TestHandleExportMethodNotAllowed(t *testing.T) {
+	st := newTestStore(t)
+	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, st, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/export", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
 }

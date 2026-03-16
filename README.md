@@ -7,7 +7,9 @@
 
 Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. The answer to any question exists — spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-**Open-source RAG with a trust layer.** Hybrid search (BM25 + semantic vectors), structured confidence signals, contradiction detection, and an MCP server for AI agent integration. Built in Go with SQLite. Zero infrastructure. Self-hosted. No data leaves your environment.
+Deploy a single instance for your org. Ingest your Confluence spaces, Slack channels, Git repos, and wikis into one knowledge base. Developers and AI agents query it via MCP or HTTP — no one needs to set up their own ingestion or manage their own database.
+
+**Open-source RAG with a trust layer.** Hybrid search (BM25 + semantic vectors), structured confidence signals, contradiction detection, and an MCP server for AI agent integration. Built in Go with SQLite. Self-hosted. No data leaves your environment.
 
 **[Documentation](https://knowledgebroker.dev)** | **[Getting Started](https://knowledgebroker.dev/quickstart/)** | **[Architecture](https://knowledgebroker.dev/architecture/)**
 
@@ -40,13 +42,29 @@ $ kb query "What database does the inventory service use and what port does it r
 make install
 ollama pull nomic-embed-text      # embedding model
 ollama pull qwen2.5:0.5b           # enrichment model (optional)
+```
 
-# Ingest a local directory
-kb ingest --source ./my-repo
+### Set up your org's knowledge base
 
-# Ingest a Git repo by URL
-kb ingest --git https://github.com/owner/repo
+Ingest your team's sources into a single instance. Run this on the machine that will host the knowledge base:
 
+```bash
+kb ingest --source ./my-repo --description "Backend API"
+kb ingest --git https://github.com/acme/platform --description "Platform services"
+kb ingest --confluence ENGINEERING --description "Engineering wiki"
+kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
+```
+
+Start the server so others can query it:
+
+```bash
+kb serve                  # HTTP API on :8080
+kb mcp                    # MCP server (stdio + SSE on :8082)
+```
+
+### Query
+
+```bash
 # Synthesised answer (requires ANTHROPIC_API_KEY in .env)
 kb query "how does retry logic work?"
 
@@ -54,21 +72,9 @@ kb query "how does retry logic work?"
 kb query --raw "how does retry logic work?"
 ```
 
-### Running without an API key
-
-Raw mode (`--raw`) runs the full retrieval pipeline — embedding, hybrid search, confidence scoring — using only Ollama. No Anthropic API key is needed.
-
-```bash
-kb query --raw "how does auth work?"
-```
-
 ## Agent integration
 
-Knowledge Broker exposes an **MCP server** for direct integration with Claude Code and other MCP-compatible agent runtimes:
-
-```bash
-kb mcp                  # stdio + SSE on :8082
-```
+Point your team's MCP clients at the shared instance. Each developer adds this to their MCP config:
 
 ```json
 {

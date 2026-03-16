@@ -8,9 +8,11 @@ Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that a
 
 ## Setup
 
-### stdio (local)
+The typical deployment: one KB instance runs on a shared machine (or in CI), with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
 
-Most MCP clients launch servers as subprocesses via stdio. Point your client at `kb mcp`:
+### Connecting MCP clients
+
+Each developer adds KB to their MCP client config (Claude Code, Cursor, Windsurf, etc.):
 
 ```json
 {
@@ -23,27 +25,28 @@ Most MCP clients launch servers as subprocesses via stdio. Point your client at 
 }
 ```
 
-If `kb` is on your PATH, you can use `"command": "kb"` directly.
+If `kb` is on your PATH, you can use `"command": "kb"` directly. This launches KB as a subprocess via stdio.
 
-### SSE (remote)
+### SSE (remote access)
 
-`kb mcp` also starts an SSE transport on `:8082` by default:
+`kb mcp` also starts an SSE transport on `:8082` by default, so remote clients can connect without running the binary locally:
 
 ```bash
 kb mcp                  # stdio + SSE on :8082
 kb mcp --addr :9090     # custom SSE port
 ```
 
-The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For remote access over HTTPS, put a reverse proxy or tunnel in front.
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For HTTPS, put a reverse proxy or tunnel in front.
 
-### Shared server
+### Remote ingestion
 
-For team use, run the HTTP server and push content from local checkouts:
+Team members can push content from their local checkouts to the shared instance:
 
 ```bash
+# On the server
 kb serve --addr :8080
 
-# Push content from a local checkout
+# From a developer's machine
 kb ingest --source ./my-repo --remote http://server:8080
 ```
 
@@ -97,7 +100,8 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 
 ## Typical setup
 
-1. Ingest your sources: `kb ingest --source ./my-project --git https://github.com/org/repo`
-2. Add KB to your MCP client config (see Setup above)
-3. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
-4. The `kb-instructions` prompt bootstraps agent context automatically — no manual prompt engineering needed
+1. **Deploy KB** on a shared machine or in CI. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
+2. **Start the server**: `kb mcp` (and/or `kb serve` for HTTP)
+3. **Each developer** adds KB to their MCP client config (see above)
+4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
+5. The `kb-instructions` prompt bootstraps agent context automatically — no manual prompt engineering needed

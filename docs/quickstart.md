@@ -4,6 +4,8 @@ description: Install Knowledge Broker and run your first query in under 5 minute
 
 # Getting Started
 
+The typical setup: one person (or a CI job) deploys a KB instance and ingests the org's sources. Everyone else queries it via MCP or HTTP.
+
 ## Prerequisites
 
 - **Go 1.24+** — [install Go](https://go.dev/doc/install)
@@ -23,24 +25,20 @@ ollama pull nomic-embed-text
 
 `make install` builds the `kb` binary and adds it to your PATH.
 
-## Ingest your first source
+## Ingest your org's sources
 
-Point KB at a local directory or a Git repo:
+Point KB at your team's repos, Confluence spaces, Slack channels, etc. Descriptions help agents understand what each source contains:
 
 ```bash
-# Local directory
-kb ingest --source ./my-project
-
-# Git repo by URL
-kb ingest --git https://github.com/owner/repo
-
-# Add a description so agents know what this source contains
 kb ingest --source ./my-project --description "Payment processing service"
+kb ingest --git https://github.com/acme/platform --description "Platform services"
+kb ingest --confluence ENGINEERING --description "Engineering wiki"
+kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 ```
 
-KB walks the source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a local SQLite database.
+KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a single SQLite database.
 
-Ingestion is incremental — re-running the same command only processes new or changed files.
+Ingestion is incremental — re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
 
 ## Query
 
@@ -73,15 +71,18 @@ kb query --human "how does authentication work?"
 
 Streams the answer to the terminal as it's generated.
 
-## Start the MCP server
+## Start the server
 
-Connect KB to Claude Code or any MCP-compatible client:
+Start the MCP and/or HTTP server so your team can query:
 
 ```bash
-kb mcp
+kb mcp                    # MCP server (stdio + SSE on :8082)
+kb serve                  # HTTP API on :8080
 ```
 
-This starts both stdio and SSE transports. Configure your MCP client:
+### Connect your team's MCP clients
+
+Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
 
 ```json
 {
@@ -94,13 +95,11 @@ This starts both stdio and SSE transports. Configure your MCP client:
 }
 ```
 
-See [MCP Server](mcp.md) for the full setup guide.
+For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full setup guide.
 
-## Start the HTTP server
+### HTTP API
 
 ```bash
-kb serve
-
 # Query via HTTP
 curl -s -X POST localhost:8080/v1/query \
   -H 'Content-Type: application/json' \

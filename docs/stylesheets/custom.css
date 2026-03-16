@@ -184,13 +184,20 @@ body,
     color: var(--kb-text);
   }
 
-  .md-source {
+  .md-source,
+  .md-nav--primary .md-source,
+  [data-md-color-primary] .md-source {
     background-color: transparent !important;
     color: var(--kb-text) !important;
   }
 
-  .md-source__repository {
+  .md-source__repository,
+  .md-nav--primary .md-source__repository {
     color: var(--kb-text) !important;
+  }
+
+  .md-nav__title .md-source {
+    background-color: transparent !important;
   }
 }
 

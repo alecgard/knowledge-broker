@@ -6,15 +6,17 @@ Generated: 2026-03-16
 
 # Knowledge Broker
 
-Knowledge Broker is an open-source CLI tool for team knowledge retrieval, built in Go with SQLite. It provides hybrid search (BM25 + vector) over ingested documents, an MCP server for integration with AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
+Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
+
+Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, developers use the CLI, and nobody needs to already know where to look.
 
 ## Why Knowledge Broker
 
-Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere — spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
+Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite and Ollama. No Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. Your data stays on your machine — the only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
+It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
 
-The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly — no silent tiebreaking.
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
 
 ## What it looks like
 
@@ -43,7 +45,7 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 
 ## Who it's for
 
-Engineering teams that want a single place to query across repos, docs, and chat history. Teams using Claude Code or other MCP clients that want a shared knowledge server. Anyone who wants local-first, private retrieval without SaaS dependencies.
+Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give every developer (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
 
 ## Get started
 
@@ -51,23 +53,25 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 
 ## How it works
 
-1. **[Connectors](connectors.md)** pull content from sources — local filesystem, Git, Confluence, Slack, GitHub Wiki
+1. **[Connectors](connectors.md)** pull content from sources: local filesystem, Git, Confluence, Slack, GitHub Wiki
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** via Ollama convert chunks to vectors; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
-5. **[Confidence signals](architecture.md)** assess trust across four dimensions — freshness, corroboration, consistency, authority
+5. **[Confidence signals](architecture.md)** assess trust across four dimensions: freshness, corroboration, consistency, authority
 6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
 
 Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
 
 ## License
 
-[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE) — free to use and self-host. Converts to Apache 2.0 after 4 years.
+[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE), free to use and self-host. Converts to Apache 2.0 after 4 years.
 
 ---
 
 
 # Getting Started
+
+The typical setup: one person (or a CI job) deploys a KB instance and ingests the org's sources. Everyone else queries it via MCP or HTTP.
 
 ## Prerequisites
 
@@ -88,30 +92,26 @@ ollama pull nomic-embed-text
 
 `make install` builds the `kb` binary and adds it to your PATH.
 
-## Ingest your first source
+## Ingest your org's sources
 
-Point KB at a local directory or a Git repo:
+Point KB at your team's repos, Confluence spaces, Slack channels, etc. Descriptions help agents understand what each source contains:
 
 ```bash
-# Local directory
-kb ingest --source ./my-project
-
-# Git repo by URL
-kb ingest --git https://github.com/owner/repo
-
-# Add a description so agents know what this source contains
 kb ingest --source ./my-project --description "Payment processing service"
+kb ingest --git https://github.com/acme/platform --description "Platform services"
+kb ingest --confluence ENGINEERING --description "Engineering wiki"
+kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 ```
 
-KB walks the source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a local SQLite database.
+KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a single SQLite database.
 
-Ingestion is incremental — re-running the same command only processes new or changed files.
+Ingestion is incremental, so re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
 
 ## Query
 
 ### Raw mode (no API key needed)
 
-Raw mode runs the full retrieval pipeline — embedding, hybrid search, confidence scoring — using only Ollama. No external API key required.
+Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) using only Ollama. No external API key required.
 
 ```bash
 kb query --raw "how does authentication work?"
@@ -138,15 +138,18 @@ kb query --human "how does authentication work?"
 
 Streams the answer to the terminal as it's generated.
 
-## Start the MCP server
+## Start the server
 
-Connect KB to Claude Code or any MCP-compatible client:
+Start the MCP and/or HTTP server so your team can query:
 
 ```bash
-kb mcp
+kb mcp                    # MCP server (stdio + SSE on :8082)
+kb serve                  # HTTP API on :8080
 ```
 
-This starts both stdio and SSE transports. Configure your MCP client:
+### Connect your team's MCP clients
+
+Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
 
 ```json
 {
@@ -159,13 +162,11 @@ This starts both stdio and SSE transports. Configure your MCP client:
 }
 ```
 
-See [MCP Server](mcp.md) for the full setup guide.
+For remote access via SSE, point clients at `http://<server>:8082/sse`. See [MCP Server](mcp.md) for the full setup guide.
 
-## Start the HTTP server
+### HTTP API
 
 ```bash
-kb serve
-
 # Query via HTTP
 curl -s -X POST localhost:8080/v1/query \
   -H 'Content-Type: application/json' \
@@ -311,7 +312,7 @@ Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CH
 
 A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
 
-Enrichment runs entirely on Ollama — no external API calls. Enable it by having the enrichment model pulled in Ollama.
+Enrichment runs entirely on Ollama, no external API calls. Enable it by having the enrichment model pulled in Ollama.
 
 ### Embedding and storage
 
@@ -327,7 +328,7 @@ Query → Expansion → Embedding → Hybrid Search (vector + BM25) → RRF Merg
 
 ### Multi-query expansion
 
-When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch — when the user says "auth" but the docs say "authentication middleware."
+When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch, like when the user says "auth" but the docs say "authentication middleware."
 
 Each expanded query variant is searched independently. Results are merged in the RRF step.
 
@@ -371,7 +372,7 @@ overall = freshness × 0.20 + corroboration × 0.25 + consistency × 0.30 + auth
 
 In **raw mode**, confidence is computed per fragment using local heuristics:
 
-- **Freshness** is scored relative to the corpus age distribution — a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
+- **Freshness** is scored relative to the corpus age distribution, so a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
 - **Corroboration** reflects how many distinct sources contain similar information
 - **Consistency** is based on embedding similarity between fragments about the same topic
 - **Authority** weights source types based on query characteristics (e.g., code repos are more authoritative for implementation questions, Confluence for process questions)
@@ -394,7 +395,7 @@ Agents can use the overall score to decide how to proceed:
 | 0.6–0.85 | Answer with caveats, note uncertainty |
 | Below 0.6 | Surface the contradiction or uncertainty to the user |
 
-These thresholds are suggestions — agents and applications can define their own logic based on the confidence breakdown.
+These thresholds are suggestions. Agents and applications can define their own logic based on the confidence breakdown.
 
 ## Configuration
 
@@ -430,7 +431,7 @@ kb ingest --source ./path/to/dir
 kb ingest --source ./repo-a --source ./repo-b   # multiple directories
 ```
 
-No configuration needed. This is the default if no flags are given — `kb ingest` ingests the current directory.
+No configuration needed. This is the default if no flags are given, so `kb ingest` ingests the current directory.
 
 ## Git
 
@@ -517,7 +518,7 @@ kb ingest --wiki https://github.com/owner/repo --wiki https://github.com/owner/o
 
 The `--wiki` flag takes the **main repository URL** (not the wiki URL). KB automatically derives the wiki clone URL.
 
-Authentication works the same as the Git connector — `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
+Authentication works the same as the Git connector: `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
 
 ## Combining sources
 
@@ -569,9 +570,11 @@ Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that a
 
 ## Setup
 
-### stdio (local)
+The typical deployment: one KB instance runs on a shared machine (or in CI), with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
 
-Most MCP clients launch servers as subprocesses via stdio. Point your client at `kb mcp`:
+### Connecting MCP clients
+
+Each developer adds KB to their MCP client config (Claude Code, Cursor, Windsurf, etc.):
 
 ```json
 {
@@ -584,27 +587,28 @@ Most MCP clients launch servers as subprocesses via stdio. Point your client at 
 }
 ```
 
-If `kb` is on your PATH, you can use `"command": "kb"` directly.
+If `kb` is on your PATH, you can use `"command": "kb"` directly. This launches KB as a subprocess via stdio.
 
-### SSE (remote)
+### SSE (remote access)
 
-`kb mcp` also starts an SSE transport on `:8082` by default:
+`kb mcp` also starts an SSE transport on `:8082` by default, so remote clients can connect without running the binary locally:
 
 ```bash
 kb mcp                  # stdio + SSE on :8082
 kb mcp --addr :9090     # custom SSE port
 ```
 
-The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For remote access over HTTPS, put a reverse proxy or tunnel in front.
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For HTTPS, put a reverse proxy or tunnel in front.
 
-### Shared server
+### Remote ingestion
 
-For team use, run the HTTP server and push content from local checkouts:
+Team members can push content from their local checkouts to the shared instance:
 
 ```bash
+# On the server
 kb serve --addr :8080
 
-# Push content from a local checkout
+# From a developer's machine
 kb ingest --source ./my-repo --remote http://server:8080
 ```
 
@@ -658,10 +662,11 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 
 ## Typical setup
 
-1. Ingest your sources: `kb ingest --source ./my-project --git https://github.com/org/repo`
-2. Add KB to your MCP client config (see Setup above)
-3. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
-4. The `kb-instructions` prompt bootstraps agent context automatically — no manual prompt engineering needed
+1. **Deploy KB** on a shared machine or in CI. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
+2. **Start the server**: `kb mcp` (and/or `kb serve` for HTTP)
+3. **Each developer** adds KB to their MCP client config (see above)
+4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
+5. The `kb-instructions` prompt bootstraps agent context automatically, no manual prompt engineering needed
 
 ---
 
@@ -693,7 +698,7 @@ kb ingest --all
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
 
-All connector flags can be combined in a single command. Ingestion is incremental — unchanged files are skipped based on checksums.
+All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
 
 See [Connectors](connectors.md) for detailed setup instructions per source type.
 
@@ -765,7 +770,7 @@ kb serve --addr :9090
 
 - Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
 - Set `"stream": true` for SSE streaming (synthesis mode only).
-- The `messages` array follows the same format as the Claude API — pass conversation history for multi-turn queries.
+- The `messages` array follows the same format as the Claude API. Pass conversation history for multi-turn queries.
 
 ## kb mcp
 
@@ -901,7 +906,7 @@ A repeatable eval harness for measuring retrieval quality. Run evals before and 
 make eval
 ```
 
-This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally — no Anthropic API key needed.
+This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally, no Anthropic API key needed.
 
 ## Manual usage
 
@@ -947,7 +952,7 @@ kb eval --db eval.db --corpus eval/corpus --ingest
 - Fragments per file
 - Mean, median, and P95 token length (whitespace-approximated)
 
-These track chunking quality over time — a change that produces 3x more fragments or halves average length is immediately visible.
+These track chunking quality over time, so a change that produces 3x more fragments or halves average length is immediately visible.
 
 ## Eval corpus
 

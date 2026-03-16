@@ -25,7 +25,7 @@ type MCPServer struct {
 }
 
 // NewMCPServer creates a new MCP server.
-func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MCPServer {
+func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger, version string) *MCPServer {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -36,9 +36,13 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger) *MC
 		logger: logger,
 	}
 
+	if version == "" {
+		version = "0.1.0"
+	}
+
 	s.server = server.NewMCPServer(
 		"knowledge-broker",
-		"0.1.0",
+		version,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(false),
 	)

@@ -54,7 +54,7 @@ func TestMCPQueryRaw(t *testing.T) {
 
 	// Create engine with nil LLM — raw mode should work.
 	engine := query.NewEngine(st, emb, nil, 20)
-	_ = NewMCPServer(engine, st, nil)
+	_ = NewMCPServer(engine, st, nil, "test")
 
 	// Call QueryRaw directly to verify it works without LLM.
 	req := model.QueryRequest{
@@ -143,7 +143,7 @@ func TestMCPKBInstructionsPrompt(t *testing.T) {
 	}
 
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	// Call the handler directly.
 	result, err := mcpSrv.handleKBInstructions(ctx, mcp.GetPromptRequest{})
@@ -265,7 +265,7 @@ func TestMCPHandleQueryMissingParam(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	ctx := context.Background()
 
@@ -287,7 +287,7 @@ func TestMCPHandleQueryEmptyString(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	ctx := context.Background()
 
@@ -309,7 +309,7 @@ func TestMCPHandleQueryNoLLMSynthesisMode(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 	engine := query.NewEngine(st, emb, nil, 20) // nil LLM
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	ctx := context.Background()
 
@@ -356,7 +356,7 @@ func TestMCPHandleQueryRawMode(t *testing.T) {
 	}
 
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	result, err := mcpSrv.handleQuery(ctx, newCallToolRequest(map[string]interface{}{
 		"query": "docker deploy",
@@ -407,7 +407,7 @@ func TestMCPHandleQueryCustomLimit(t *testing.T) {
 	}
 
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	result, err := mcpSrv.handleQuery(ctx, newCallToolRequest(map[string]interface{}{
 		"query": "API endpoint",
@@ -468,7 +468,7 @@ func TestMCPHandleQueryCSVFilters(t *testing.T) {
 	}
 
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	// Filter by source_types=git — should only return git fragments.
 	result, err := mcpSrv.handleQuery(ctx, newCallToolRequest(map[string]interface{}{
@@ -523,7 +523,7 @@ func TestMCPHandleListSourcesEmpty(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	ctx := context.Background()
 
@@ -598,7 +598,7 @@ func TestMCPHandleListSourcesWithData(t *testing.T) {
 	}
 
 	engine := query.NewEngine(st, emb, nil, 20)
-	mcpSrv := NewMCPServer(engine, st, nil)
+	mcpSrv := NewMCPServer(engine, st, nil, "test")
 
 	result, err := mcpSrv.handleListSources(ctx, newCallToolRequest(nil))
 	if err != nil {

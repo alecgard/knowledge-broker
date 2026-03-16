@@ -509,13 +509,18 @@ func (s *HTTPServer) handleExport(w http.ResponseWriter, r *http.Request) {
 // ListenAndServe starts the HTTP server.
 func (s *HTTPServer) ListenAndServe(ctx context.Context, addr string) error {
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: s.Handler(),
+		Addr:         addr,
+		Handler:      s.Handler(),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
 	}()
 
 	s.logger.Info("starting HTTP server", "addr", addr)

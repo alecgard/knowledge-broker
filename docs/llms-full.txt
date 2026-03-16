@@ -61,7 +61,7 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
-5. **[Confidence signals](architecture.md)** assess trust across four dimensions: freshness, corroboration, consistency, authority
+5. **[Confidence signals](architecture.md#confidence-signals)** assess trust across four dimensions: freshness, corroboration, consistency, authority
 6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
 
 Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.

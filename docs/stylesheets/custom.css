@@ -437,6 +437,11 @@ body,
   }
 }
 
+/* Make header title clickable — navigate to docs home */
+.md-header__title {
+  cursor: pointer;
+}
+
 /* Hide GitHub stars/forks count */
 .md-source__facts {
   display: none;

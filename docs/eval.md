@@ -1,5 +1,5 @@
 ---
-description: Measure retrieval quality with Knowledge Broker's evaluation framework. Recall, precision, MRR metrics across test categories.
+description: Measure RAG retrieval quality with Knowledge Broker's evaluation framework. Hit@K, recall, precision, MRR metrics across categories (direct extraction, cross-document, vocabulary mismatch, abstention).
 ---
 
 # Evaluation Framework

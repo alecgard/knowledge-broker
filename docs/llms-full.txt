@@ -3,10 +3,20 @@
 Source: https://knowledgebroker.dev
 Generated: 2026-03-16
 
+## Summary
+
+Knowledge Broker is an open-source RAG (retrieval-augmented generation) CLI tool and MCP server for team knowledge retrieval. It ingests documents from multiple sources (Git repos, Confluence, Slack, GitHub Wiki, local files), runs hybrid semantic search (BM25 + vector via Ollama/SQLite), and returns answers with structured confidence signals and contradiction detection. Built in Go. Zero infrastructure — one binary, one SQLite file. Self-hosted, private, local-first.
+
+Key capabilities: semantic search, hybrid BM25+vector retrieval, Reciprocal Rank Fusion, confidence scoring (freshness/corroboration/consistency/authority), contradiction detection, MCP server for AI agent integration, incremental ingestion, pluggable connectors and extractors.
+
+Alternatives/comparisons: Unlike traditional search or basic RAG pipelines, Knowledge Broker surfaces *how much* to trust each answer and *where sources disagree*, enabling agents to branch on confidence rather than treating all knowledge as equally reliable.
+
+---
+
 
 # Knowledge Broker
 
-Knowledge Broker is an open-source CLI tool for team knowledge retrieval, built in Go with SQLite. It provides hybrid search (BM25 + vector) over ingested documents, an MCP server for integration with AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
+Knowledge Broker is an open-source CLI tool and MCP server for team knowledge retrieval, built in Go with SQLite. It provides hybrid search (BM25 + vector) over ingested documents, an MCP server for integration with AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
 
 ## Why Knowledge Broker
 
@@ -513,109 +523,6 @@ This is useful after upgrading KB or changing chunking/embedding settings.
 ---
 
 
-# MCP Server
-
-Knowledge Broker exposes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. Both stdio and SSE transports run simultaneously.
-
-## Setup
-
-### stdio (local)
-
-Most MCP clients launch servers as subprocesses via stdio. Point your client at `kb mcp`:
-
-```json
-{
-  "mcpServers": {
-    "knowledge-broker": {
-      "command": "/path/to/kb",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-If `kb` is on your PATH, you can use `"command": "kb"` directly.
-
-### SSE (remote)
-
-`kb mcp` also starts an SSE transport on `:8082` by default:
-
-```bash
-kb mcp                  # stdio + SSE on :8082
-kb mcp --addr :9090     # custom SSE port
-```
-
-The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For remote access over HTTPS, put a reverse proxy or tunnel in front.
-
-### Shared server
-
-For team use, run the HTTP server and push content from local checkouts:
-
-```bash
-kb serve --addr :8080
-
-# Push content from a local checkout
-kb ingest --source ./my-repo --remote http://server:8080
-```
-
-## Tools
-
-### query
-
-Query the knowledge base and get an answer.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `query` | string | yes | — | The query to search for |
-| `topics` | string | no | — | Comma-separated topics to boost relevance |
-| `limit` | number | no | 20 | Max fragments to retrieve |
-| `raw` | boolean | no | false | Return raw fragments instead of synthesised answer |
-| `sources` | string | no | — | Comma-separated source names to filter results |
-| `source_types` | string | no | — | Comma-separated source types to filter results |
-| `no_expand` | boolean | no | false | Disable multi-query expansion |
-
-**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires `ANTHROPIC_API_KEY`.
-
-**Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
-
-### list-sources
-
-List all ingested sources with fragment counts and last sync time. Takes no parameters.
-
-Returns an array of sources with `source_type`, `source_name`, `description`, `fragment_count`, and `last_ingest`.
-
-## Prompts
-
-### kb-instructions
-
-A prompt that returns instructions teaching the agent when and how to use the knowledge base. Takes no arguments.
-
-The response includes:
-- When to query the knowledge base (missing context, unfamiliar patterns, before making assumptions)
-- A dynamically generated list of available sources with descriptions and fragment counts
-- Tips for using synthesis vs raw mode, topics, and source filtering
-
-MCP clients that support prompts will show this in their prompt list. Use it to bootstrap agent context without manually writing instructions.
-
-## Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For synthesis mode | Not needed when `raw=true` |
-| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama server for embeddings |
-| `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
-| `KB_DB` | No (default `kb.db`) | Database path |
-
-## Workflow
-
-1. Ingest content: `kb ingest --source /path/to/project`
-2. Configure your MCP client to run `kb mcp`
-3. Query the knowledge base — synthesis mode returns answers, raw mode returns fragments
-4. Use `list-sources` to see what's been ingested
-
----
-
-
 # CLI Reference
 
 ## kb ingest
@@ -837,116 +744,6 @@ Print the KB version.
 ```bash
 kb version
 ```
-
----
-
-
-# Evaluation Framework
-
-A repeatable eval harness for measuring retrieval quality. Run evals before and after changes to chunking, embedding models, or prompts.
-
-## Quick start
-
-```bash
-make eval
-```
-
-This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally — no Anthropic API key needed.
-
-## Manual usage
-
-```bash
-# Ingest the eval corpus into a fresh database
-kb ingest --source eval/corpus --db eval.db
-
-# Run evaluation
-kb eval --db eval.db
-
-# Run with custom options
-kb eval --db eval.db --testset eval/testset.json --limit 10 --json
-
-# Ingest and eval in one step
-kb eval --db eval.db --corpus eval/corpus --ingest
-```
-
-### Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--db` | `kb.db` | Database path |
-| `--testset` | `eval/testset.json` | Path to query/answer test set |
-| `--corpus` | `eval/corpus` | Path to eval corpus directory |
-| `--limit` | `20` | K value for retrieval (top-K fragments) |
-| `--ingest` | false | Ingest the corpus before running eval |
-| `--json` | false | Output structured JSON instead of a table |
-
-## Metrics
-
-### Retrieval metrics (reported at K=5, K=10, K=20)
-
-- **Hit@K** — Was at least one expected source file found in the top-K results?
-- **Recall@K** — Did the expected source files appear in the top-K retrieved fragments?
-- **Precision@K** — What fraction of top-K fragments came from expected source files?
-- **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across queries.
-- **Avg confidence** — Mean confidence score across retrieved fragments.
-- **Avg freshness** — Mean freshness score across retrieved fragments.
-
-### Chunking stats
-
-- Total fragment count
-- Fragments per file
-- Mean, median, and P95 token length (whitespace-approximated)
-
-These track chunking quality over time — a change that produces 3x more fragments or halves average length is immediately visible.
-
-## Eval corpus
-
-Located in `eval/corpus/`. A set of fictional files about an "Acme Widget Service" designed to exercise different retrieval scenarios:
-
-| File | Purpose |
-|------|---------|
-| `README.md` | Project overview, features, quick start |
-| `config.go` | Go config structs and validation |
-| `api.go` | HTTP API handlers |
-| `architecture.md` | System design (intentionally contradicts README on some details) |
-| `runbook.md` | Operational procedures and troubleshooting |
-| `CHANGELOG.md` | Version history and release notes |
-| `CONTRIBUTING.md` | Contribution guidelines |
-| `deploy/kubernetes.yaml` | Kubernetes deployment manifests |
-| `design-review.md` | Design review discussion |
-| `incident-review.md` | Incident post-mortem |
-
-The corpus is checked into the repo and should not change between eval runs unless you're intentionally updating it.
-
-## Test set
-
-Located in `eval/testset.json`. Each entry has:
-
-```json
-{
-  "id": "q01",
-  "query": "What database does the widget service use?",
-  "expected_sources": ["config.go", "architecture.md"],
-  "reference_answer": "PostgreSQL, configured via DATABASE_URL.",
-  "category": "direct_extraction"
-}
-```
-
-Categories:
-- **direct_extraction** — single-source factual lookup
-- **cross_document** — requires information from multiple files
-- **knowledge_update** — tests whether newer information is preferred
-- **abstention** — no good answer exists in the corpus
-- **pronoun_resolution** — requires resolving references across context
-- **vocabulary_mismatch** — query uses different terms than the corpus
-
-## Extending the eval
-
-**Adding queries:** Edit `eval/testset.json`. Include `expected_sources` (filenames that should appear in results) and a `reference_answer` for human comparison.
-
-**Adding corpus files:** Add files to `eval/corpus/` and write questions that reference them. Re-run `make eval` to see the impact.
-
-**Comparing configurations:** Run eval with different embedding models or chunk sizes by changing `KB_EMBEDDING_MODEL` or `KB_MAX_CHUNK_SIZE`, then compare the summary tables.
 
 ---
 

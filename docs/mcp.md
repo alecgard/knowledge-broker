@@ -1,5 +1,5 @@
 ---
-description: Set up the Knowledge Broker MCP server for Claude Code and other MCP clients. Stdio and SSE transports for local and team use.
+description: Set up the Knowledge Broker MCP server for Claude Code, Codex, Cursor, Windsurf, and other MCP-compatible AI agents. Stdio and SSE transports for local and team use.
 ---
 
 # MCP Server
@@ -95,9 +95,9 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 | `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
 | `KB_DB` | No (default `kb.db`) | Database path |
 
-## Workflow
+## Typical setup
 
-1. Ingest content: `kb ingest --source /path/to/project`
-2. Configure your MCP client to run `kb mcp`
-3. Query the knowledge base — synthesis mode returns answers, raw mode returns fragments
-4. Use `list-sources` to see what's been ingested
+1. Ingest your sources: `kb ingest --source ./my-project --git https://github.com/org/repo`
+2. Add KB to your MCP client config (see Setup above)
+3. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
+4. The `kb-instructions` prompt bootstraps agent context automatically — no manual prompt engineering needed

@@ -15,7 +15,7 @@ kb ingest --source ./path/to/dir
 kb ingest --source ./repo-a --source ./repo-b   # multiple directories
 ```
 
-No configuration needed. This is the default if no flags are given — `kb ingest` ingests the current directory.
+No configuration needed. This is the default if no flags are given, so `kb ingest` ingests the current directory.
 
 ## Git
 
@@ -102,7 +102,7 @@ kb ingest --wiki https://github.com/owner/repo --wiki https://github.com/owner/o
 
 The `--wiki` flag takes the **main repository URL** (not the wiki URL). KB automatically derives the wiki clone URL.
 
-Authentication works the same as the Git connector — `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
+Authentication works the same as the Git connector: `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
 
 ## Combining sources
 

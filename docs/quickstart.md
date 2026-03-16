@@ -38,13 +38,13 @@ kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 
 KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them via Ollama, and stores everything in a single SQLite database.
 
-Ingestion is incremental — re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
+Ingestion is incremental, so re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
 
 ## Query
 
 ### Raw mode (no API key needed)
 
-Raw mode runs the full retrieval pipeline — embedding, hybrid search, confidence scoring — using only Ollama. No external API key required.
+Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) using only Ollama. No external API key required.
 
 ```bash
 kb query --raw "how does authentication work?"

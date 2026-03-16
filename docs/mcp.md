@@ -104,4 +104,4 @@ MCP clients that support prompts will show this in their prompt list. Use it to 
 2. **Start the server**: `kb mcp` (and/or `kb serve` for HTTP)
 3. **Each developer** adds KB to their MCP client config (see above)
 4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
-5. The `kb-instructions` prompt bootstraps agent context automatically — no manual prompt engineering needed
+5. The `kb-instructions` prompt bootstraps agent context automatically, no manual prompt engineering needed

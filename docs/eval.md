@@ -12,7 +12,7 @@ A repeatable eval harness for measuring retrieval quality. Run evals before and 
 make eval
 ```
 
-This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally — no Anthropic API key needed.
+This ingests the eval corpus, runs the test set, and prints a summary table. Requires Ollama running locally, no Anthropic API key needed.
 
 ## Manual usage
 
@@ -58,7 +58,7 @@ kb eval --db eval.db --corpus eval/corpus --ingest
 - Fragments per file
 - Mean, median, and P95 token length (whitespace-approximated)
 
-These track chunking quality over time — a change that produces 3x more fragments or halves average length is immediately visible.
+These track chunking quality over time, so a change that produces 3x more fragments or halves average length is immediately visible.
 
 ## Eval corpus
 

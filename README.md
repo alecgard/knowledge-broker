@@ -5,9 +5,9 @@
 
 > **Pre-release** — under active development. APIs and defaults may change.
 
-Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. The answer to any question exists — spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
+Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. The answer to any question exists, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-Deploy a single instance for your org. Ingest your Confluence spaces, Slack channels, Git repos, and wikis into one knowledge base. Developers and AI agents query it via MCP or HTTP — no one needs to set up their own ingestion or manage their own database.
+Deploy a single instance for your org. Ingest your Confluence spaces, Slack channels, Git repos, and wikis into one knowledge base. Developers and AI agents query it via MCP or HTTP, and no one needs to set up their own ingestion or manage their own database.
 
 **Open-source RAG with a trust layer.** Hybrid search (BM25 + semantic vectors), structured confidence signals, contradiction detection, and an MCP server for AI agent integration. Built in Go with SQLite. Self-hosted. No data leaves your environment.
 
@@ -87,13 +87,13 @@ Point your team's MCP clients at the shared instance. Each developer adds this t
 }
 ```
 
-Agents receive structured JSON with confidence scores, source attribution, and contradictions — so they can reason about reliability rather than treating all retrieved knowledge as equally trustworthy. A `kb-instructions` prompt teaches agents when and how to query, including a dynamic list of available sources. See [MCP Server](https://knowledgebroker.dev/mcp/) for the full setup guide.
+Agents receive structured JSON with confidence scores, source attribution, and contradictions, so they can reason about reliability rather than treating all retrieved knowledge as equally trustworthy. A `kb-instructions` prompt teaches agents when and how to query, including a dynamic list of available sources. See [MCP Server](https://knowledgebroker.dev/mcp/) for the full setup guide.
 
 An **HTTP API** is also available via `kb serve` for non-MCP integrations.
 
 ## How it works
 
-1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki — see [Connectors](https://knowledgebroker.dev/connectors/))
+1. **Connectors** pull content from sources (local filesystem, Git, Confluence, Slack, GitHub Wiki. See [Connectors](https://knowledgebroker.dev/connectors/))
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Enrichment** (optional) annotates chunks with entities and keywords using a local LLM
 4. **Embeddings** (via Ollama) convert chunks to vectors; raw text is indexed with FTS5 for keyword search
@@ -106,7 +106,7 @@ An **HTTP API** is also available via `kb serve` for non-MCP integrations.
 
 Every result includes four trust dimensions (0.0–1.0) combined into a weighted **overall** score: freshness (0.20), corroboration (0.25), consistency (0.30), authority (0.25). In raw mode, these are computed per fragment using local heuristics. In synthesis mode, the LLM assesses them across the full context. Contradictions between sources are always flagged explicitly.
 
-Agents can branch on the overall score — answering confidently above 0.85, hedging between 0.6–0.85, or escalating to the user below 0.6. See [Architecture](https://knowledgebroker.dev/architecture/) for full details on how each signal is computed.
+Agents can branch on the overall score: answering confidently above 0.85, hedging between 0.6–0.85, or escalating to the user below 0.6. See [Architecture](https://knowledgebroker.dev/architecture/) for full details on how each signal is computed.
 
 ## Commands
 
@@ -128,7 +128,7 @@ Agents can branch on the overall score — answering confidently above 0.85, hed
 | `kb eval` | Run retrieval quality evaluation |
 | `kb export --out ./dir/` | Export embeddings for TensorBoard |
 
-Ingestion is incremental — unchanged files are skipped via checksums. All connector flags can be combined in a single command. Use `--description` to annotate sources for agents.
+Ingestion is incremental, unchanged files are skipped via checksums. All connector flags can be combined in a single command. Use `--description` to annotate sources for agents.
 
 See the [CLI Reference](https://knowledgebroker.dev/cli/) for full flags and options, [Connectors](https://knowledgebroker.dev/connectors/) for source setup, and [MCP Server](https://knowledgebroker.dev/mcp/) for agent integration.
 
@@ -180,4 +180,4 @@ See the [full documentation](https://knowledgebroker.dev) for connector setup, a
 
 ## License
 
-[BSL 1.1](LICENSE) — free to use and self-host. Converts to Apache 2.0 after 4 years.
+[BSL 1.1](LICENSE), free to use and self-host. Converts to Apache 2.0 after 4 years.

@@ -112,7 +112,7 @@ Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CH
 
 A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
 
-Enrichment runs entirely on Ollama — no external API calls. Enable it by having the enrichment model pulled in Ollama.
+Enrichment runs entirely on Ollama, no external API calls. Enable it by having the enrichment model pulled in Ollama.
 
 ### Embedding and storage
 
@@ -128,7 +128,7 @@ Query → Expansion → Embedding → Hybrid Search (vector + BM25) → RRF Merg
 
 ### Multi-query expansion
 
-When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch — when the user says "auth" but the docs say "authentication middleware."
+When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch, like when the user says "auth" but the docs say "authentication middleware."
 
 Each expanded query variant is searched independently. Results are merged in the RRF step.
 
@@ -172,7 +172,7 @@ overall = freshness × 0.20 + corroboration × 0.25 + consistency × 0.30 + auth
 
 In **raw mode**, confidence is computed per fragment using local heuristics:
 
-- **Freshness** is scored relative to the corpus age distribution — a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
+- **Freshness** is scored relative to the corpus age distribution, so a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
 - **Corroboration** reflects how many distinct sources contain similar information
 - **Consistency** is based on embedding similarity between fragments about the same topic
 - **Authority** weights source types based on query characteristics (e.g., code repos are more authoritative for implementation questions, Confluence for process questions)
@@ -195,7 +195,7 @@ Agents can use the overall score to decide how to proceed:
 | 0.6–0.85 | Answer with caveats, note uncertainty |
 | Below 0.6 | Surface the contradiction or uncertainty to the user |
 
-These thresholds are suggestions — agents and applications can define their own logic based on the confidence breakdown.
+These thresholds are suggestions. Agents and applications can define their own logic based on the confidence breakdown.
 
 ## Configuration
 

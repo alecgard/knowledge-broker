@@ -29,7 +29,7 @@ kb ingest --all
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
 
-All connector flags can be combined in a single command. Ingestion is incremental — unchanged files are skipped based on checksums.
+All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
 
 See [Connectors](connectors.md) for detailed setup instructions per source type.
 
@@ -101,7 +101,7 @@ kb serve --addr :9090
 
 - Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
 - Set `"stream": true` for SSE streaming (synthesis mode only).
-- The `messages` array follows the same format as the Claude API — pass conversation history for multi-turn queries.
+- The `messages` array follows the same format as the Claude API. Pass conversation history for multi-turn queries.
 
 ## kb mcp
 

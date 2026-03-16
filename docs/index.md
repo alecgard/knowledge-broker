@@ -4,17 +4,17 @@ description: Open-source CLI for team knowledge retrieval. Go + SQLite, hybrid s
 
 # Knowledge Broker
 
-Deploy a single Knowledge Broker instance for your org. Ingest your Confluence spaces, Slack channels, Git repos, and wikis into one shared knowledge base. Developers and AI agents query it via MCP or HTTP — no one needs to manage their own ingestion or database.
+Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
 
-Built in Go with SQLite. Hybrid search (BM25 + vector), an MCP server for AI coding tools like Claude Code, and a trust layer that surfaces confidence signals — freshness, corroboration, consistency, and authority — rather than hiding uncertainty.
+Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, developers use the CLI, and nobody needs to already know where to look.
 
 ## Why Knowledge Broker
 
-Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere — spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
+Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite and Ollama — no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
+It runs on SQLite and Ollama, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring with just Ollama).
 
-The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly — no silent tiebreaking.
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
 
 ## What it looks like
 
@@ -51,15 +51,15 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 
 ## How it works
 
-1. **[Connectors](connectors.md)** pull content from sources — local filesystem, Git, Confluence, Slack, GitHub Wiki
+1. **[Connectors](connectors.md)** pull content from sources: local filesystem, Git, Confluence, Slack, GitHub Wiki
 2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
 3. **Embeddings** via Ollama convert chunks to vectors; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
-5. **[Confidence signals](architecture.md)** assess trust across four dimensions — freshness, corroboration, consistency, authority
+5. **[Confidence signals](architecture.md)** assess trust across four dimensions: freshness, corroboration, consistency, authority
 6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
 
 Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
 
 ## License
 
-[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE) — free to use and self-host. Converts to Apache 2.0 after 4 years.
+[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE), free to use and self-host. Converts to Apache 2.0 after 4 years.

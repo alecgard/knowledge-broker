@@ -44,6 +44,7 @@ func main() {
 	root.AddCommand(versionCmd())
 	root.AddCommand(ingestCmd())
 	root.AddCommand(queryCmd())
+	root.AddCommand(chatCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())

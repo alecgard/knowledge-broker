@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func exportCmd() *cobra.Command {
@@ -20,7 +18,7 @@ func exportCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Export fragment embeddings for TensorBoard Embedding Projector",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			outDir, _ := cmd.Flags().GetString("out")
 

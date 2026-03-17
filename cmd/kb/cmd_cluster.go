@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/knowledge-broker/knowledge-broker/internal/cluster"
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
@@ -20,7 +19,7 @@ func clusterCmd() *cobra.Command {
 		Use:   "cluster",
 		Short: "Run k-means clustering on fragment embeddings",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			k, _ := cmd.Flags().GetInt("k")
 
@@ -72,7 +71,7 @@ func clusterVizCmd() *cobra.Command {
 		Use:   "viz",
 		Short: "Generate interactive HTML cluster visualization",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			k, _ := cmd.Flags().GetInt("k")
 			outPath, _ := cmd.Flags().GetString("out")

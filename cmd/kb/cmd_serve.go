@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/server"
 )
@@ -18,7 +17,7 @@ func serveCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start HTTP API and MCP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			cfg.ListenAddr, _ = cmd.Flags().GetString("addr")
 			mcpAddr, _ := cmd.Flags().GetString("mcp-addr")

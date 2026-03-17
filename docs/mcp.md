@@ -176,14 +176,16 @@ other, surface both claims with their dates so the user can judge
 which is current.
 ```
 
-## Environment variables
+## Configuration
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For synthesis with Claude (default) | Not needed when `raw=true` or using another provider |
-| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
-| `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
-| `KB_DB` | No (default `kb.db`) | Database path |
+KB loads settings from config files and environment variables. The recommended approach is to save persistent settings to `~/.config/kb/config`:
+
+```bash
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+```
+
+Run `kb config` to see the resolved configuration and where each value comes from. See the [CLI Reference](cli.md#configuration) for the full search path and variable list.
 
 ## Typical setup
 

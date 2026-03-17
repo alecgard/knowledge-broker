@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -51,13 +52,156 @@ type Config struct {
 	SkipSetup bool // from KB_SKIP_SETUP
 }
 
+// ValueInfo records where a config value came from.
+type ValueInfo struct {
+	Value  string
+	Source string // human-readable source description
+}
+
+// LoadOptions controls config loading behavior.
+type LoadOptions struct {
+	ConfigFile string // from --config flag; empty if not set
+}
+
+// ResolvedConfig wraps Config with provenance information.
+type ResolvedConfig struct {
+	Config
+	Origins map[string]ValueInfo // env var name -> where the value came from
+	Files   []FileStatus         // which config files were checked
+}
+
+// FileStatus records whether a config file was found.
+type FileStatus struct {
+	Path  string
+	Found bool
+}
+
+// FieldDescriptor maps a Config field to its env var and default value.
+type FieldDescriptor struct {
+	EnvVar       string
+	DefaultValue string
+}
+
+// Fields returns the ordered list of config field descriptors.
+func Fields() []FieldDescriptor {
+	return []FieldDescriptor{
+		{"KB_DB", "kb.db"},
+		{"KB_OLLAMA_URL", "http://localhost:11434"},
+		{"KB_EMBEDDING_MODEL", "nomic-embed-text"},
+		{"KB_EMBEDDING_DIM", "768"},
+		{"KB_ENRICH_MODEL", "qwen2.5:0.5b"},
+		{"KB_LLM_PROVIDER", "claude"},
+		{"ANTHROPIC_API_KEY", ""},
+		{"KB_CLAUDE_MODEL", "claude-sonnet-4-20250514"},
+		{"OPENAI_API_KEY", ""},
+		{"KB_OPENAI_MODEL", ""},
+		{"KB_OLLAMA_LLM_MODEL", ""},
+		{"KB_LISTEN_ADDR", ":8080"},
+		{"KB_MAX_FILE_SIZE", "1048576"},
+		{"KB_MAX_CHUNK_SIZE", "2000"},
+		{"KB_CHUNK_OVERLAP", "150"},
+		{"KB_WORKERS", "4"},
+		{"KB_DEFAULT_LIMIT", "20"},
+		{"KB_GITHUB_CLIENT_ID", ""},
+		{"KB_SKIP_SETUP", "false"},
+	}
+}
+
 // Default returns a config with sensible defaults, overridden by .env file
 // and environment variables. Env vars take precedence over .env.
 func Default() Config {
-	// Load .env file if present (does not overwrite existing env vars).
-	loadDotEnv(".env")
+	return Load(LoadOptions{}).Config
+}
 
-	return Config{
+// Load loads config with full search path and provenance tracking.
+// Precedence (later wins): defaults < XDG config < .env < --config file < env vars.
+func Load(opts LoadOptions) ResolvedConfig {
+	fields := Fields()
+
+	// Build default values map.
+	defaults := make(map[string]string, len(fields))
+	for _, f := range fields {
+		defaults[f.EnvVar] = f.DefaultValue
+	}
+
+	// Track which layer provided each value.
+	// Start with defaults.
+	origins := make(map[string]ValueInfo, len(fields))
+	for _, f := range fields {
+		origins[f.EnvVar] = ValueInfo{Value: f.DefaultValue, Source: "default"}
+	}
+
+	var files []FileStatus
+
+	// 1. XDG config file.
+	xdgPath := xdgConfigPath()
+	xdgVals, xdgErr := parseDotEnv(xdgPath)
+	files = append(files, FileStatus{Path: xdgPath, Found: xdgErr == nil})
+	if xdgErr == nil {
+		for k, v := range xdgVals {
+			origins[k] = ValueInfo{Value: v, Source: xdgPath}
+		}
+	}
+
+	// 2. .env in CWD.
+	dotEnvVals, dotEnvErr := parseDotEnv(".env")
+	files = append(files, FileStatus{Path: ".env", Found: dotEnvErr == nil})
+	if dotEnvErr == nil {
+		for k, v := range dotEnvVals {
+			origins[k] = ValueInfo{Value: v, Source: ".env"}
+		}
+	}
+
+	// 3. --config file.
+	var flagVals map[string]string
+	if opts.ConfigFile != "" {
+		var flagErr error
+		flagVals, flagErr = parseDotEnv(opts.ConfigFile)
+		files = append(files, FileStatus{Path: opts.ConfigFile, Found: flagErr == nil})
+		if flagErr == nil {
+			for k, v := range flagVals {
+				origins[k] = ValueInfo{Value: v, Source: "--config " + opts.ConfigFile}
+			}
+		}
+	} else {
+		files = append(files, FileStatus{Path: "--config", Found: false})
+	}
+
+	// 4. Merge all file values (later layers win), then set env vars.
+	merged := make(map[string]string)
+	if xdgErr == nil {
+		for k, v := range xdgVals {
+			merged[k] = v
+		}
+	}
+	if dotEnvErr == nil {
+		for k, v := range dotEnvVals {
+			merged[k] = v
+		}
+	}
+	for k, v := range flagVals {
+		merged[k] = v
+	}
+
+	// Set env vars. Real env vars (already set) always take precedence.
+	for k, v := range merged {
+		if _, exists := os.LookupEnv(k); !exists {
+			os.Setenv(k, v)
+		}
+	}
+
+	// 5. Check env vars — they override everything.
+	for _, f := range fields {
+		if v, exists := os.LookupEnv(f.EnvVar); exists {
+			// If the value differs from what we set from files, it's a real env var.
+			if fileVal, ok := merged[f.EnvVar]; !ok || v != fileVal {
+				origins[f.EnvVar] = ValueInfo{Value: v, Source: "env"}
+			}
+		}
+	}
+
+	// 6. Build the Config struct using envOr/envOrInt (which now reads from env).
+	cfg := Config{
 		DBPath:          envOr("KB_DB", "kb.db"),
 		OllamaURL:       envOr("KB_OLLAMA_URL", "http://localhost:11434"),
 		EmbeddingModel:  envOr("KB_EMBEDDING_MODEL", "nomic-embed-text"),
@@ -78,17 +222,37 @@ func Default() Config {
 		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
 		SkipSetup:       envOr("KB_SKIP_SETUP", "false") == "true",
 	}
+
+	// Update origin values to reflect what was actually used (after envOr).
+	for _, f := range fields {
+		if info, ok := origins[f.EnvVar]; ok {
+			actual := os.Getenv(f.EnvVar)
+			if actual != "" {
+				info.Value = actual
+			} else if f.DefaultValue != "" {
+				info.Value = f.DefaultValue
+			}
+			origins[f.EnvVar] = info
+		}
+	}
+
+	return ResolvedConfig{
+		Config:  cfg,
+		Origins: origins,
+		Files:   files,
+	}
 }
 
-// loadDotEnv reads a .env file and sets environment variables for any keys
-// not already set. This means real env vars always take precedence.
-func loadDotEnv(path string) {
+// parseDotEnv reads a .env-format file and returns key-value pairs
+// WITHOUT calling os.Setenv.
+func parseDotEnv(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return // no .env file, that's fine
+		return nil, err
 	}
 	defer f.Close()
 
+	result := make(map[string]string)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -114,11 +278,22 @@ func loadDotEnv(path string) {
 			}
 		}
 
-		// Don't overwrite existing env vars.
-		if _, exists := os.LookupEnv(key); !exists {
-			os.Setenv(key, value)
-		}
+		result[key] = value
 	}
+	return result, scanner.Err()
+}
+
+// xdgConfigPath returns the path to the XDG config file for kb.
+func xdgConfigPath() string {
+	xdgHome := os.Getenv("XDG_CONFIG_HOME")
+	if xdgHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Join(".config", "kb", "config")
+		}
+		xdgHome = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdgHome, "kb", "config")
 }
 
 func envOr(key, fallback string) string {

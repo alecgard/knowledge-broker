@@ -254,21 +254,65 @@ kb version
 kb version --remote http://server:8080
 ```
 
+## kb config
+
+Show the resolved configuration: where each value comes from, which config files were loaded, and the current value of every setting (secrets are masked).
+
+```bash
+kb config
+kb config --config /etc/kb/config
+```
+
+```
+Config files:
+  ~/.config/kb/config                      found
+  .env                                     not found
+  --config                                 (not specified)
+
+KEY                       VALUE                               SOURCE
+KB_DB                     kb.db                               default
+KB_OLLAMA_URL             http://localhost:11434              ~/.config/kb/config
+ANTHROPIC_API_KEY         sk-ant-a****                        env
+...
+```
+
 ## Global flags
 
 | Flag | Description |
 |------|-------------|
+| `--config` | Path to config file (overrides `.env` and `~/.config/kb/config`) |
 | `--debug` | Enable debug mode (log all API calls) |
 | `--no-setup` | Skip automatic runtime management (useful for CI or custom deployments) |
 
-## Environment variables
+## Configuration
+
+KB loads configuration from multiple sources. Later sources override earlier ones:
+
+| Precedence | Source | Description |
+|:----------:|--------|-------------|
+| 1 (lowest) | Defaults | Built-in defaults |
+| 2 | `~/.config/kb/config` | Persistent user config (respects `$XDG_CONFIG_HOME`) |
+| 3 | `.env` in working directory | Project-local overrides (useful during development) |
+| 4 | `--config <path>` | Explicit file path (useful for server deployments) |
+| 5 (highest) | Environment variables | Always take precedence |
+
+All config files use the same `KEY=VALUE` format (same as `.env`). Run `kb config` to see which source each value comes from.
+
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `KB_DB` | `kb.db` | SQLite database path |
 | `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
 | `KB_SKIP_SETUP` | `false` | Skip automatic runtime management |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
-| `KB_DB` | `kb.db` | Default database path |
+| `ANTHROPIC_API_KEY` | — | API key for Claude (default LLM provider) |
+| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
+| `OPENAI_API_KEY` | — | API key for OpenAI |
 | `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |
+| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
+| `KB_WORKERS` | `4` | Parallel ingestion workers |
+| `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |

@@ -30,18 +30,29 @@ Set up a cron job or CI step to re-run ingestion periodically. Only new or chang
 
 Set an API key on the server for answer synthesis. Without one, raw retrieval still works.
 
-```bash
-# Claude (default)
-export ANTHROPIC_API_KEY=sk-ant-...
+The recommended approach for servers is a config file:
 
-# Or OpenAI
-export KB_LLM_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
+```bash
+# Create a server config file
+cat > /etc/kb/config <<EOF
+ANTHROPIC_API_KEY=sk-ant-...
+KB_LISTEN_ADDR=:8080
+EOF
+```
+
+Or use environment variables directly (standard for containers):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### 4. Start the server
 
 ```bash
+# With config file
+kb serve --config /etc/kb/config
+
+# Or with env vars
 kb serve
 ```
 

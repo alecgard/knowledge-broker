@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
 	"github.com/knowledge-broker/knowledge-broker/internal/eval"
@@ -39,7 +38,7 @@ func evalCmd() *cobra.Command {
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath = dbPath
 
 			s, err := openStore(cfg)

@@ -199,18 +199,12 @@ These thresholds are suggestions. Agents and applications can define their own l
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KB_DB` | `kb.db` | SQLite database path |
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
-| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
-| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
-| `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
-| `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
-| `ANTHROPIC_API_KEY` | — | Required for synthesis with Claude (default provider) |
-| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
-| `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
-| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
-| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
-| `KB_WORKERS` | `4` | Parallel ingestion workers |
-| `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
+KB loads settings from multiple sources (later overrides earlier):
+
+1. **Defaults** — sensible built-in values
+2. **`~/.config/kb/config`** — persistent user config (respects `$XDG_CONFIG_HOME`)
+3. **`.env` in working directory** — project-local overrides
+4. **`--config <path>`** — explicit file (useful for server deployments)
+5. **Environment variables** — always highest precedence
+
+All config files use `KEY=VALUE` format. Run `kb config` to see the resolved values and where each one comes from. See the [CLI Reference](cli.md#configuration) for the full variable list.

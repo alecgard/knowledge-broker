@@ -56,18 +56,26 @@ Returns ranked fragments with content, source metadata, and per-fragment confide
 
 ### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection. Set an API key for your preferred provider:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Configure an API key for your preferred provider:
 
 ```bash
-# Claude (default)
+# Save to your persistent config (recommended — survives new shells)
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+
+# Or export for the current session
 export ANTHROPIC_API_KEY=sk-ant-...
+```
 
-# Or OpenAI
-export KB_LLM_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
+Other providers work too:
 
-# Or use a local model via Ollama (no API key needed)
-export KB_LLM_PROVIDER=ollama
+```bash
+# OpenAI
+KB_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+
+# Local model via Ollama (no API key needed)
+KB_LLM_PROVIDER=ollama
 ```
 
 ```bash
@@ -103,6 +111,8 @@ KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or lo
 | **Answer synthesis** | | :material-check: |
 | **Cross-fragment confidence assessment** | | :material-check: |
 | **Contradiction detection** | | :material-check: |
+
+Run `kb config` at any time to see where your settings are coming from. See [CLI Reference — Configuration](cli.md#configuration) for the full search path.
 
 ## Next steps
 

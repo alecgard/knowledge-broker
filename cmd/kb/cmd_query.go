@@ -14,7 +14,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
@@ -25,7 +24,7 @@ func queryCmd() *cobra.Command {
 		Short: "Query the knowledge base",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			human, _ := cmd.Flags().GetBool("human")

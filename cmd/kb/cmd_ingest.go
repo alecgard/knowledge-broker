@@ -25,8 +25,6 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
-
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func ingestCmd() *cobra.Command {
@@ -34,7 +32,7 @@ func ingestCmd() *cobra.Command {
 		Use:   "ingest",
 		Short: "Ingest documents from one or more sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)

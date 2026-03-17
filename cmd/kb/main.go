@@ -38,6 +38,7 @@ func main() {
 
 	root.PersistentFlags().Bool("debug", false, "Enable debug mode (log all API calls)")
 	root.PersistentFlags().Bool("no-setup", false, "Skip automatic Ollama management")
+	root.PersistentFlags().String("config", "", "Path to config file")
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(ingestCmd())
@@ -48,11 +49,17 @@ func main() {
 	root.AddCommand(evalCmd())
 	root.AddCommand(clusterCmd())
 	root.AddCommand(newSetupCmd())
+	root.AddCommand(configCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func loadConfig(cmd *cobra.Command) config.ResolvedConfig {
+	configFile, _ := cmd.Flags().GetString("config")
+	return config.Load(config.LoadOptions{ConfigFile: configFile})
 }
 
 func isDebug(cmd *cobra.Command) bool {
@@ -83,7 +90,7 @@ func newSetupCmd() *cobra.Command {
 }
 
 func runSetupOllama(cmd *cobra.Command, args []string) error {
-	cfg := config.Default()
+	cfg := loadConfig(cmd).Config
 	ctx := context.Background()
 
 	rtCfg := ollamaRT.Config{

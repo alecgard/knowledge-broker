@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/knowledge-broker/knowledge-broker/internal/config"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
 
@@ -52,7 +51,7 @@ func sourcesListCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
@@ -107,7 +106,7 @@ func sourcesDescribeCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
@@ -180,7 +179,7 @@ func sourcesExportCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
@@ -294,7 +293,7 @@ func sourcesImportCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
@@ -349,7 +348,7 @@ func sourcesRemoveCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg := config.Default()
+			cfg := loadConfig(cmd).Config
 			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)

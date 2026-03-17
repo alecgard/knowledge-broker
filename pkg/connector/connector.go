@@ -4,6 +4,7 @@ package connector
 
 import (
 	"context"
+	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
@@ -17,6 +18,12 @@ type ScanOptions struct {
 	// Force skips incremental optimizations (e.g. diff-based scan) and
 	// processes all files.
 	Force bool
+
+	// LastIngest is the timestamp of the last successful ingestion for this source.
+	// Connectors that support time-based filtering (e.g., Slack) can use this
+	// to narrow the scan window instead of always fetching the full lookback period.
+	// Nil means no previous ingestion (first scan).
+	LastIngest *time.Time
 }
 
 // Connector pulls documents from a source.

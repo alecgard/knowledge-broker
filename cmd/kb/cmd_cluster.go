@@ -20,7 +20,6 @@ func clusterCmd() *cobra.Command {
 		Short: "Run k-means clustering on fragment embeddings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			k, _ := cmd.Flags().GetInt("k")
 
 			s, err := openStore(cfg)
@@ -60,7 +59,7 @@ func clusterCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
+	cmd.PersistentFlags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
 	cmd.PersistentFlags().Int("k", 0, "Number of clusters (default: sqrt(n/2))")
 	cmd.AddCommand(clusterVizCmd())
 	return cmd
@@ -72,7 +71,6 @@ func clusterVizCmd() *cobra.Command {
 		Short: "Generate interactive HTML cluster visualization",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			k, _ := cmd.Flags().GetInt("k")
 			outPath, _ := cmd.Flags().GetString("out")
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -59,7 +60,22 @@ func main() {
 
 func loadConfig(cmd *cobra.Command) config.ResolvedConfig {
 	configFile, _ := cmd.Flags().GetString("config")
-	return config.Load(config.LoadOptions{ConfigFile: configFile})
+	resolved := config.Load(config.LoadOptions{ConfigFile: configFile})
+
+	// If --db was explicitly set, use it; otherwise run migration logic.
+	if cmd.Flags().Changed("db") {
+		resolved.Config.DBPath, _ = cmd.Flags().GetString("db")
+	} else {
+		// Check if KB_DB was explicitly configured (not just the default).
+		dbExplicit := resolved.Origins["KB_DB"].Source != "default"
+		finalPath, warn := config.MigrateDB(resolved.Config.DBPath, dbExplicit)
+		if warn != "" {
+			fmt.Fprintln(os.Stderr, warn)
+		}
+		resolved.Config.DBPath = finalPath
+	}
+
+	return resolved
 }
 
 func isDebug(cmd *cobra.Command) bool {
@@ -115,6 +131,12 @@ func httpClient(logger *slog.Logger, debugMode bool) *http.Client {
 }
 
 func openStore(cfg config.Config) (*store.SQLiteStore, error) {
+	// Ensure the parent directory exists (e.g. ~/.local/share/kb/).
+	if dir := filepath.Dir(cfg.DBPath); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create db directory: %w", err)
+		}
+	}
 	return store.NewSQLiteStore(cfg.DBPath, cfg.EmbeddingDim)
 }
 

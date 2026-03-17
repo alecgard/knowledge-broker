@@ -19,7 +19,6 @@ func exportCmd() *cobra.Command {
 		Short: "Export fragment embeddings for TensorBoard Embedding Projector",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			outDir, _ := cmd.Flags().GetString("out")
 
 			remote, _ := cmd.Flags().GetString("remote")
@@ -100,7 +99,7 @@ func exportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
 	cmd.Flags().String("out", ".", "Output directory for TSV files")
 	cmd.Flags().String("remote", "", "URL of a remote KB server")
 	return cmd

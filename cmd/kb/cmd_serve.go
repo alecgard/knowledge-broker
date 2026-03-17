@@ -18,7 +18,6 @@ func serveCmd() *cobra.Command {
 		Short: "Start HTTP API and MCP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			cfg.ListenAddr, _ = cmd.Flags().GetString("addr")
 			mcpAddr, _ := cmd.Flags().GetString("mcp-addr")
 			noHTTP, _ := cmd.Flags().GetBool("no-http")
@@ -78,7 +77,7 @@ func serveCmd() *cobra.Command {
 	}
 	cmd.Flags().String("addr", ":8080", "HTTP listen address")
 	cmd.Flags().String("mcp-addr", ":8082", "MCP SSE listen address")
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
 	cmd.Flags().Bool("no-http", false, "Disable HTTP API server")
 	cmd.Flags().Bool("no-sse", false, "Disable MCP SSE transport")
 	cmd.Flags().Bool("no-stdio", false, "Disable MCP stdio transport")

@@ -191,8 +191,8 @@ func TestLoadDefaultsOnly(t *testing.T) {
 
 	resolved := Load(LoadOptions{})
 
-	if resolved.Config.DBPath != "kb.db" {
-		t.Errorf("DBPath: got %q, want %q", resolved.Config.DBPath, "kb.db")
+	if resolved.Config.DBPath != DefaultDBPath() {
+		t.Errorf("DBPath: got %q, want %q", resolved.Config.DBPath, DefaultDBPath())
 	}
 	if resolved.Config.OllamaURL != "http://localhost:11434" {
 		t.Errorf("OllamaURL: got %q, want %q", resolved.Config.OllamaURL, "http://localhost:11434")
@@ -238,7 +238,7 @@ func TestDefaultBackwardCompat(t *testing.T) {
 	})
 
 	cfg := Default()
-	if cfg.DBPath != "kb.db" {
-		t.Errorf("Default().DBPath: got %q, want %q", cfg.DBPath, "kb.db")
+	if cfg.DBPath != DefaultDBPath() {
+		t.Errorf("Default().DBPath: got %q, want %q", cfg.DBPath, DefaultDBPath())
 	}
 }

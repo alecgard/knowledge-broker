@@ -25,7 +25,6 @@ func evalCmd() *cobra.Command {
 		Use:   "eval",
 		Short: "Run retrieval evaluation against a test set",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dbPath, _ := cmd.Flags().GetString("db")
 			testsetPath, _ := cmd.Flags().GetString("testset")
 			corpusPath, _ := cmd.Flags().GetString("corpus")
 			limit, _ := cmd.Flags().GetInt("limit")
@@ -39,7 +38,6 @@ func evalCmd() *cobra.Command {
 			client := httpClient(logger, debugMode)
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath = dbPath
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -176,7 +174,7 @@ func evalCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
 	cmd.Flags().String("testset", "eval/testset.json", "Path to test set JSON file")
 	cmd.Flags().String("corpus", "eval/corpus", "Path to eval corpus directory")
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per query")

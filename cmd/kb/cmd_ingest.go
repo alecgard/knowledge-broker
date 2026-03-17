@@ -33,7 +33,6 @@ func ingestCmd() *cobra.Command {
 		Short: "Ingest documents from one or more sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
@@ -482,7 +481,7 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().StringArray("confluence", nil, "Confluence space key to ingest (repeatable, requires KB_CONFLUENCE_* env vars)")
 	cmd.Flags().StringArray("slack", nil, "Slack channel ID to ingest (repeatable, requires KB_SLACK_TOKEN)")
 	cmd.Flags().StringArray("wiki", nil, "GitHub repo URL whose wiki to ingest (repeatable)")
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
 	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")

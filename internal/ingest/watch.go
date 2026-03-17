@@ -3,184 +3,82 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 	"time"
-
-	"github.com/fsnotify/fsnotify"
-
-	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 )
 
-// Watcher monitors filesystem paths for changes and triggers re-ingestion.
+// ReIngestFunc is called each polling cycle to re-ingest all registered sources.
+// It receives the context and should return an error only if the cycle should
+// be considered failed (errors are logged as warnings; the loop continues).
+type ReIngestFunc func(ctx context.Context) error
+
+// Watcher periodically re-ingests all registered sources on a fixed interval.
 type Watcher struct {
-	pipeline *Pipeline
-	logger   *slog.Logger
-	debounce time.Duration
+	interval   time.Duration
+	reIngestFn ReIngestFunc
+	logger     *slog.Logger
+
+	// timerFunc creates a channel that fires after d. Returns the channel
+	// and a stop function. Overridable for tests.
+	timerFunc func(d time.Duration) (<-chan time.Time, func() bool)
+	// nowFunc returns current time. Overridable for tests.
+	nowFunc func() time.Time
 }
 
-// NewWatcher creates a Watcher that uses the given pipeline for re-ingestion.
-func NewWatcher(pipeline *Pipeline, logger *slog.Logger) *Watcher {
+// NewWatcher creates a Watcher that calls reIngestFn every interval.
+func NewWatcher(interval time.Duration, reIngestFn ReIngestFunc, logger *slog.Logger) *Watcher {
 	return &Watcher{
-		pipeline: pipeline,
-		logger:   logger,
-		debounce: 1 * time.Second,
+		interval:   interval,
+		reIngestFn: reIngestFn,
+		logger:     logger,
+		nowFunc:    time.Now,
 	}
 }
 
-// SetDebounce overrides the default debounce duration (useful for tests).
-func (w *Watcher) SetDebounce(d time.Duration) {
-	w.debounce = d
+// SetTimerFunc overrides the default timer creation (useful for tests).
+func (w *Watcher) SetTimerFunc(fn func(time.Duration) (<-chan time.Time, func() bool)) {
+	w.timerFunc = fn
 }
 
-// Watch monitors the given local directory paths for filesystem changes.
-// When changes are detected, it re-runs ingestion for the affected source.
-// It blocks until ctx is cancelled.
-func (w *Watcher) Watch(ctx context.Context, paths []string) error {
-	fsw, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("create fsnotify watcher: %w", err)
-	}
-	defer fsw.Close()
-
-	// Resolve paths and build connectors.
-	type watchedSource struct {
-		absRoot string
-		conn    connector.Connector
-	}
-	var sources []watchedSource
-
-	for _, p := range paths {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			return fmt.Errorf("resolve path %s: %w", p, err)
-		}
-		sources = append(sources, watchedSource{
-			absRoot: abs,
-			conn:    connector.NewFilesystemConnector(abs),
-		})
-
-		// Recursively add all directories under this path.
-		if err := addDirsRecursive(fsw, abs); err != nil {
-			return fmt.Errorf("add directories for %s: %w", abs, err)
-		}
-	}
-
-	w.logger.Info("watching for changes", "paths", paths)
-
-	// Debounce: track which source roots have pending changes.
-	var mu sync.Mutex
-	pending := make(map[string]bool)
-	var timer *time.Timer
-
-	resetTimer := func() {
-		if timer != nil {
-			timer.Stop()
-		}
-		timer = time.AfterFunc(w.debounce, func() {
-			mu.Lock()
-			roots := make([]string, 0, len(pending))
-			for r := range pending {
-				roots = append(roots, r)
-			}
-			pending = make(map[string]bool)
-			mu.Unlock()
-
-			for _, root := range roots {
-				// Find the connector for this root.
-				for _, src := range sources {
-					if src.absRoot == root {
-						w.logger.Info("re-ingesting", "source", src.conn.SourceName())
-						result, err := w.pipeline.Run(ctx, src.conn)
-						if err != nil {
-							w.logger.Error("re-ingestion failed", "source", src.conn.SourceName(), "error", err)
-						} else {
-							w.logger.Info("re-ingestion complete",
-								"source", src.conn.SourceName(),
-								"added", result.Added,
-								"deleted", result.Deleted,
-								"skipped", result.Skipped,
-								"errors", result.Errors,
-							)
-						}
-						break
-					}
-				}
-			}
-		})
-	}
-
+// Watch runs the polling loop. It blocks until ctx is cancelled.
+// Each cycle logs the start time, calls the re-ingest function, logs results,
+// and then waits for the interval before the next cycle.
+func (w *Watcher) Watch(ctx context.Context) error {
 	for {
+		nextRun := w.nowFunc().Add(w.interval)
+		fmt.Fprintf(os.Stderr, "Next re-ingestion at %s (in %s)\n", nextRun.Format(time.RFC3339), w.interval)
+
+		ch, stop := w.newTimer(w.interval)
 		select {
 		case <-ctx.Done():
-			if timer != nil {
-				timer.Stop()
-			}
+			stop()
+			fmt.Fprintln(os.Stderr, "Watch mode stopped.")
 			return nil
+		case <-ch:
+		}
 
-		case event, ok := <-fsw.Events:
-			if !ok {
+		fmt.Fprintf(os.Stderr, "Starting scheduled re-ingestion at %s...\n", w.nowFunc().Format(time.RFC3339))
+
+		if err := w.reIngestFn(ctx); err != nil {
+			// Check if context was cancelled during re-ingestion.
+			if ctx.Err() != nil {
+				fmt.Fprintln(os.Stderr, "Watch mode stopped.")
 				return nil
 			}
-
-			// Only react to writes, creates, removes, and renames.
-			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) &&
-				!event.Has(fsnotify.Remove) && !event.Has(fsnotify.Rename) {
-				continue
-			}
-
-			// If a new directory was created, start watching it.
-			if event.Has(fsnotify.Create) {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					if err := addDirsRecursive(fsw, event.Name); err != nil {
-						w.logger.Warn("failed to watch new directory", "path", event.Name, "error", err)
-					}
-				}
-			}
-
-			// Find which source root this event belongs to.
-			for _, src := range sources {
-				if strings.HasPrefix(event.Name, src.absRoot) {
-					mu.Lock()
-					pending[src.absRoot] = true
-					mu.Unlock()
-					resetTimer()
-					break
-				}
-			}
-
-		case err, ok := <-fsw.Errors:
-			if !ok {
-				return nil
-			}
-			w.logger.Warn("fsnotify error", "error", err)
+			w.logger.Warn("scheduled re-ingestion failed, will retry next cycle", "error", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "Scheduled re-ingestion complete.")
 		}
 	}
 }
 
-// addDirsRecursive walks root and adds all directories to the fsnotify watcher,
-// skipping directories that should be ignored (hidden dirs, SkipDirs).
-func addDirsRecursive(fsw *fsnotify.Watcher, root string) error {
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip inaccessible
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if path != root {
-			if strings.HasPrefix(name, ".") {
-				return fs.SkipDir
-			}
-			if connector.SkipDirs[name] {
-				return fs.SkipDir
-			}
-		}
-		return fsw.Add(path)
-	})
+// newTimer creates a timer. Uses timerFunc if set (for testing), otherwise
+// uses time.NewTimer.
+func (w *Watcher) newTimer(d time.Duration) (<-chan time.Time, func() bool) {
+	if w.timerFunc != nil {
+		return w.timerFunc(d)
+	}
+	t := time.NewTimer(d)
+	return t.C, t.Stop
 }

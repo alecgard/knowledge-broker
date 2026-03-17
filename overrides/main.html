@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block extrahead %}
+  {{ super() }}
   {% set title = (page.meta.title if page and page.meta and page.meta.title else page.title if page else config.site_name) %}
   {% set description = (page.meta.description if page and page.meta and page.meta.description else config.site_description) %}
   {% set url = (page.canonical_url if page else config.site_url) %}
@@ -12,4 +13,6 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="{{ title }}">
   <meta name="twitter:description" content="{{ description }}">
+  <script data-goatcounter="https://knowledgebroker.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 {% endblock %}

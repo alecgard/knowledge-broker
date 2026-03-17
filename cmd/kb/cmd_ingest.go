@@ -55,9 +55,7 @@ func ingestCmd() *cobra.Command {
 			if watchMode && remote != "" {
 				return fmt.Errorf("--watch and --remote cannot be combined")
 			}
-			if watchMode && all {
-				return fmt.Errorf("--watch and --all cannot be combined")
-			}
+			interval, _ := cmd.Flags().GetDuration("interval")
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -459,19 +457,59 @@ func ingestCmd() *cobra.Command {
 
 			// Enter watch mode if requested.
 			if watchMode {
-				if len(gitURLs) > 0 {
-					return fmt.Errorf("--watch is only supported for local filesystem sources, not --git")
+				fmt.Fprintf(os.Stderr, "Entering watch mode (interval: %s, press Ctrl+C to stop)...\n", interval)
+
+				// The re-ingest function uses the same logic as --all:
+				// list all registered local sources and re-ingest each one.
+				reIngestFn := func(ctx context.Context) error {
+					sources, err := s.ListSources(ctx)
+					if err != nil {
+						return fmt.Errorf("list sources: %w", err)
+					}
+					var localSources []model.Source
+					for _, src := range sources {
+						if src.Config["mode"] == model.SourceModeLocal {
+							localSources = append(localSources, src)
+						}
+					}
+					if len(localSources) == 0 {
+						logger.Warn("no local sources registered, nothing to re-ingest")
+						return nil
+					}
+
+					var errs []string
+					for _, src := range localSources {
+						conn, err := connector.FromSource(src)
+						if err != nil {
+							errs = append(errs, fmt.Sprintf("reconstruct %s/%s: %v", src.SourceType, src.SourceName, err))
+							continue
+						}
+						fmt.Fprintf(os.Stderr, "  Re-ingesting %s/%s...\n", src.SourceType, src.SourceName)
+						srcLabel := src.SourceType + "/" + src.SourceName
+						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
+						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
+						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
+						pipeline.OnBatchDone = makeBatchFunc()
+						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
+						if err != nil {
+							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
+							continue
+						}
+						src.LastIngest = time.Now()
+						if regErr := s.RegisterSource(ctx, src); regErr != nil {
+							logger.Warn("failed to update source timestamp", "error", regErr)
+						}
+						fmt.Fprintf(os.Stderr, "  %s/%s: %d added, %d deleted, %d skipped, %d errors\n",
+							src.SourceType, src.SourceName, r.Added, r.Deleted, r.Skipped, r.Errors)
+					}
+					if len(errs) > 0 {
+						return fmt.Errorf("%s", strings.Join(errs, "; "))
+					}
+					return nil
 				}
-				// Resolve watch paths: use explicit --source paths or default to ".".
-				watchPaths := sourcePaths
-				if len(watchPaths) == 0 {
-					watchPaths = []string{"."}
-				}
-				fmt.Fprintln(os.Stderr, "Watching for changes... (press Ctrl+C to stop)")
-				watchPipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
-				configureEnrichment(watchPipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-				watcher := ingest.NewWatcher(watchPipeline, logger)
-				return watcher.Watch(ctx, watchPaths)
+
+				watcher := ingest.NewWatcher(interval, reIngestFn, logger)
+				return watcher.Watch(ctx)
 			}
 
 			return nil
@@ -485,7 +523,8 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")
-	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
+	cmd.Flags().Bool("watch", false, "Re-ingest all registered sources on a schedule")
+	cmd.Flags().Duration("interval", 1*time.Hour, "Polling interval for --watch mode (e.g. 1h, 30m, 5m)")
 	cmd.Flags().Bool("parallel", false, "Ingest multiple sources in parallel (default: sequential)")
 	cmd.Flags().String("description", "", "Human-readable description of this source (shown to agents via MCP)")
 	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment (faster ingestion)")

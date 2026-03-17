@@ -5,7 +5,6 @@ go 1.24.1
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
-	github.com/fsnotify/fsnotify v1.9.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mattn/go-sqlite3 v1.14.34
@@ -30,5 +29,4 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/sys v0.34.0 // indirect
 )

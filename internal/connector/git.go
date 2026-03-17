@@ -21,16 +21,20 @@ const SourceTypeGit = "git"
 
 func init() {
 	Register(SourceTypeGit, func(config map[string]string) (Connector, error) {
-		return NewGitConnector(config["url"], config["branch"], config["github_client_id"]), nil
+		c := NewGitConnector(config["url"], config["branch"], config["github_client_id"])
+		c.lastCommit = config["last_commit"]
+		return c, nil
 	})
 }
 
 // GitConnector clones a git repository and scans it using FilesystemConnector.
 // Works with any git remote: GitHub, GitLab, Bitbucket, self-hosted, etc.
 type GitConnector struct {
-	repoURL  string
-	branch   string
-	clientID string // GitHub OAuth client ID (only used for github.com URLs)
+	repoURL    string
+	branch     string
+	clientID   string // GitHub OAuth client ID (only used for github.com URLs)
+	lastCommit string // SHA of the last successfully ingested commit
+	headCommit string // SHA of HEAD after clone (populated by Scan)
 }
 
 // NewGitConnector creates a connector for the given git remote URL.
@@ -57,10 +61,16 @@ func (c *GitConnector) Config(mode string) map[string]string {
 	if c.clientID != "" {
 		cfg["github_client_id"] = c.clientID
 	}
+	// Store HEAD commit SHA so next ingest can use diff-based scan.
+	if c.headCommit != "" {
+		cfg["last_commit"] = c.headCommit
+	}
 	return cfg
 }
 
-// Scan clones the repo to a temp dir and delegates to FilesystemConnector.
+// Scan clones the repo to a temp dir and returns new/changed documents.
+// When a previous commit SHA is available (from a prior ingest), it uses
+// git diff to identify only the changed files, avoiding a full filesystem scan.
 func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawDocument, []string, error) {
 	cloneURL, err := c.authenticatedURL(ctx)
 	if err != nil {
@@ -76,7 +86,15 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 
 	fmt.Fprintf(os.Stderr, "Cloning %s...\n", c.repoURL)
 
-	cloneArgs := []string{"clone", "--depth", "1"}
+	// If we have a previous commit, do a blobless clone so we can diff.
+	// Otherwise, shallow clone for speed.
+	useDiff := c.lastCommit != "" && !opts.Force
+	cloneArgs := []string{"clone"}
+	if useDiff {
+		cloneArgs = append(cloneArgs, "--filter=blob:none", "--no-checkout")
+	} else {
+		cloneArgs = append(cloneArgs, "--depth", "1")
+	}
 	if c.branch != "" {
 		cloneArgs = append(cloneArgs, "--branch", c.branch)
 	}
@@ -88,6 +106,126 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		return nil, nil, fmt.Errorf("git clone: %w", err)
 	}
 
+	// Record HEAD commit SHA for next ingest.
+	c.headCommit = gitHead(ctx, tmpDir)
+
+	// Try diff-based scan if we have a previous commit.
+	if useDiff {
+		docs, deleted, err := c.diffScan(ctx, tmpDir, opts)
+		if err == nil {
+			return docs, deleted, nil
+		}
+		// Diff failed (e.g. last_commit unreachable after force push).
+		// Fall back to full scan.
+		fmt.Fprintf(os.Stderr, "Diff-based scan failed (%v), falling back to full scan\n", err)
+	}
+
+	// Full checkout for full scan.
+	if useDiff {
+		// We cloned with --no-checkout for diff; need to checkout now.
+		checkoutCmd := exec.CommandContext(ctx, "git", "checkout", "HEAD")
+		checkoutCmd.Dir = tmpDir
+		checkoutCmd.Stderr = os.Stderr
+		if err := checkoutCmd.Run(); err != nil {
+			return nil, nil, fmt.Errorf("git checkout: %w", err)
+		}
+	}
+
+	return c.fullScan(ctx, tmpDir, opts)
+}
+
+// diffScan uses git diff to find only changed files since the last ingested commit.
+func (c *GitConnector) diffScan(ctx context.Context, tmpDir string, opts ScanOptions) ([]model.RawDocument, []string, error) {
+	// Check if lastCommit is reachable.
+	checkCmd := exec.CommandContext(ctx, "git", "cat-file", "-t", c.lastCommit)
+	checkCmd.Dir = tmpDir
+	if err := checkCmd.Run(); err != nil {
+		return nil, nil, fmt.Errorf("last commit %s not reachable", c.lastCommit[:8])
+	}
+
+	// Get list of changed files.
+	diffCmd := exec.CommandContext(ctx, "git", "diff", "--name-status", c.lastCommit+"..HEAD")
+	diffCmd.Dir = tmpDir
+	out, err := diffCmd.Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("git diff: %w", err)
+	}
+
+	var changedPaths []string
+	var deleted []string
+
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		status, path := parts[0], parts[1]
+		switch {
+		case strings.HasPrefix(status, "D"):
+			deleted = append(deleted, path)
+		case strings.HasPrefix(status, "A"), strings.HasPrefix(status, "M"),
+			strings.HasPrefix(status, "R"), strings.HasPrefix(status, "C"):
+			// For renames (R100\told\tnew), the path is tab-separated.
+			if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
+				// path contains "old\tnew", we want the new path.
+				renameParts := strings.SplitN(path, "\t", 2)
+				if len(renameParts) == 2 {
+					deleted = append(deleted, renameParts[0])
+					path = renameParts[1]
+				}
+			}
+			changedPaths = append(changedPaths, path)
+		}
+	}
+
+	if c.headCommit == c.lastCommit {
+		fmt.Fprintf(os.Stderr, "No changes since last ingest\n")
+		return nil, nil, nil
+	}
+
+	fmt.Fprintf(os.Stderr, "Diff: %d changed, %d deleted (since %s)\n",
+		len(changedPaths), len(deleted), c.lastCommit[:8])
+
+	if len(changedPaths) == 0 {
+		return nil, deleted, nil
+	}
+
+	// Checkout only the changed files (sparse checkout of specific paths).
+	checkoutArgs := append([]string{"checkout", "HEAD", "--"}, changedPaths...)
+	checkoutCmd := exec.CommandContext(ctx, "git", checkoutArgs...)
+	checkoutCmd.Dir = tmpDir
+	checkoutCmd.Stderr = os.Stderr
+	if err := checkoutCmd.Run(); err != nil {
+		return nil, nil, fmt.Errorf("git checkout changed files: %w", err)
+	}
+
+	// Build documents from only the changed files.
+	sourceURI := c.baseSourceURI()
+	sourceName := c.SourceName()
+	var docs []model.RawDocument
+
+	fs := NewFilesystemConnector(tmpDir)
+	for _, relPath := range changedPaths {
+		absPath := filepath.Join(tmpDir, relPath)
+		doc, err := fs.ReadDocument(absPath)
+		if err != nil {
+			continue // file might be binary or unreadable
+		}
+		doc.Path = relPath
+		doc.SourceType = SourceTypeGit
+		doc.SourceName = sourceName
+		doc.SourceURI = sourceURI + "/" + relPath
+		docs = append(docs, doc)
+	}
+
+	return docs, deleted, nil
+}
+
+// fullScan walks the entire repository (original behavior).
+func (c *GitConnector) fullScan(ctx context.Context, tmpDir string, opts ScanOptions) ([]model.RawDocument, []string, error) {
 	// Rewrite known keys from relative paths to absolute (matching filesystem walk).
 	if len(opts.Known) > 0 {
 		abs := make(map[string]string, len(opts.Known))
@@ -115,7 +253,6 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	sourceURI := c.baseSourceURI()
 	sourceName := c.SourceName()
 	for i := range docs {
-		// Convert absolute temp path to relative path within repo.
 		relPath, _ := filepath.Rel(tmpDir, docs[i].Path)
 		docs[i].Path = relPath
 		docs[i].SourceType = SourceTypeGit
@@ -124,6 +261,17 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	}
 
 	return docs, deleted, nil
+}
+
+// gitHead returns the HEAD commit SHA in the given repo directory.
+func gitHead(ctx context.Context, dir string) string {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // authenticatedURL returns the clone URL with embedded token if available.

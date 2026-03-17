@@ -248,6 +248,46 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 	return docs, deleted, nil
 }
 
+// ReadDocument reads a single file and returns a RawDocument.
+// Used by GitConnector for diff-based scanning of specific files.
+func (c *FilesystemConnector) ReadDocument(path string) (model.RawDocument, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return model.RawDocument{}, err
+	}
+	if info.Size() > maxFileSize {
+		return model.RawDocument{}, fmt.Errorf("file too large: %d bytes", info.Size())
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	if binaryExts[ext] {
+		return model.RawDocument{}, fmt.Errorf("binary file extension: %s", ext)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return model.RawDocument{}, err
+	}
+
+	if ext != ".pdf" && isBinary(content) {
+		return model.RawDocument{}, fmt.Errorf("binary content detected")
+	}
+
+	hash := sha256.Sum256(content)
+	lastModified, author := gitMetadata(path)
+	if lastModified.IsZero() {
+		lastModified = info.ModTime()
+	}
+
+	return model.RawDocument{
+		Path:        path,
+		Content:     content,
+		ContentDate: lastModified,
+		Author:      author,
+		Checksum:    fmt.Sprintf("%x", hash),
+	}, nil
+}
+
 // isBinary returns true if the content appears to be binary by checking for
 // null bytes in the first 8KB.
 func isBinary(content []byte) bool {

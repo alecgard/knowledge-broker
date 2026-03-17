@@ -121,7 +121,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 	}
 
 	// Scan for new/changed documents and deleted paths.
-	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known})
+	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known, Force: opt.Force})
 	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}

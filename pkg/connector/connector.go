@@ -13,6 +13,10 @@ type ScanOptions struct {
 	// Known maps paths to their checksums for incremental ingestion.
 	// The connector may skip files whose checksum hasn't changed.
 	Known map[string]string
+
+	// Force skips incremental optimizations (e.g. diff-based scan) and
+	// processes all files.
+	Force bool
 }
 
 // Connector pulls documents from a source.

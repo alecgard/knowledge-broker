@@ -650,6 +650,9 @@ input:focus, textarea:focus, select:focus {
   opacity: 1;
 }
 
+/* Syntax highlighting overrides */
+.fragment-content .hljs { background: transparent; padding: 0; }
+
 /* Responsive */
 @media (max-width: 480px) {
   .meta-bar {
@@ -660,6 +663,8 @@ input:focus, textarea:focus, select:focus {
   }
 }
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 </head>
 <body>
 
@@ -752,6 +757,35 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+// --- Syntax Highlighting (highlight.js) ---
+
+const LANG_MAP = {
+  '.go': 'go', '.js': 'javascript', '.jsx': 'javascript',
+  '.ts': 'typescript', '.tsx': 'typescript',
+  '.java': 'java', '.kt': 'kotlin', '.scala': 'scala',
+  '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp',
+  '.rb': 'ruby', '.rs': 'rust', '.py': 'python',
+  '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
+  '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml',
+  '.xml': 'xml', '.html': 'xml', '.htm': 'xml',
+  '.css': 'css', '.sql': 'sql', '.md': 'markdown',
+};
+
+function highlightAllFragments() {
+  if (typeof hljs === 'undefined') return;
+  const els = document.querySelectorAll('.fragment-content[data-file-type]');
+  for (const el of els) {
+    const ft = el.getAttribute('data-file-type');
+    const lang = LANG_MAP[ft];
+    if (!lang) continue;
+    const code = el.textContent;
+    try {
+      const result = hljs.highlight(code, { language: lang, ignoreIllegals: true });
+      el.innerHTML = result.value;
+    } catch (e) { /* unknown language, leave as plain text */ }
+  }
+}
 
 // --- Mode ---
 
@@ -948,7 +982,7 @@ function renderRawResults(data) {
     if (f.content_date) html += '<span>' + formatDate(f.content_date) + '</span>';
     html += '</div></div>';
 
-    html += '<div class="fragment-content' + (truncated ? ' truncated' : '') + '" id="frag-' + i + '">' + esc(text) + '</div>';
+    html += '<div class="fragment-content' + (truncated ? ' truncated' : '') + '" id="frag-' + i + '"' + (f.file_type ? ' data-file-type="' + esc(f.file_type) + '"' : '') + '>' + esc(text) + '</div>';
     if (truncated) {
       html += '<button class="btn btn-expand" onclick="toggleExpand(' + i + ', this)">Expand</button>';
     }
@@ -977,6 +1011,7 @@ function renderRawResults(data) {
 
   content.innerHTML = html;
   $('resultsSection').classList.add('visible');
+  highlightAllFragments();
 }
 
 function renderConfidenceHTML(conf) {

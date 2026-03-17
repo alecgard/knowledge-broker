@@ -16,6 +16,7 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func queryCmd() *cobra.Command {
@@ -25,7 +26,6 @@ func queryCmd() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 			debugMode := isDebug(cmd)
 			human, _ := cmd.Flags().GetBool("human")
 			rawMode, _ := cmd.Flags().GetBool("raw")
@@ -108,7 +108,7 @@ func queryCmd() *cobra.Command {
 			return queryCompact(ctx, engine, req)
 		},
 	}
-	cmd.Flags().String("db", "kb.db", "Path to SQLite database")
+	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().Int("limit", 0, "Max fragments to retrieve (default from KB_DEFAULT_LIMIT)")
 	cmd.Flags().Bool("human", false, "Human-readable output (streamed text + formatted metadata)")
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")

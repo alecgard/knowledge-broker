@@ -85,7 +85,7 @@ type FieldDescriptor struct {
 // Fields returns the ordered list of config field descriptors.
 func Fields() []FieldDescriptor {
 	return []FieldDescriptor{
-		{"KB_DB", "kb.db"},
+		{"KB_DB", DefaultDBPath()},
 		{"KB_OLLAMA_URL", "http://localhost:11434"},
 		{"KB_EMBEDDING_MODEL", "nomic-embed-text"},
 		{"KB_EMBEDDING_DIM", "768"},
@@ -202,7 +202,7 @@ func Load(opts LoadOptions) ResolvedConfig {
 
 	// 6. Build the Config struct using envOr/envOrInt (which now reads from env).
 	cfg := Config{
-		DBPath:          envOr("KB_DB", "kb.db"),
+		DBPath:          envOr("KB_DB", DefaultDBPath()),
 		OllamaURL:       envOr("KB_OLLAMA_URL", "http://localhost:11434"),
 		EmbeddingModel:  envOr("KB_EMBEDDING_MODEL", "nomic-embed-text"),
 		EnrichModel:     envOr("KB_ENRICH_MODEL", "qwen2.5:0.5b"),
@@ -294,6 +294,84 @@ func xdgConfigPath() string {
 		xdgHome = filepath.Join(home, ".config")
 	}
 	return filepath.Join(xdgHome, "kb", "config")
+}
+
+// DBFlagUsage is the help text for the --db flag across all commands.
+var DBFlagUsage = "Path to SQLite database (default: " + DefaultDBPath() + ")"
+
+// DefaultDBPath returns the default database path under XDG_DATA_HOME.
+func DefaultDBPath() string {
+	xdgData := os.Getenv("XDG_DATA_HOME")
+	if xdgData == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "kb.db"
+		}
+		xdgData = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(xdgData, "kb", "kb.db")
+}
+
+// MigrateDB checks for a legacy ./kb.db in the current directory and migrates
+// it to the global path if needed. It moves kb.db, kb.db-shm, and kb.db-wal.
+// Returns the final DB path to use and any warning message for the user.
+//
+// Cases:
+//   - User set KB_DB explicitly → no migration, use what they set
+//   - ./kb.db exists, global doesn't → move all files, return global path
+//   - Both exist → warn, use global path
+//   - Neither exists → use global path (will be created on first ingest)
+func MigrateDB(dbPath string, dbExplicit bool) (finalPath string, warn string) {
+	if dbExplicit {
+		return dbPath, ""
+	}
+
+	globalPath := DefaultDBPath()
+	localPath := "kb.db"
+
+	_, localErr := os.Stat(localPath)
+	localExists := localErr == nil
+
+	_, globalErr := os.Stat(globalPath)
+	globalExists := globalErr == nil
+
+	if !localExists {
+		// No local db — use global (may or may not exist yet).
+		return globalPath, ""
+	}
+
+	if localExists && globalExists {
+		// Both exist — warn, use global.
+		absLocal, _ := filepath.Abs(localPath)
+		return globalPath, "Warning: found database at both " + absLocal + " and " + globalPath + "\n" +
+			"Using " + globalPath + ". Remove the local copy or set KB_DB to choose explicitly."
+	}
+
+	// Local exists, global doesn't — migrate.
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0755); err != nil {
+		// Can't create directory — fall back to local.
+		return localPath, ""
+	}
+
+	absLocal, _ := filepath.Abs(localPath)
+	var moved []string
+	for _, suffix := range []string{"", "-shm", "-wal"} {
+		src := localPath + suffix
+		dst := globalPath + suffix
+		if _, err := os.Stat(src); err == nil {
+			if err := os.Rename(src, dst); err != nil {
+				// Rename failed (cross-device?) — fall back to local.
+				return localPath, "Warning: could not move " + src + " to " + dst + ": " + err.Error() + "\nUsing local database."
+			}
+			moved = append(moved, src)
+		}
+	}
+
+	msg := "Migrated database from " + absLocal + " to " + globalPath
+	if len(moved) > 1 {
+		msg += " (" + strings.Join(moved, ", ") + ")"
+	}
+	return globalPath, msg
 }
 
 func envOr(key, fallback string) string {

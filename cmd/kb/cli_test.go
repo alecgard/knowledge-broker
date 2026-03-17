@@ -86,9 +86,8 @@ func TestRootCommandHelp(t *testing.T) {
 }
 
 func TestQueryCommandRequiresDB(t *testing.T) {
-	// Point --db at a non-existent path so opening the store fails.
-	tmp := t.TempDir()
-	dbPath := tmp + "/nonexistent/nested/kb.db"
+	// Point --db at a path under /dev/null so creating the directory fails.
+	dbPath := "/dev/null/impossible/kb.db"
 
 	cmd := newTestRoot()
 	cmd.SetArgs([]string{"query", "--db", dbPath, "what is this?"})
@@ -97,22 +96,20 @@ func TestQueryCommandRequiresDB(t *testing.T) {
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected error when DB directory does not exist")
+		t.Fatal("expected error when DB path is unreachable")
 	}
-	// The error should mention opening the store or the database.
+	// The error should mention creating the directory or the database.
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "store") && !strings.Contains(errMsg, "database") &&
-		!strings.Contains(errMsg, "open") && !strings.Contains(errMsg, "no such") {
+		!strings.Contains(errMsg, "open") && !strings.Contains(errMsg, "no such") &&
+		!strings.Contains(errMsg, "directory") && !strings.Contains(errMsg, "not a directory") {
 		t.Errorf("expected store/database-related error, got: %q", errMsg)
 	}
 }
 
 func TestIngestCommandRequiresSource(t *testing.T) {
-	// When no --source/--git flags are given, ingest defaults to the current
-	// directory. It should still fail gracefully when the database path is
-	// invalid (proving the command runs and reaches the store-open step).
-	tmp := t.TempDir()
-	dbPath := tmp + "/nonexistent/nested/kb.db"
+	// Point --db at an impossible path so creating the directory fails.
+	dbPath := "/dev/null/impossible/kb.db"
 
 	cmd := newTestRoot()
 	cmd.SetArgs([]string{"ingest", "--db", dbPath})
@@ -124,7 +121,8 @@ func TestIngestCommandRequiresSource(t *testing.T) {
 	}
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "store") && !strings.Contains(errMsg, "open") &&
-		!strings.Contains(errMsg, "no such") && !strings.Contains(errMsg, "database") {
+		!strings.Contains(errMsg, "no such") && !strings.Contains(errMsg, "database") &&
+		!strings.Contains(errMsg, "directory") && !strings.Contains(errMsg, "not a directory") {
 		t.Errorf("expected store-related error, got: %q", errMsg)
 	}
 }
@@ -156,7 +154,7 @@ func TestServeSetsDefaults(t *testing.T) {
 	if dbFlag == nil {
 		t.Fatal("serve command missing --db flag")
 	}
-	if dbFlag.DefValue != "kb.db" {
-		t.Errorf("serve --db default = %q, want %q", dbFlag.DefValue, "kb.db")
+	if dbFlag.DefValue != "" {
+		t.Errorf("serve --db default = %q, want %q", dbFlag.DefValue, "")
 	}
 }

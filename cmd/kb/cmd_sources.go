@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func sourcesCmd() *cobra.Command {
@@ -20,7 +21,7 @@ func sourcesCmd() *cobra.Command {
 		Use:   "sources",
 		Short: "Manage registered sources",
 	}
-	cmd.PersistentFlags().String("db", "kb.db", "Path to SQLite database")
+	cmd.PersistentFlags().String("db", "", config.DBFlagUsage)
 	cmd.PersistentFlags().String("remote", "", "URL of a remote KB server")
 	cmd.AddCommand(sourcesListCmd())
 	cmd.AddCommand(sourcesRemoveCmd())
@@ -52,7 +53,6 @@ func sourcesListCmd() *cobra.Command {
 			}
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -128,7 +128,6 @@ func sourcesDescribeCmd() *cobra.Command {
 			}
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -201,7 +200,6 @@ func sourcesExportCmd() *cobra.Command {
 			}
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -315,7 +313,6 @@ func sourcesImportCmd() *cobra.Command {
 			}
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
 			if err != nil {
@@ -370,7 +367,6 @@ func sourcesRemoveCmd() *cobra.Command {
 			}
 
 			cfg := loadConfig(cmd).Config
-			cfg.DBPath, _ = cmd.Flags().GetString("db")
 
 			s, err := openStore(cfg)
 			if err != nil {

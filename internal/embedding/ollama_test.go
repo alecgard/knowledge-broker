@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -358,6 +359,127 @@ func TestEmbedBatch_FallbackOnBatchError(t *testing.T) {
 	// "too_long" should have a nil embedding.
 	if vecs[1] != nil {
 		t.Fatalf("expected nil embedding for 'too_long', got %v", vecs[1])
+	}
+}
+
+func TestEmbed_EmptyInput(t *testing.T) {
+	e := NewOllamaEmbedder("http://localhost:11434", "", 0, nil)
+
+	for _, input := range []string{"", "   ", "\t\n"} {
+		_, err := e.Embed(context.Background(), input)
+		if err == nil {
+			t.Errorf("Embed(%q) should return error for empty/whitespace input", input)
+		}
+		if !strings.Contains(err.Error(), "empty or whitespace") {
+			t.Errorf("error should mention empty/whitespace, got: %s", err.Error())
+		}
+	}
+}
+
+func TestEmbed_RetryOnZeroEmbeddings(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		var resp ollamaEmbedResponse
+		if n <= 2 {
+			// First two calls return 0 embeddings.
+			resp = ollamaEmbedResponse{Model: "nomic-embed-text", Embeddings: [][]float64{}}
+		} else {
+			// Third call succeeds.
+			resp = ollamaEmbedResponse{Model: "nomic-embed-text", Embeddings: [][]float64{{0.1, 0.2}}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
+	vec, err := e.Embed(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Embed() should succeed after retry, got: %v", err)
+	}
+	if len(vec) != 2 {
+		t.Fatalf("expected 2-dim vector, got %d", len(vec))
+	}
+	// 1 initial + 2 retries = 3 calls
+	if callCount.Load() != 3 {
+		t.Errorf("expected 3 server calls (1 initial + 2 retries), got %d", callCount.Load())
+	}
+}
+
+func TestEmbed_RetryExhausted(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		// Always return 0 embeddings.
+		resp := ollamaEmbedResponse{Model: "nomic-embed-text", Embeddings: [][]float64{}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
+	_, err := e.Embed(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("Embed() should fail after all retries exhausted")
+	}
+	if !strings.Contains(err.Error(), "no embeddings after") {
+		t.Errorf("error should mention retries, got: %s", err.Error())
+	}
+	// 1 initial + 3 retries = 4 calls
+	if callCount.Load() != 4 {
+		t.Errorf("expected 4 server calls (1 initial + 3 retries), got %d", callCount.Load())
+	}
+}
+
+func TestEmbedBatch_SkipsEmptyTexts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ollamaEmbedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		// Should only receive the non-empty text.
+		resp := ollamaEmbedResponse{
+			Model:      "nomic-embed-text",
+			Embeddings: [][]float64{{0.5, 0.6}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	e := NewOllamaEmbedder(srv.URL, "", 2, nil)
+	vecs, err := e.EmbedBatch(context.Background(), []string{"hello", "", "  "})
+	if err != nil {
+		t.Fatalf("EmbedBatch() error: %v", err)
+	}
+	if len(vecs) != 3 {
+		t.Fatalf("expected 3 result slots, got %d", len(vecs))
+	}
+	if vecs[0] == nil {
+		t.Fatal("expected non-nil embedding for 'hello'")
+	}
+	if vecs[1] != nil {
+		t.Errorf("expected nil for empty string, got %v", vecs[1])
+	}
+	if vecs[2] != nil {
+		t.Errorf("expected nil for whitespace string, got %v", vecs[2])
+	}
+}
+
+func TestTruncateForLog(t *testing.T) {
+	short := "hello"
+	if got := truncateForLog(short); got != "hello" {
+		t.Errorf("truncateForLog(%q) = %q, want %q", short, got, "hello")
+	}
+
+	long := strings.Repeat("a", 200)
+	got := truncateForLog(long)
+	if len(got) != 103 { // 100 + "..."
+		t.Errorf("truncateForLog(200 chars) length = %d, want 103", len(got))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("truncateForLog should end with '...', got: %s", got)
 	}
 }
 

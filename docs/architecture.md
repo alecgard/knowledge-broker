@@ -115,6 +115,53 @@ A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a slidin
 
 Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
 
+#### What enrichment produces
+
+The enrichment LLM reads each chunk (plus its neighbors for context) and generates entity names, keywords, and domain terms that are relevant but may not appear verbatim in the text. These annotations are appended to the chunk before embedding. The original chunk text is preserved separately so the raw content is never modified.
+
+#### Choosing a model
+
+The enrichment model is configured via `KB_ENRICH_MODEL` or the `--enrich-model` flag.
+
+| Model | Speed | Quality | Memory |
+|-------|-------|---------|--------|
+| `qwen2.5:0.5b` (default) | Fast | Basic keyword extraction | ~500 MB |
+| `qwen2.5:3b` | Slower | Better entity recognition, more accurate keywords | ~2 GB |
+
+Smaller models are fine for most corpora. Use a larger model if you notice retrieval missing results that should match on entity names or domain-specific terminology.
+
+#### How enrichment affects retrieval
+
+Enriched terms are embedded alongside the chunk text, so they influence both **vector similarity** and **BM25 keyword search**. This is especially useful for vocabulary mismatch: if a chunk discusses "k8s pod autoscaling" but the user searches for "Kubernetes horizontal scaling," enrichment can bridge the gap by adding both phrasings.
+
+
+#### When to re-enrich
+
+Enrichment metadata is stored with each fragment. You need to re-enrich when:
+
+- **Changing the enrichment model** — different models produce different annotations.
+- **Changing the prompt version** — the annotation format changes.
+
+To re-enrich, either re-ingest with `--force` or use `--re-enrich` to update enrichment on existing fragments without re-scanning sources:
+
+```bash
+# Re-enrich all fragments with a new model
+kb ingest --re-enrich --enrich-model qwen2.5:3b
+
+# Re-enrich only a specific source
+kb ingest --re-enrich --source ./my-docs
+```
+
+#### Skipping enrichment
+
+Pass `--skip-enrichment` to `kb ingest` if you want faster ingestion and don't need the keyword boost. This is useful for quick iteration during development or when your corpus already uses consistent terminology that matches how users search.
+
+#### Troubleshooting
+
+- **Ollama OOM with larger models** — If Ollama crashes or returns errors during enrichment with `qwen2.5:3b` or larger, your machine may not have enough memory. Fall back to `qwen2.5:0.5b` or skip enrichment entirely.
+- **Slow enrichment on large corpora** — Enrichment adds an LLM call per chunk. For large corpora (thousands of files), expect enrichment to take significantly longer than embedding alone. Use `--parallel` to speed up multi-source ingestion, or `--skip-enrichment` for the initial ingest and run `--re-enrich` later.
+- **Enrichment model not found** — KB auto-pulls the enrichment model on first run via `kb setup`. If this fails (e.g., no internet), pull it manually: `ollama pull qwen2.5:0.5b`.
+
 ### Embedding and storage
 
 Each chunk is embedded locally (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.

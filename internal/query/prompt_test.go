@@ -17,8 +17,13 @@ func TestBuildSystemPrompt_NoFragments(t *testing.T) {
 	if !strings.Contains(prompt, "Knowledge Broker") {
 		t.Error("prompt should mention Knowledge Broker")
 	}
-	if !strings.Contains(prompt, "KB_META") {
-		t.Error("prompt should contain KB_META instruction")
+	// Should NOT contain structured metadata instructions
+	if strings.Contains(prompt, "KB_META") {
+		t.Error("prompt should not contain KB_META instruction")
+	}
+	// Should instruct the LLM NOT to produce JSON, not ask it to emit JSON metadata.
+	if strings.Contains(prompt, "emit a metadata block") {
+		t.Error("prompt should not ask LLM to emit metadata block")
 	}
 	// Should have no fragment headers
 	if strings.Contains(prompt, "### Fragment:") {
@@ -92,26 +97,27 @@ func TestBuildSystemPrompt_WithFragments(t *testing.T) {
 		t.Error("prompt should contain file type markdown")
 	}
 
-	// Should include structured output instructions
-	if !strings.Contains(prompt, "---KB_META---") {
-		t.Error("prompt should contain KB_META start delimiter")
+	// Should NOT include structured metadata instructions
+	if strings.Contains(prompt, "---KB_META---") {
+		t.Error("prompt should not contain KB_META start delimiter")
 	}
-	if !strings.Contains(prompt, "---KB_META_END---") {
-		t.Error("prompt should contain KB_META end delimiter")
+	if strings.Contains(prompt, "---KB_META_END---") {
+		t.Error("prompt should not contain KB_META end delimiter")
 	}
 
-	// Should include confidence signal instructions
-	if !strings.Contains(prompt, "Freshness") {
-		t.Error("prompt should explain freshness signal")
+	// Should include citation instructions
+	if !strings.Contains(prompt, "[fragment_id]") {
+		t.Error("prompt should explain citation notation")
 	}
-	if !strings.Contains(prompt, "Corroboration") {
-		t.Error("prompt should explain corroboration signal")
+
+	// Should mention contradictions
+	if !strings.Contains(prompt, "contradict") {
+		t.Error("prompt should mention contradictions")
 	}
-	if !strings.Contains(prompt, "Consistency") {
-		t.Error("prompt should explain consistency signal")
-	}
-	if !strings.Contains(prompt, "Authority") {
-		t.Error("prompt should explain authority signal")
+
+	// Should NOT ask for confidence scoring
+	if strings.Contains(prompt, "Corroboration") {
+		t.Error("prompt should not explain corroboration signal")
 	}
 }
 

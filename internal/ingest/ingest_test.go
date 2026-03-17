@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,8 +149,8 @@ func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]m
 // MockLLM
 // ---------------------------------------------------------------------------
 
-// MockLLM satisfies query.LLM and returns a canned response that includes
-// the KB_META JSON block.
+// MockLLM satisfies query.LLM and returns a canned response.
+// It includes a legacy KB_META block to verify backward-compat stripping.
 type MockLLM struct{}
 
 var _ query.LLM = (*MockLLM)(nil)
@@ -338,10 +339,14 @@ func RetryWithBackoff(attempts int, fn func() error) error {
 		t.Fatal("expected streamed text, got empty string")
 	}
 	if answer.Confidence.Breakdown.Freshness == 0 && answer.Confidence.Breakdown.Consistency == 0 {
-		t.Fatal("expected confidence signals to be parsed from KB_META block")
+		t.Fatal("expected server-computed confidence signals to be non-zero")
 	}
 	if answer.Confidence.Overall == 0 {
-		t.Fatal("expected overall confidence to be parsed from KB_META block")
+		t.Fatal("expected server-computed overall confidence to be non-zero")
+	}
+	// Legacy KB_META block should be stripped from the content.
+	if strings.Contains(answer.Content, "KB_META") {
+		t.Fatal("expected KB_META block to be stripped from answer content")
 	}
 	t.Logf("Answer (first 100 chars): %.100s", answer.Content)
 	t.Logf("Confidence: overall=%.2f freshness=%.2f corroboration=%.2f consistency=%.2f authority=%.2f",

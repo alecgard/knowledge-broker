@@ -28,6 +28,13 @@ kb ingest --all
 | `--remote` | URL of a remote KB server to push fragments to |
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
+| `--skip-enrichment` | Skip LLM chunk enrichment (faster ingestion) |
+| `--enrich-model` | Ollama model for chunk enrichment (default: `qwen2.5:0.5b` or `KB_ENRICH_MODEL`) |
+| `--prompt-version` | Enrichment prompt version: `v1` (full rewrite) or `v2` (append keywords) |
+| `--re-enrich` | Re-run enrichment on already-ingested chunks, then re-embed |
+| `--watch` | Watch for file changes and re-ingest automatically (local sources only) |
+| `--parallel` | Ingest multiple sources in parallel (default: sequential) |
+| `--force` | Force re-ingestion of all files, ignoring checksums |
 
 All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
 

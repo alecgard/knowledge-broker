@@ -5,7 +5,7 @@
 
 Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-AI agents query it over MCP, people use the CLI, and teams get a shared HTTP API. Hybrid search, structured confidence signals, and contradiction detection. Open-source and self-hosted — no data leaves your environment.
+AI agents query it over MCP, people use the CLI, and teams get a shared HTTP API. Hybrid search, structured confidence signals, and contradiction detection. Open-source and self-hosted - no data leaves your environment.
 
 **[Docs](https://knowledgebroker.dev)** | **[Quick Start](https://knowledgebroker.dev/quickstart/)** | **[Architecture](https://knowledgebroker.dev/architecture/)**
 

@@ -101,8 +101,9 @@ func setupBareWikiRepo(t *testing.T) string {
 	bareDir := filepath.Join(base, "repo.wiki.git")
 	workDir := filepath.Join(base, "work")
 
-	// Create bare repo.
-	run(t, "git", "init", "--bare", bareDir)
+	// Create bare repo with explicit default branch to avoid failures
+	// when global init.defaultBranch is not set.
+	run(t, "git", "init", "--bare", "--initial-branch=main", bareDir)
 
 	// Clone it, add files, push.
 	run(t, "git", "clone", bareDir, workDir)
@@ -118,7 +119,7 @@ func setupBareWikiRepo(t *testing.T) string {
 
 	runIn(t, workDir, "git", "add", "-A")
 	runIn(t, workDir, "git", "commit", "-m", "Initial wiki pages")
-	runIn(t, workDir, "git", "push", "origin", "HEAD")
+	runIn(t, workDir, "git", "push", "origin", "HEAD:main")
 
 	return "file://" + bareDir
 }
@@ -241,7 +242,7 @@ func TestGitHubWikiScanDeletion(t *testing.T) {
 	workDir := filepath.Join(base, "work")
 
 	// Create bare repo with two files.
-	run(t, "git", "init", "--bare", bareDir)
+	run(t, "git", "init", "--bare", "--initial-branch=main", bareDir)
 	run(t, "git", "clone", bareDir, workDir)
 	runIn(t, workDir, "git", "config", "user.email", "test@test.com")
 	runIn(t, workDir, "git", "config", "user.name", "Test")
@@ -250,7 +251,7 @@ func TestGitHubWikiScanDeletion(t *testing.T) {
 	writeFile(t, workDir, "Extra.md", "# Extra")
 	runIn(t, workDir, "git", "add", "-A")
 	runIn(t, workDir, "git", "commit", "-m", "two pages")
-	runIn(t, workDir, "git", "push", "origin", "HEAD")
+	runIn(t, workDir, "git", "push", "origin", "HEAD:main")
 
 	repoURL := strings.TrimSuffix("file://"+bareDir, ".wiki.git")
 	c := NewGitHubWikiConnector(repoURL, "", "")
@@ -273,7 +274,7 @@ func TestGitHubWikiScanDeletion(t *testing.T) {
 	os.Remove(filepath.Join(workDir, "Extra.md"))
 	runIn(t, workDir, "git", "add", "-A")
 	runIn(t, workDir, "git", "commit", "-m", "remove Extra")
-	runIn(t, workDir, "git", "push", "origin", "HEAD")
+	runIn(t, workDir, "git", "push", "origin", "HEAD:main")
 
 	// Second scan — should detect deletion.
 	_, deleted, err := c.Scan(context.Background(), ScanOptions{Known: known})

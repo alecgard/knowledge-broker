@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,9 @@ const (
 	defaultOllamaModel     = "nomic-embed-text"
 	defaultOllamaDimension = 768
 	embCacheMaxSize        = 512
+
+	// Retry settings for empty embedding responses.
+	embedMaxRetries = 3
 )
 
 // embCacheEntry holds a cached embedding with its creation time for LRU eviction.
@@ -171,19 +175,80 @@ func (o *OllamaEmbedder) evictOldest() {
 	}
 }
 
+// truncateForLog returns the first 100 characters of s for use in log messages.
+func truncateForLog(s string) string {
+	if len(s) <= 100 {
+		return s
+	}
+	return s[:100] + "..."
+}
+
+// isEmptyOrWhitespace reports whether s is empty or contains only whitespace.
+func isEmptyOrWhitespace(s string) bool {
+	return strings.TrimSpace(s) == ""
+}
+
+// embedWithRetry calls doEmbed and retries up to embedMaxRetries times when
+// Ollama returns 0 embeddings. Backoff intervals: 100ms, 500ms, 2s.
+func (o *OllamaEmbedder) embedWithRetry(ctx context.Context, input any) ([][]float32, error) {
+	backoffs := []time.Duration{100 * time.Millisecond, 500 * time.Millisecond, 2 * time.Second}
+
+	vectors, err := o.doEmbed(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) > 0 {
+		return vectors, nil
+	}
+
+	// Log the input that produced an empty response.
+	inputSnippet := ""
+	switch v := input.(type) {
+	case string:
+		inputSnippet = truncateForLog(v)
+	case []string:
+		if len(v) > 0 {
+			inputSnippet = truncateForLog(v[0])
+		}
+	}
+	slog.Warn("ollama returned 0 embeddings, retrying", "input_preview", inputSnippet)
+
+	for attempt := 0; attempt < embedMaxRetries; attempt++ {
+		wait := backoffs[attempt]
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+
+		vectors, err = o.doEmbed(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		if len(vectors) > 0 {
+			slog.Info("ollama embed retry succeeded", "attempt", attempt+1)
+			return vectors, nil
+		}
+		slog.Warn("ollama embed retry still returned 0 embeddings", "attempt", attempt+1)
+	}
+
+	return nil, fmt.Errorf("response contained no embeddings after %d retries", embedMaxRetries)
+}
+
 // Embed returns the embedding vector for a single text.
 func (o *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	if isEmptyOrWhitespace(text) {
+		return nil, fmt.Errorf("ollama embed: input text is empty or whitespace-only")
+	}
+
 	key := embCacheKey(text)
 	if cached := o.cacheGet(key); cached != nil {
 		return cached, nil
 	}
 
-	vectors, err := o.doEmbed(ctx, text)
+	vectors, err := o.embedWithRetry(ctx, text)
 	if err != nil {
 		return nil, fmt.Errorf("ollama embed: %w", err)
-	}
-	if len(vectors) == 0 {
-		return nil, fmt.Errorf("ollama embed: response contained no embeddings")
 	}
 
 	o.cachePut(key, vectors[0])
@@ -202,6 +267,11 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	var uncachedIndices []int
 
 	for i, text := range texts {
+		if isEmptyOrWhitespace(text) {
+			slog.Warn("skipping empty/whitespace-only text in batch", "index", i)
+			results[i] = nil
+			continue
+		}
 		key := embCacheKey(text)
 		if cached := o.cacheGet(key); cached != nil {
 			results[i] = cached
@@ -221,16 +291,16 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	if len(uncachedTexts) == 1 {
 		input = uncachedTexts[0]
 	}
-	vectors, err := o.doEmbed(ctx, input)
+	vectors, err := o.embedWithRetry(ctx, input)
 	if err != nil {
 		// Batch request failed — fall back to embedding one-at-a-time so that
 		// a single oversized text doesn't fail the entire batch.
 		slog.Warn("batch embed failed, falling back to individual requests", "error", err, "count", len(uncachedTexts))
 		vectors = make([][]float32, len(uncachedTexts))
 		for i, text := range uncachedTexts {
-			vec, singleErr := o.doEmbed(ctx, text)
+			vec, singleErr := o.embedWithRetry(ctx, text)
 			if singleErr != nil {
-				slog.Warn("skipping text that failed to embed", "error", singleErr, "text_length", len(text))
+				slog.Warn("skipping text that failed to embed", "error", singleErr, "text_length", len(text), "input_preview", truncateForLog(text))
 				vectors[i] = nil
 			} else if len(vec) > 0 {
 				vectors[i] = vec[0]

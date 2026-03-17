@@ -184,6 +184,11 @@ body,
     color: var(--kb-text);
   }
 
+  .md-nav__source,
+  [data-md-color-primary] .md-nav__source {
+    background-color: var(--kb-surface) !important;
+  }
+
   .md-source,
   .md-nav--primary .md-source,
   [data-md-color-primary] .md-source {
@@ -204,6 +209,12 @@ body,
 /* Mobile header button (hamburger) */
 .md-header .md-header__button {
   color: var(--kb-text);
+}
+
+/* Source/repo link wrapper in drawer */
+.md-nav__source,
+[data-md-color-primary] .md-nav__source {
+  background-color: var(--kb-surface) !important;
 }
 
 /* Source/repo link in drawer */

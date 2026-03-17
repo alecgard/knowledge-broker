@@ -60,7 +60,8 @@ func sourcesListCmd() *cobra.Command {
 			}
 			defer s.Close()
 
-			sources, err := s.ListSources(context.Background())
+			ctx := context.Background()
+			sources, err := s.ListSources(ctx)
 			if err != nil {
 				return fmt.Errorf("list sources: %w", err)
 			}
@@ -70,8 +71,28 @@ func sourcesListCmd() *cobra.Command {
 				return nil
 			}
 
-			out, _ := json.MarshalIndent(sources, "", "  ")
-			fmt.Println(string(out))
+			counts, err := s.CountFragmentsBySource(ctx)
+			if err != nil {
+				return fmt.Errorf("count fragments: %w", err)
+			}
+
+			sizes, err := s.ContentSizeBySource(ctx)
+			if err != nil {
+				return fmt.Errorf("content size: %w", err)
+			}
+
+			fmt.Printf("%-14s %-30s %10s %10s  %-19s  %s\n", "TYPE", "NAME", "FRAGMENTS", "SIZE", "LAST INGEST", "DESCRIPTION")
+			for _, src := range sources {
+				key := src.SourceType + "/" + src.SourceName
+				count := counts[key]
+				size := sizes[key]
+				lastIngest := ""
+				if !src.LastIngest.IsZero() {
+					lastIngest = src.LastIngest.Local().Format("2006-01-02 15:04")
+				}
+				fmt.Printf("%-14s %-30s %10d %10s  %-19s  %s\n",
+					src.SourceType, src.SourceName, count, formatSize(size), lastIngest, src.Description)
+			}
 			return nil
 		},
 	}
@@ -394,5 +415,17 @@ func sourcesRemoveCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Removed source %s: deleted %d fragments\n", key, fragCount)
 			return nil
 		},
+	}
+}
+
+// formatSize formats a byte count as a human-readable string.
+func formatSize(bytes int64) string {
+	switch {
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", bytes)
 	}
 }

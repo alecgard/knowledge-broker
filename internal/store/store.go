@@ -56,6 +56,9 @@ type Store interface {
 	// CountFragmentsBySource returns a map of "source_type/source_name" to fragment count.
 	CountFragmentsBySource(ctx context.Context) (map[string]int, error)
 
+	// ContentSizeBySource returns a map of "source_type/source_name" to total content size in bytes.
+	ContentSizeBySource(ctx context.Context) (map[string]int64, error)
+
 	// DeleteFragmentsBySource removes all fragments and their embeddings for the given source.
 	DeleteFragmentsBySource(ctx context.Context, sourceType, sourceName string) error
 

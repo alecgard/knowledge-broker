@@ -774,6 +774,27 @@ func (s *SQLiteStore) CountFragmentsBySource(ctx context.Context) (map[string]in
 	return result, rows.Err()
 }
 
+// ContentSizeBySource returns a map of "source_type/source_name" to total content size in bytes.
+func (s *SQLiteStore) ContentSizeBySource(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT source_type || '/' || source_name AS key, SUM(LENGTH(raw_content)) FROM fragments GROUP BY source_type, source_name`)
+	if err != nil {
+		return nil, fmt.Errorf("content size by source: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int64)
+	for rows.Next() {
+		var key string
+		var size int64
+		if err := rows.Scan(&key, &size); err != nil {
+			return nil, fmt.Errorf("scan size: %w", err)
+		}
+		result[key] = size
+	}
+	return result, rows.Err()
+}
+
 // DeleteFragmentsBySource removes all fragments and their embeddings for the given source type and name.
 func (s *SQLiteStore) DeleteFragmentsBySource(ctx context.Context, sourceType, sourceName string) error {
 	tx, err := s.db.BeginTx(ctx, nil)

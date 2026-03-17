@@ -100,6 +100,10 @@ func (m *mockStore) CountFragmentsBySource(ctx context.Context) (map[string]int,
 	return nil, nil
 }
 
+func (m *mockStore) ContentSizeBySource(ctx context.Context) (map[string]int64, error) {
+	return nil, nil
+}
+
 func (m *mockStore) DeleteFragmentsBySource(ctx context.Context, sourceType, sourceName string) error {
 	return nil
 }

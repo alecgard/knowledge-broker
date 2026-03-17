@@ -134,12 +134,6 @@ Smaller models are fine for most corpora. Use a larger model if you notice retri
 
 Enriched terms are embedded alongside the chunk text, so they influence both **vector similarity** and **BM25 keyword search**. This is especially useful for vocabulary mismatch: if a chunk discusses "k8s pod autoscaling" but the user searches for "Kubernetes horizontal scaling," enrichment can bridge the gap by adding both phrasings.
 
-#### Prompt versions
-
-The `--prompt-version` flag (or built-in default) controls how the enrichment LLM formats its output:
-
-- **v1** — Full rewrite: the LLM produces a rewritten version of the chunk with annotations inline.
-- **v2** — Append keywords: the LLM appends a keyword/entity block to the original text. Generally preferred for preserving the original content while adding searchable terms.
 
 #### When to re-enrich
 

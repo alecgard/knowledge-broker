@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/knowledge-broker/knowledge-broker/internal/connector" // register connector factories
+	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
@@ -1073,6 +1075,207 @@ func TestHandleExportMethodNotAllowed(t *testing.T) {
 	srv := NewHTTPServer(nil, &mockEmbedder{dim: testEmbeddingDim}, st, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/export", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+// --- Source connection endpoint tests ---
+
+func newTestServerWithPipeline(t *testing.T) (*HTTPServer, *store.SQLiteStore) {
+	t.Helper()
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	jobs := NewJobTracker()
+	// Create a minimal extractor registry (nil cfg values are fine for test).
+	reg := &extractor.Registry{}
+	srv := NewHTTPServerWithOptions(nil, emb, st, nil, "",
+		WithPipeline(reg, PipelineConfig{}, nil, jobs),
+	)
+	return srv, st
+}
+
+func TestHandleConnectSourceGit(t *testing.T) {
+	srv, st := newTestServerWithPipeline(t)
+
+	body, _ := json.Marshal(connectRequest{
+		SourceType: "git",
+		Config:     map[string]string{"url": "https://github.com/test/repo"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sources/connect", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["job_id"] == nil {
+		t.Fatal("expected job_id in response")
+	}
+
+	// Verify source was registered.
+	src, err := st.GetSource(context.Background(), "git", "test/repo")
+	if err != nil {
+		t.Fatalf("GetSource: %v", err)
+	}
+	if src.SourceType != "git" {
+		t.Fatalf("expected source_type git, got %s", src.SourceType)
+	}
+
+	// Wait briefly for background job to finish (it will fail since no real git, but that's OK).
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleConnectSourceMissingFields(t *testing.T) {
+	srv, _ := newTestServerWithPipeline(t)
+
+	t.Run("GitMissingURL", func(t *testing.T) {
+		body, _ := json.Marshal(connectRequest{
+			SourceType: "git",
+			Config:     map[string]string{},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/v1/sources/connect", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("SlackMissingToken", func(t *testing.T) {
+		body, _ := json.Marshal(connectRequest{
+			SourceType: "slack",
+			Config:     map[string]string{"channels": "C01ABC"},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/v1/sources/connect", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("UnknownSourceType", func(t *testing.T) {
+		body, _ := json.Marshal(connectRequest{
+			SourceType: "unknown",
+			Config:     map[string]string{},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/v1/sources/connect", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestHandleConnectSourceDuplicateWhileRunning(t *testing.T) {
+	srv, _ := newTestServerWithPipeline(t)
+
+	// Pre-start a job to simulate running ingestion.
+	srv.jobs.Start("git", "test/repo")
+
+	body, _ := json.Marshal(connectRequest{
+		SourceType: "git",
+		Config:     map[string]string{"url": "https://github.com/test/repo"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sources/connect", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSyncSourceExisting(t *testing.T) {
+	srv, st := newTestServerWithPipeline(t)
+
+	// Register a source first.
+	st.RegisterSource(context.Background(), model.Source{
+		SourceType: "git",
+		SourceName: "test/repo",
+		Config:     map[string]string{"url": "https://github.com/test/repo"},
+	})
+
+	body, _ := json.Marshal(map[string]string{
+		"source_type": "git",
+		"source_name": "test/repo",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sources/sync", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["job_id"] == "" {
+		t.Fatal("expected job_id in response")
+	}
+
+	// Wait for background job.
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleSyncSourceNotFound(t *testing.T) {
+	srv, _ := newTestServerWithPipeline(t)
+
+	body, _ := json.Marshal(map[string]string{
+		"source_type": "git",
+		"source_name": "nonexistent/repo",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sources/sync", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleListJobs(t *testing.T) {
+	srv, _ := newTestServerWithPipeline(t)
+
+	srv.jobs.Start("git", "repo1")
+	srv.jobs.Start("slack", "workspace")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/sources/jobs", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var jobs []JobStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(jobs))
+	}
+}
+
+func TestHandleConnectSourceMethodNotAllowed(t *testing.T) {
+	srv, _ := newTestServerWithPipeline(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/sources/connect", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

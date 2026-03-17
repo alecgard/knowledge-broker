@@ -10,20 +10,52 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
+	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
+	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
+	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
 
+// PipelineConfig holds settings needed to configure the ingestion pipeline
+// when source management is enabled via the HTTP server.
+type PipelineConfig struct {
+	OllamaURL      string
+	EnrichModel    string
+	WorkerCount    int
+	SkipEnrichment bool
+	MaxChunkSize   int
+	ChunkOverlap   int
+}
+
+// HTTPServerOption configures optional HTTPServer dependencies.
+type HTTPServerOption func(*HTTPServer)
+
+// WithPipeline enables source connection and background ingestion.
+func WithPipeline(extractors *extractor.Registry, cfg PipelineConfig, httpClient *http.Client, jobs *JobTracker) HTTPServerOption {
+	return func(s *HTTPServer) {
+		s.extractors = extractors
+		s.pipelineCfg = &cfg
+		s.httpClient = httpClient
+		s.jobs = jobs
+	}
+}
+
 // HTTPServer serves the Knowledge Broker HTTP API.
 type HTTPServer struct {
-	engine   *query.Engine
-	embedder embedding.Embedder
-	store    store.Store
-	logger   *slog.Logger
-	mux      *http.ServeMux
-	version  string
+	engine      *query.Engine
+	embedder    embedding.Embedder
+	store       store.Store
+	logger      *slog.Logger
+	mux         *http.ServeMux
+	version     string
+	extractors  *extractor.Registry   // nil = source mgmt disabled
+	pipelineCfg *PipelineConfig
+	httpClient  *http.Client
+	jobs        *JobTracker
 }
 
 // NewHTTPServer creates a new HTTP server.
@@ -47,6 +79,29 @@ func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store,
 	return s
 }
 
+// NewHTTPServerWithOptions creates a new HTTP server with optional pipeline support.
+func NewHTTPServerWithOptions(engine *query.Engine, emb embedding.Embedder, st store.Store, logger *slog.Logger, ver string, opts ...HTTPServerOption) *HTTPServer {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if ver == "" {
+		ver = "0.1.0"
+	}
+	s := &HTTPServer{
+		engine:   engine,
+		embedder: emb,
+		store:    st,
+		logger:   logger,
+		mux:      http.NewServeMux(),
+		version:  ver,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	s.routes()
+	return s
+}
+
 func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/query", s.handleQuery)
 	s.mux.HandleFunc("/v1/health", s.handleHealth)
@@ -55,6 +110,11 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("/v1/sources/import", s.handleSourcesImport)
 	s.mux.HandleFunc("/v1/version", s.handleVersion)
 	s.mux.HandleFunc("/v1/export", s.handleExport)
+	if s.extractors != nil {
+		s.mux.HandleFunc("/v1/sources/connect", s.handleConnectSource)
+		s.mux.HandleFunc("/v1/sources/sync", s.handleSyncSource)
+		s.mux.HandleFunc("/v1/sources/jobs", s.handleListJobs)
+	}
 }
 
 // Handler returns the http.Handler with CORS support for cross-origin UI access.
@@ -504,6 +564,172 @@ func (s *HTTPServer) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
+}
+
+// --- Source connection endpoints ---
+
+// connectRequest is the JSON body for POST /v1/sources/connect.
+type connectRequest struct {
+	SourceType string            `json:"source_type"`
+	Config     map[string]string `json:"config"`
+}
+
+// handleConnectSource validates config, registers the source, and launches background ingestion.
+func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req connectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields per source type.
+	switch req.SourceType {
+	case "slack":
+		if req.Config["token"] == "" || req.Config["channels"] == "" {
+			http.Error(w, "slack requires token and channels", http.StatusBadRequest)
+			return
+		}
+	case "git":
+		if req.Config["url"] == "" {
+			http.Error(w, "git requires url", http.StatusBadRequest)
+			return
+		}
+	default:
+		http.Error(w, fmt.Sprintf("unknown source_type: %s", req.SourceType), http.StatusBadRequest)
+		return
+	}
+
+	// Set local mode so tokens are persisted.
+	if req.Config == nil {
+		req.Config = make(map[string]string)
+	}
+	req.Config["mode"] = model.SourceModeLocal
+
+	// Create connector to validate config and derive source name.
+	src := model.Source{
+		SourceType: req.SourceType,
+		Config:     req.Config,
+	}
+	conn, err := connector.FromSource(src)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid config: %v", err), http.StatusBadRequest)
+		return
+	}
+	src.SourceName = conn.SourceName()
+	src.Config = conn.Config(model.SourceModeLocal)
+
+	// Reject if already running.
+	if s.jobs.IsRunning(src.SourceType, src.SourceName) {
+		http.Error(w, "ingestion already running for this source", http.StatusConflict)
+		return
+	}
+
+	// Register source in store.
+	if err := s.store.RegisterSource(r.Context(), src); err != nil {
+		s.logger.Error("register source failed", "error", err)
+		http.Error(w, fmt.Sprintf("register source failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Start background ingestion.
+	jobID, _ := s.jobs.Start(src.SourceType, src.SourceName)
+	go s.runIngestion(context.Background(), src, jobID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"source": src,
+		"job_id": jobID,
+	})
+}
+
+// handleSyncSource triggers re-ingestion of an existing source.
+func (s *HTTPServer) handleSyncSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		SourceType string `json:"source_type"`
+		SourceName string `json:"source_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	src, err := s.store.GetSource(r.Context(), req.SourceType, req.SourceName)
+	if err != nil || src == nil {
+		http.Error(w, "source not found", http.StatusNotFound)
+		return
+	}
+
+	if s.jobs.IsRunning(src.SourceType, src.SourceName) {
+		http.Error(w, "ingestion already running for this source", http.StatusConflict)
+		return
+	}
+
+	jobID, _ := s.jobs.Start(src.SourceType, src.SourceName)
+	go s.runIngestion(context.Background(), *src, jobID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID})
+}
+
+// handleListJobs returns all job statuses.
+func (s *HTTPServer) handleListJobs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.jobs.List())
+}
+
+// runIngestion runs the full ingest pipeline for a source in the background.
+func (s *HTTPServer) runIngestion(ctx context.Context, src model.Source, jobID string) {
+	conn, err := connector.FromSource(src)
+	if err != nil {
+		s.jobs.Finish(jobID, 0, 0, 0, err)
+		return
+	}
+
+	workers := 4
+	if s.pipelineCfg != nil && s.pipelineCfg.WorkerCount > 0 {
+		workers = s.pipelineCfg.WorkerCount
+	}
+
+	pipeline := ingest.NewPipeline(s.store, s.embedder, s.extractors, workers, s.logger)
+	pipeline.OnProgress = func(completed, total int) {
+		s.jobs.Update(jobID, completed, total)
+	}
+
+	// Configure enrichment if available.
+	if s.pipelineCfg != nil && !s.pipelineCfg.SkipEnrichment && s.pipelineCfg.EnrichModel != "" && s.httpClient != nil {
+		enricher := enrich.NewOllamaEnricher(s.pipelineCfg.OllamaURL, s.pipelineCfg.EnrichModel, "", s.httpClient, s.logger)
+		pipeline.SetEnrichment(ingest.EnrichmentConfig{Enricher: enricher})
+	}
+
+	result, err := pipeline.Run(ctx, conn)
+	if result == nil {
+		s.jobs.Finish(jobID, 0, 0, 0, err)
+	} else {
+		s.jobs.Finish(jobID, result.Added, result.Deleted, result.Skipped, err)
+	}
+
+	if err == nil {
+		src.LastIngest = time.Now()
+		if regErr := s.store.RegisterSource(ctx, src); regErr != nil {
+			s.logger.Error("update source last_ingest failed", "error", regErr)
+		}
+	}
 }
 
 // ListenAndServe starts the HTTP server.

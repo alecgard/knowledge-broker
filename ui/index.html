@@ -653,6 +653,188 @@ input:focus, textarea:focus, select:focus {
 /* Syntax highlighting overrides */
 .fragment-content .hljs { background: transparent; padding: 0; }
 
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.tab-btn {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
+
+/* Sources page */
+.sources-page { display: none; }
+.sources-page.visible { display: block; }
+
+.sources-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sources-header-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface2);
+  flex-wrap: wrap;
+}
+
+.source-row-type {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text2);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.source-row-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.source-row-status {
+  font-size: 10px;
+  color: var(--text2);
+  margin-left: auto;
+}
+
+.source-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  font-family: var(--font);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+  transition: all 0.1s;
+}
+
+.btn-sm:hover { background: var(--surface2); }
+.btn-sm:disabled { opacity: 0.4; cursor: default; }
+
+.btn-danger-sm {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger-sm:hover { background: #fde8e8; }
+
+.empty-state {
+  color: var(--text2);
+  font-size: 11px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+/* Connect form */
+.connect-form {
+  border: 1px solid var(--border);
+  padding: 12px;
+  margin-top: 12px;
+  display: none;
+}
+
+.connect-form.visible { display: block; }
+
+.connect-form-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.form-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: 100px;
+  flex-shrink: 0;
+  color: var(--text2);
+}
+
+.form-input {
+  flex: 1;
+  padding: 4px 8px;
+}
+
+.form-hint {
+  font-size: 9px;
+  color: var(--text2);
+  margin-left: 108px;
+  margin-top: -4px;
+  margin-bottom: 8px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.progress-bar {
+  height: 4px;
+  background: var(--surface2);
+  margin-top: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--success);
+  transition: width 0.3s;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
   .meta-bar {
@@ -688,6 +870,15 @@ input:focus, textarea:focus, select:focus {
     <div class="sources-inline" id="sourcesBar"></div>
   </div>
 
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tabQuery" onclick="showTab('query')">Query</button>
+    <button class="tab-btn" id="tabSources" onclick="showTab('sources')">Sources</button>
+  </div>
+
+  <!-- Query page -->
+  <div id="queryPage">
+
   <!-- Query -->
   <div class="query-section">
     <div class="query-top-row">
@@ -719,6 +910,63 @@ input:focus, textarea:focus, select:focus {
   <div class="results-section" id="resultsSection">
     <div class="meta-bar" id="metaBar"></div>
     <div id="resultsContent"></div>
+  </div>
+
+  </div><!-- /queryPage -->
+
+  <!-- Sources page -->
+  <div class="sources-page" id="sourcesPage">
+    <div class="sources-header">
+      <span class="sources-header-title">Connected Sources</span>
+      <button class="btn btn-sm" id="btnShowConnect" onclick="toggleConnectForm()">+ Connect</button>
+    </div>
+    <div id="sourcesList"></div>
+
+    <div class="connect-form" id="connectForm">
+      <div class="connect-form-title">Connect Source</div>
+      <div class="form-row">
+        <span class="form-label">Type</span>
+        <select class="form-input" id="connectType" onchange="updateConnectFields()">
+          <option value="git">GitHub</option>
+          <option value="slack">Slack</option>
+        </select>
+      </div>
+      <!-- Git fields -->
+      <div id="gitFields">
+        <div class="form-row">
+          <span class="form-label">Repo URL</span>
+          <input class="form-input" id="gitURL" type="text" placeholder="https://github.com/owner/repo">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Token</span>
+          <input class="form-input" id="gitToken" type="password" placeholder="ghp_... (optional for public repos)">
+        </div>
+        <div class="form-hint">Required for private repositories</div>
+        <div class="form-row">
+          <span class="form-label">Branch</span>
+          <input class="form-input" id="gitBranch" type="text" placeholder="main (optional)">
+        </div>
+      </div>
+      <!-- Slack fields -->
+      <div id="slackFields" style="display:none">
+        <div class="form-row">
+          <span class="form-label">Bot Token</span>
+          <input class="form-input" id="slackToken" type="password" placeholder="xoxb-...">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Channel IDs</span>
+          <input class="form-input" id="slackChannels" type="text" placeholder="C01ABC, C02DEF">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Workspace</span>
+          <input class="form-input" id="slackWorkspace" type="text" placeholder="my-team (optional)">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="toggleConnectForm()">Cancel</button>
+        <button class="btn btn-primary" id="btnConnect" onclick="connectSource()">Connect</button>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -1141,6 +1389,224 @@ function loadSources() {
 }
 
 loadSources();
+
+// --- Tab navigation ---
+
+function showTab(tab) {
+  const queryPage = $('queryPage');
+  const sourcesPage = $('sourcesPage');
+  const tabQuery = $('tabQuery');
+  const tabSources = $('tabSources');
+
+  if (tab === 'sources') {
+    queryPage.style.display = 'none';
+    sourcesPage.classList.add('visible');
+    tabQuery.classList.remove('active');
+    tabSources.classList.add('active');
+    refreshSourcesList();
+  } else {
+    queryPage.style.display = '';
+    sourcesPage.classList.remove('visible');
+    tabQuery.classList.add('active');
+    tabSources.classList.remove('active');
+  }
+}
+
+// --- Sources page ---
+
+let pollInterval = null;
+
+function refreshSourcesList() {
+  Promise.all([
+    fetch(SERVER_URL + '/v1/sources', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
+    fetch(SERVER_URL + '/v1/sources/jobs', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
+  ]).then(([sources, jobs]) => {
+    const list = $('sourcesList');
+    if (!sources || sources.length === 0) {
+      list.innerHTML = '<div class="empty-state">No sources connected yet. Click "+ Connect" to add one.</div>';
+      stopPolling();
+      return;
+    }
+
+    const jobMap = {};
+    let hasRunning = false;
+    if (jobs) {
+      for (const j of jobs) {
+        jobMap[j.id] = j;
+        if (j.state === 'running') hasRunning = true;
+      }
+    }
+
+    let html = '';
+    for (const s of sources) {
+      const key = s.source_type + '/' + s.source_name;
+      const job = jobMap[key];
+      html += '<div class="source-row">';
+      html += '<span class="source-row-type">' + esc(s.source_type) + '</span>';
+      html += '<span class="source-row-name">' + esc(s.source_name) + '</span>';
+
+      if (job && job.state === 'running') {
+        const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
+        const label = job.total > 0 ? job.progress + '/' + job.total + ' docs' : 'Starting...';
+        html += '<span class="source-row-status">Syncing... ' + esc(label) +
+          '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div></span>';
+      } else if (job && job.state === 'failed') {
+        html += '<span class="source-row-status" style="color:var(--danger)">Failed: ' + esc(job.error) + '</span>';
+      } else if (s.last_ingest && s.last_ingest !== '0001-01-01T00:00:00Z') {
+        html += '<span class="source-row-status">Last ingested: ' + timeAgo(s.last_ingest) + '</span>';
+      } else if (job && job.state === 'completed') {
+        html += '<span class="source-row-status" style="color:var(--success)">Completed (' + job.added + ' added)</span>';
+      } else {
+        html += '<span class="source-row-status">Not yet ingested</span>';
+      }
+
+      const syncing = job && job.state === 'running';
+      html += '<div class="source-row-actions">';
+      html += '<button class="btn-sm" ' + (syncing ? 'disabled' : '') + ' onclick="syncSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Sync</button>';
+      html += '<button class="btn-sm btn-danger-sm" onclick="deleteSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Delete</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+    list.innerHTML = html;
+
+    if (hasRunning) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  });
+}
+
+function startPolling() {
+  if (pollInterval) return;
+  pollInterval = setInterval(refreshSourcesList, 2000);
+}
+
+function stopPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+}
+
+function timeAgo(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    const diff = Date.now() - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    return days + 'd ago';
+  } catch { return dateStr; }
+}
+
+// --- Connect form ---
+
+function toggleConnectForm() {
+  $('connectForm').classList.toggle('visible');
+}
+
+function updateConnectFields() {
+  const type = $('connectType').value;
+  $('gitFields').style.display = type === 'git' ? '' : 'none';
+  $('slackFields').style.display = type === 'slack' ? '' : 'none';
+}
+
+async function connectSource() {
+  const type = $('connectType').value;
+  let config = {};
+
+  if (type === 'git') {
+    const url = $('gitURL').value.trim();
+    if (!url) { showToast('Repository URL is required'); return; }
+    config.url = url;
+    const token = $('gitToken').value.trim();
+    if (token) config.token = token;
+    const branch = $('gitBranch').value.trim();
+    if (branch) config.branch = branch;
+  } else if (type === 'slack') {
+    const token = $('slackToken').value.trim();
+    const channels = $('slackChannels').value.trim();
+    if (!token) { showToast('Bot Token is required'); return; }
+    if (!channels) { showToast('Channel IDs are required'); return; }
+    config.token = token;
+    config.channels = channels;
+    const workspace = $('slackWorkspace').value.trim();
+    if (workspace) config.workspace = workspace;
+  }
+
+  $('btnConnect').disabled = true;
+  try {
+    const resp = await fetch(SERVER_URL + '/v1/sources/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_type: type, config: config }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      showToast('Error: ' + text);
+      return;
+    }
+    toggleConnectForm();
+    // Clear form fields.
+    $('gitURL').value = '';
+    $('gitToken').value = '';
+    $('gitBranch').value = '';
+    $('slackToken').value = '';
+    $('slackChannels').value = '';
+    $('slackWorkspace').value = '';
+    showToast('Source connected, ingestion started');
+    refreshSourcesList();
+    loadSources(); // refresh status bar
+  } catch (err) {
+    showToast('Connection failed: ' + err.message);
+  } finally {
+    $('btnConnect').disabled = false;
+  }
+}
+
+async function syncSource(sourceType, sourceName) {
+  try {
+    const resp = await fetch(SERVER_URL + '/v1/sources/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_type: sourceType, source_name: sourceName }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      showToast('Sync failed: ' + text);
+      return;
+    }
+    showToast('Sync started');
+    refreshSourcesList();
+  } catch (err) {
+    showToast('Sync failed: ' + err.message);
+  }
+}
+
+async function deleteSource(sourceType, sourceName) {
+  if (!window.confirm('Delete source "' + sourceName + '" and all its fragments?')) return;
+  try {
+    const resp = await fetch(SERVER_URL + '/v1/sources', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_type: sourceType, source_name: sourceName }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      showToast('Delete failed: ' + text);
+      return;
+    }
+    showToast('Source deleted');
+    refreshSourcesList();
+    loadSources(); // refresh status bar
+  } catch (err) {
+    showToast('Delete failed: ' + err.message);
+  }
+}
 </script>
 
 </body>

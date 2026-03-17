@@ -23,6 +23,7 @@ func init() {
 	Register(SourceTypeGit, func(config map[string]string) (Connector, error) {
 		c := NewGitConnector(config["url"], config["branch"], config["github_client_id"])
 		c.lastCommit = config["last_commit"]
+		c.token = config["token"]
 		return c, nil
 	})
 }
@@ -35,6 +36,7 @@ type GitConnector struct {
 	clientID   string // GitHub OAuth client ID (only used for github.com URLs)
 	lastCommit string // SHA of the last successfully ingested commit
 	headCommit string // SHA of HEAD after clone (populated by Scan)
+	token      string // explicit token (e.g. from UI paste flow)
 }
 
 // NewGitConnector creates a connector for the given git remote URL.
@@ -64,6 +66,9 @@ func (c *GitConnector) Config(mode string) map[string]string {
 	// Store HEAD commit SHA so next ingest can use diff-based scan.
 	if c.headCommit != "" {
 		cfg["last_commit"] = c.headCommit
+	}
+	if mode != model.SourceModePush && c.token != "" {
+		cfg["token"] = c.token
 	}
 	return cfg
 }
@@ -298,6 +303,11 @@ func (c *GitConnector) authenticatedURL(ctx context.Context) (string, error) {
 // resolveToken attempts to find a token for the git host.
 // Returns empty string if no token is available (public repo access).
 func (c *GitConnector) resolveToken(ctx context.Context) string {
+	// Check explicit token (e.g. from UI or config).
+	if c.token != "" {
+		return c.token
+	}
+
 	// Check explicit env vars.
 	if token := os.Getenv("KB_GITHUB_TOKEN"); token != "" && c.isGitHub() {
 		return token

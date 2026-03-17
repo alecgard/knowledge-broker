@@ -1,5 +1,6 @@
 ---
-description: Install Knowledge Broker and run your first query in under 5 minutes.
+title: Getting Started — Install and Query in 5 Minutes
+description: Install Knowledge Broker and run your first AI knowledge retrieval query in under 5 minutes. Ingest repos, Confluence, Slack and get answers with confidence scores.
 ---
 
 # Getting Started

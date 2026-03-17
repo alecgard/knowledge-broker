@@ -1,6 +1,6 @@
 # Knowledge Broker
 
-> Open-source CLI for team knowledge retrieval. Go + SQLite, hybrid search (BM25 + vector), MCP server, trust layer with confidence signals (freshness, corroboration, consistency, authority). Zero infrastructure, self-hosted, no data leaves your environment.
+> AI knowledge retrieval engine for engineering teams. Ingest repos, Confluence, Slack, GitHub Wiki — get answers with confidence signals, contradiction detection, and source attribution. Go + SQLite, hybrid search (BM25 + vector), MCP server for AI agents. Open-source, self-hosted, no data leaves your environment.
 
 ## Docs
 

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {% set title = (page.meta.title if page and page.meta and page.meta.title else page.title if page else config.site_name) %}
+  {% set description = (page.meta.description if page and page.meta and page.meta.description else config.site_description) %}
+  {% set url = (page.canonical_url if page else config.site_url) %}
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ url }}">
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ description }}">
+  <meta property="og:site_name" content="Knowledge Broker">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ title }}">
+  <meta name="twitter:description" content="{{ description }}">
+{% endblock %}

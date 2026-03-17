@@ -1,5 +1,6 @@
 ---
-description: How Knowledge Broker's trust layer, hybrid search, and confidence signals work.
+title: Architecture — Trust Layer, Hybrid Search, and Confidence Signals
+description: How Knowledge Broker's AI retrieval pipeline works — hybrid search (vector + BM25), confidence signals, contradiction detection, and the trust layer.
 ---
 
 # Architecture

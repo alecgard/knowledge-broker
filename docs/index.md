@@ -1,12 +1,13 @@
 ---
-description: Open-source CLI for team knowledge retrieval. Go + SQLite, hybrid search, MCP server, confidence signals. Zero infrastructure, self-hosted.
+title: Knowledge Broker — AI Knowledge Retrieval for Engineering Teams
+description: AI-powered knowledge retrieval for engineering teams. Ingest repos, Confluence, Slack — get answers with confidence signals and contradiction detection. Open-source, self-hosted, MCP-native.
 ---
 
 # Knowledge Broker
 
-Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
+Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker is an AI knowledge retrieval engine that searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
 
-Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, people use the CLI, and nobody needs to already know where to look.
+Run it for your whole org or just on your laptop — either way, AI agents query it over MCP or HTTP, people use the CLI, and nobody needs to already know where to look.
 
 ## Why Knowledge Broker
 
@@ -43,7 +44,7 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 
 ## Who it's for
 
-Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give everyone (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
+Engineering teams that want AI-powered knowledge retrieval across all their repos, docs, and chat history. Platform teams that want to give everyone — and every AI coding agent — access to the same organizational knowledge without each person setting up their own tooling.
 
 ## Get started
 

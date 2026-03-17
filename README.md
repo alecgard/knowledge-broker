@@ -40,7 +40,8 @@ kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
 # Raw retrieval — no API key needed
 kb query --raw "What database does the inventory service use?"
 
-# Synthesised answer (requires ANTHROPIC_API_KEY)
+# Synthesised answer (requires an LLM provider — Claude by default)
+export ANTHROPIC_API_KEY=sk-ant-...
 kb query "What database does the inventory service use?"
 ```
 

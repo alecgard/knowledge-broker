@@ -5,7 +5,7 @@
 
 Your team's knowledge is scattered across repos, wikis, Confluence, and Slack. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-**Open-source RAG with a trust layer.** Hybrid search, structured confidence signals, contradiction detection, and an MCP server for AI agents. Built in Go with SQLite. Self-hosted. No data leaves your environment.
+AI agents query it over MCP, people use the CLI, and teams get a shared HTTP API. Hybrid search, structured confidence signals, and contradiction detection. Open-source and self-hosted — no data leaves your environment.
 
 **[Docs](https://knowledgebroker.dev)** | **[Quick Start](https://knowledgebroker.dev/quickstart/)** | **[Architecture](https://knowledgebroker.dev/architecture/)**
 
@@ -67,7 +67,7 @@ kb query "What database does the inventory service use?"
 ## Serve
 
 ```bash
-kb serve                  # HTTP API on :8080, MCP on :8082 (stdio + SSE)
+kb serve # HTTP API on :8080, MCP on :8082 (stdio + SSE)
 ```
 
 See the **[full documentation](https://knowledgebroker.dev)** for connector setup, MCP integration, CLI reference, configuration, and the evaluation framework.

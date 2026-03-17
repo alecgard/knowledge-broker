@@ -6,15 +6,15 @@ description: Open-source CLI for team knowledge retrieval. Go + SQLite, hybrid s
 
 Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
 
-Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, developers use the CLI, and nobody needs to already know where to look.
+Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, people use the CLI, and nobody needs to already know where to look.
 
 ## Why Knowledge Broker
 
 Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
+It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to an LLM for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
 
-The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly so agents and people can act on it.
 
 ## What it looks like
 
@@ -43,7 +43,7 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 
 ## Who it's for
 
-Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give every developer (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
+Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give everyone (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
 
 ## Get started
 
@@ -60,7 +60,7 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
 5. **[Confidence signals](architecture.md#confidence-signals)** assess trust across four dimensions: freshness, corroboration, consistency, authority
-6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
+6. **Synthesis** (optional) produces an answer via an LLM, or returns ranked fragments directly in raw mode
 
 Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
 

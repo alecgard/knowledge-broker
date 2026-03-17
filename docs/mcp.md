@@ -8,7 +8,7 @@ Knowledge Broker includes an [MCP](https://modelcontextprotocol.io) server that 
 
 ## Setup
 
-The typical deployment: one KB instance runs on a shared machine (or in CI), with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
+The typical deployment: one KB instance runs on a shared machine with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
 
 ### Connecting MCP clients
 
@@ -187,7 +187,7 @@ which is current.
 
 ## Typical setup
 
-1. **Deploy KB** on a shared machine or in CI. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
+1. **Deploy KB** on a shared machine. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
 2. **Start the server**: `kb serve`
 3. **Each developer** adds KB to their MCP client config (see above)
 4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available

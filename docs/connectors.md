@@ -128,11 +128,10 @@ All connectors support incremental ingestion via SHA-256 checksums. On each run:
 3. Only new or changed documents are extracted, embedded, and stored
 4. Documents that existed previously but are no longer present are deleted from the database
 
-To force a full re-ingestion, remove the source first:
+To force a full re-ingestion (ignoring checksums):
 
 ```bash
-kb sources remove confluence/ENGINEERING
-kb ingest --confluence ENGINEERING
+kb ingest --confluence ENGINEERING --force
 ```
 
 ## Re-ingesting all sources

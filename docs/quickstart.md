@@ -4,7 +4,7 @@ description: Install Knowledge Broker and run your first query in under 5 minute
 
 # Getting Started
 
-The typical setup: one person (or a CI job) deploys a KB instance and ingests the org's sources. Everyone else queries it via MCP or HTTP.
+Install KB and run your first query locally. For shared team setups, see [Team Deployment](deployment.md).
 
 ## Install
 
@@ -27,9 +27,9 @@ All runtime dependencies are managed automatically on first run.
 
     `make install` builds the `kb` binary and adds it to your PATH.
 
-## Ingest your org's sources
+## Ingest
 
-Point KB at your team's repos, Confluence spaces, Slack channels, etc. Descriptions help agents understand what each source contains:
+Point KB at your sources. Descriptions help agents understand what each source contains:
 
 ```bash
 kb ingest --source ./my-project --description "Payment processing service"
@@ -84,44 +84,11 @@ kb query --human "how does authentication work?"
 
 Streams the answer to the terminal as it's generated.
 
-## Start the server
+## Tell your agents about KB
 
-Start the server so your team can query:
+If you use an AI coding agent (Claude Code, Cursor, etc.), add a prompt to your project config telling it when and how to use KB. Without this, agents won't know the knowledge base exists.
 
-```bash
-kb serve                  # HTTP API on :8080, MCP on :8082 (stdio + SSE)
-```
-
-### Connect your team's MCP clients
-
-Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
-
-```json
-{
-  "mcpServers": {
-    "knowledge-broker": {
-      "command": "kb",
-      "args": ["serve", "--no-http", "--no-sse"]
-    }
-  }
-}
-```
-
-For remote access via SSE, point clients at `http://<server>:8082/sse`. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
-
-### HTTP API
-
-```bash
-# Query via HTTP
-curl -s -X POST localhost:8080/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"how does auth work?"}]}'
-
-# Raw mode via HTTP
-curl -s -X POST localhost:8080/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
-```
+We provide ready-made prompt templates you can drop into your `CLAUDE.md`, `.cursorrules`, or equivalent — see [Agent prompts](mcp.md#agent-prompts).
 
 ## What requires an API key
 
@@ -139,8 +106,8 @@ KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or lo
 
 ## Next steps
 
-- [Deploy for your team](deployment.md) — shared server, connect from developer machines
+- [Deploy for your team](deployment.md) — shared server, HTTP API, remote MCP
+- [MCP Server](mcp.md) — connect AI agents to your local or shared KB instance
 - [Connect more sources](connectors.md) — Confluence, Slack, GitHub Wiki
 - [Understand the trust layer](architecture.md) — how confidence signals work
-- [MCP Server](mcp.md) — tools and prompts for AI agents
 - [CLI Reference](cli.md) — all commands and flags

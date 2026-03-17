@@ -119,7 +119,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 
 - Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
 - Set `"stream": true` for SSE streaming (synthesis mode only).
-- The `messages` array follows the same format as the Claude API. Pass conversation history for multi-turn queries.
+- The `messages` array follows the same format as the Anthropic Messages API. Pass conversation history for multi-turn queries.
 
 ## kb sources
 

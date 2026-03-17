@@ -8,7 +8,7 @@ description: How Knowledge Broker's trust layer, hybrid search, and confidence s
 
 Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
 
-Embeddings and search run entirely on your machine. The only external call is to Claude for synthesis, and that's optional.
+Embeddings and search run entirely on your machine. The only external call is to an LLM for synthesis, and that's optional.
 
 Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
 
@@ -60,7 +60,7 @@ Connectors, extractors, embedding models, and LLM providers are all swappable. A
           │  │   FTS5    │  │                               │
           │  │(keywords) │  │                               ▼
           │  └───────────┘  │                  ┌──────────────────────────┐
-          │                 │                  │   Synthesis (Claude)     │
+          │                 │                  │   Synthesis (LLM)        │
           │  SQLite (.db)   │                  │   or Raw Fragments       │
           │                 │                  └────────────┬─────────────┘
           └─────────────────┘                               │

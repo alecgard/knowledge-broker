@@ -49,9 +49,27 @@ func NewSQLiteStore(dbPath string, embeddingDim int) (*SQLiteStore, error) {
 	return &SQLiteStore{db: db, embeddingDim: embeddingDim}, nil
 }
 
+// schemaReady checks whether the database schema is already initialized and
+// the stored embedding dimension matches. When true, we can skip all write
+// operations in initSchema, avoiding write-lock contention with concurrent
+// writers (e.g. an in-progress ingestion).
+func schemaReady(db *sql.DB, embeddingDim int) bool {
+	var val string
+	err := db.QueryRow("SELECT value FROM metadata WHERE key = 'embedding_dim'").Scan(&val)
+	return err == nil && val == fmt.Sprintf("%d", embeddingDim)
+}
+
 // initSchema runs migrations, creates virtual tables, and validates metadata.
-// All operations are idempotent so safe to retry.
+// All operations are idempotent so safe to retry. If the schema is already
+// fully initialized, only a read is performed (no write lock needed).
 func initSchema(db *sql.DB, embeddingDim int) error {
+	// Fast path: if schema already exists with the correct embedding dim,
+	// skip all writes. This lets read-only callers (e.g. "kb sources list")
+	// open the store without acquiring a write lock.
+	if schemaReady(db, embeddingDim) {
+		return nil
+	}
+
 	// Run schema migrations.
 	if _, err := db.Exec(migrationSQL); err != nil {
 		return fmt.Errorf("run migrations: %w", err)

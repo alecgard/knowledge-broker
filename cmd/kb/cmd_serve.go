@@ -10,6 +10,7 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/server"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func serveCmd() *cobra.Command {
@@ -77,7 +78,7 @@ func serveCmd() *cobra.Command {
 	}
 	cmd.Flags().String("addr", ":8080", "HTTP listen address")
 	cmd.Flags().String("mcp-addr", ":8082", "MCP SSE listen address")
-	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
+	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().Bool("no-http", false, "Disable HTTP API server")
 	cmd.Flags().Bool("no-sse", false, "Disable MCP SSE transport")
 	cmd.Flags().Bool("no-stdio", false, "Disable MCP stdio transport")

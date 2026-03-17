@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func exportCmd() *cobra.Command {
@@ -99,7 +100,7 @@ func exportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
+	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().String("out", ".", "Output directory for TSV files")
 	cmd.Flags().String("remote", "", "URL of a remote KB server")
 	return cmd

@@ -12,6 +12,7 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/cluster"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func clusterCmd() *cobra.Command {
@@ -59,7 +60,7 @@ func clusterCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.PersistentFlags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
+	cmd.PersistentFlags().String("db", "", config.DBFlagUsage)
 	cmd.PersistentFlags().Int("k", 0, "Number of clusters (default: sqrt(n/2))")
 	cmd.AddCommand(clusterVizCmd())
 	return cmd

@@ -296,6 +296,9 @@ func xdgConfigPath() string {
 	return filepath.Join(xdgHome, "kb", "config")
 }
 
+// DBFlagUsage is the help text for the --db flag across all commands.
+var DBFlagUsage = "Path to SQLite database (default: " + DefaultDBPath() + ")"
+
 // DefaultDBPath returns the default database path under XDG_DATA_HOME.
 func DefaultDBPath() string {
 	xdgData := os.Getenv("XDG_DATA_HOME")

@@ -18,6 +18,7 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/internal/llm"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func evalCmd() *cobra.Command {
@@ -174,7 +175,7 @@ func evalCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
+	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().String("testset", "eval/testset.json", "Path to test set JSON file")
 	cmd.Flags().String("corpus", "eval/corpus", "Path to eval corpus directory")
 	cmd.Flags().Int("limit", 20, "Max fragments to retrieve per query")

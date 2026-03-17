@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
+	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
 
 func sourcesCmd() *cobra.Command {
@@ -20,7 +21,7 @@ func sourcesCmd() *cobra.Command {
 		Use:   "sources",
 		Short: "Manage registered sources",
 	}
-	cmd.PersistentFlags().String("db", "", "Path to SQLite database (default: ~/.local/share/kb/kb.db)")
+	cmd.PersistentFlags().String("db", "", config.DBFlagUsage)
 	cmd.PersistentFlags().String("remote", "", "URL of a remote KB server")
 	cmd.AddCommand(sourcesListCmd())
 	cmd.AddCommand(sourcesRemoveCmd())

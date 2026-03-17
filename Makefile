@@ -2,7 +2,7 @@ BINARY := kb
 VERSION := 0.1.0
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean test lint run-ingest run-serve run-mcp eval eval-enriched docs
+.PHONY: build install clean backup test lint run-ingest run-serve run-mcp eval eval-enriched docs
 
 ## Build
 
@@ -34,7 +34,21 @@ install:
 		fi; \
 	fi
 
-clean:
+backup:
+	@dbs=$$(ls *.db 2>/dev/null); \
+	if [ -z "$$dbs" ]; then \
+		echo "No databases to back up."; \
+	else \
+		for db in $$dbs; do \
+			cp "$$db" "$${db}.bak"; \
+			echo "Backed up $$db → $${db}.bak"; \
+			for ext in shm wal; do \
+				[ -f "$$db-$$ext" ] && cp "$$db-$$ext" "$${db}.bak-$$ext" || true; \
+			done; \
+		done; \
+	fi
+
+clean: backup
 	@dbs=$$(ls *.db 2>/dev/null); \
 	if [ -n "$$dbs" ]; then \
 		echo "Databases found: $$dbs"; \
@@ -48,7 +62,7 @@ clean:
 		printf "Delete databases? [y/N] "; \
 		read ans; \
 		case "$$ans" in \
-			[yY]*) rm -f *.db; echo "Databases deleted." ;; \
+			[yY]*) rm -f *.db *.db-shm *.db-wal; echo "Databases deleted." ;; \
 			*)     echo "Keeping databases." ;; \
 		esac; \
 	fi
@@ -115,7 +129,8 @@ help:
 	@echo "  make test         Run all tests"
 	@echo "  make test-v       Run all tests (verbose)"
 	@echo "  make lint         Run go vet"
-	@echo "  make clean        Export sources, then remove binary and database files"
+	@echo "  make backup       Back up all .db files to .db.bak"
+	@echo "  make clean        Back up, export sources, then remove binary and database files"
 	@echo "  make deps         Tidy and verify Go modules"
 	@echo "  make run-ingest   Build and ingest current directory"
 	@echo "  make run-serve    Build and start HTTP server"

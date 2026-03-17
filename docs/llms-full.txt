@@ -1,22 +1,22 @@
 # Knowledge Broker — Complete Documentation
 
 Source: https://knowledgebroker.dev
-Generated: 2026-03-16
+Generated: 2026-03-17
 
 
 # Knowledge Broker
 
 Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
 
-Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, developers use the CLI, and nobody needs to already know where to look.
+Run it for your whole org or just on your laptop — either way, agents query it over MCP or HTTP, people use the CLI, and nobody needs to already know where to look.
 
 ## Why Knowledge Broker
 
 Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
 
-It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to Claude for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
+It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to an LLM for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
 
-The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly, not silently resolved.
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly so agents and people can act on it.
 
 ## What it looks like
 
@@ -45,7 +45,7 @@ The answer is synthesised from Confluence docs and Slack history. Every response
 
 ## Who it's for
 
-Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give every developer (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
+Engineering orgs that want a shared, queryable knowledge base across all their repos, docs, and chat history. Platform teams that want to give everyone (and every AI agent) access to the same organizational knowledge without each person setting up their own tooling.
 
 ## Get started
 
@@ -62,7 +62,7 @@ Install and run your first query in under 5 minutes: [Getting Started](quickstar
 3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
 4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
 5. **[Confidence signals](architecture.md#confidence-signals)** assess trust across four dimensions: freshness, corroboration, consistency, authority
-6. **Synthesis** (optional) produces an answer via Claude, or returns ranked fragments directly in raw mode
+6. **Synthesis** (optional) produces an answer via an LLM, or returns ranked fragments directly in raw mode
 
 Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
 
@@ -75,7 +75,7 @@ Read the full [architecture](architecture.md) for details on the trust layer and
 
 # Getting Started
 
-The typical setup: one person (or a CI job) deploys a KB instance and ingests the org's sources. Everyone else queries it via MCP or HTTP.
+Install KB and run your first query locally. For shared team setups, see [Team Deployment](deployment.md).
 
 ## Install
 
@@ -98,9 +98,9 @@ All runtime dependencies are managed automatically on first run.
 
     `make install` builds the `kb` binary and adds it to your PATH.
 
-## Ingest your org's sources
+## Ingest
 
-Point KB at your team's repos, Confluence spaces, Slack channels, etc. Descriptions help agents understand what each source contains:
+Point KB at your sources. Descriptions help agents understand what each source contains:
 
 ```bash
 kb ingest --source ./my-project --description "Payment processing service"
@@ -127,18 +127,26 @@ Returns ranked fragments with content, source metadata, and per-fragment confide
 
 ### Synthesis mode (requires an LLM provider)
 
-For synthesised answers with cross-fragment confidence assessment and contradiction detection. Set an API key for your preferred provider:
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Configure an API key for your preferred provider:
 
 ```bash
-# Claude (default)
+# Save to your persistent config (recommended — survives new shells)
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+
+# Or export for the current session
 export ANTHROPIC_API_KEY=sk-ant-...
+```
 
-# Or OpenAI
-export KB_LLM_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
+Other providers work too:
 
-# Or use a local model via Ollama (no API key needed)
-export KB_LLM_PROVIDER=ollama
+```bash
+# OpenAI
+KB_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+
+# Local model via Ollama (no API key needed)
+KB_LLM_PROVIDER=ollama
 ```
 
 ```bash
@@ -155,44 +163,11 @@ kb query --human "how does authentication work?"
 
 Streams the answer to the terminal as it's generated.
 
-## Start the server
+## Tell your agents about KB
 
-Start the server so your team can query:
+If you use an AI coding agent (Claude Code, Cursor, etc.), add a prompt to your project config telling it when and how to use KB. Without this, agents won't know the knowledge base exists.
 
-```bash
-kb serve                  # HTTP API on :8080, MCP on :8082 (stdio + SSE)
-```
-
-### Connect your team's MCP clients
-
-Each developer adds this to their MCP client config (Claude Code, Cursor, etc.):
-
-```json
-{
-  "mcpServers": {
-    "knowledge-broker": {
-      "command": "kb",
-      "args": ["serve", "--no-http", "--no-sse"]
-    }
-  }
-}
-```
-
-For remote access via SSE, point clients at `http://<server>:8082/sse`. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
-
-### HTTP API
-
-```bash
-# Query via HTTP
-curl -s -X POST localhost:8080/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"how does auth work?"}]}'
-
-# Raw mode via HTTP
-curl -s -X POST localhost:8080/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
-```
+We provide ready-made prompt templates you can drop into your `CLAUDE.md`, `.cursorrules`, or equivalent — see [Agent prompts](mcp.md#agent-prompts).
 
 ## What requires an API key
 
@@ -208,12 +183,14 @@ KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or lo
 | **Cross-fragment confidence assessment** | | :material-check: |
 | **Contradiction detection** | | :material-check: |
 
+Run `kb config` at any time to see where your settings are coming from. See [CLI Reference — Configuration](cli.md#configuration) for the full search path.
+
 ## Next steps
 
-- [Deploy for your team](deployment.md) — shared server, connect from developer machines
+- [Deploy for your team](deployment.md) — shared server, HTTP API, remote MCP
+- [MCP Server](mcp.md) — connect AI agents to your local or shared KB instance
 - [Connect more sources](connectors.md) — Confluence, Slack, GitHub Wiki
 - [Understand the trust layer](architecture.md) — how confidence signals work
-- [MCP Server](mcp.md) — tools and prompts for AI agents
 - [CLI Reference](cli.md) — all commands and flags
 
 ---
@@ -247,18 +224,29 @@ Set up a cron job or CI step to re-run ingestion periodically. Only new or chang
 
 Set an API key on the server for answer synthesis. Without one, raw retrieval still works.
 
-```bash
-# Claude (default)
-export ANTHROPIC_API_KEY=sk-ant-...
+The recommended approach for servers is a config file:
 
-# Or OpenAI
-export KB_LLM_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
+```bash
+# Create a server config file
+cat > /etc/kb/config <<EOF
+ANTHROPIC_API_KEY=sk-ant-...
+KB_LISTEN_ADDR=:8080
+EOF
+```
+
+Or use environment variables directly (standard for containers):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### 4. Start the server
 
 ```bash
+# With config file
+kb serve --config /etc/kb/config
+
+# Or with env vars
 kb serve
 ```
 
@@ -413,7 +401,7 @@ KB does not include authentication. For production deployments:
 
 Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
 
-Embeddings and search run entirely on your machine. The only external call is to Claude for synthesis, and that's optional.
+Embeddings and search run entirely on your machine. The only external call is to an LLM for synthesis, and that's optional.
 
 Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
 
@@ -465,7 +453,7 @@ Connectors, extractors, embedding models, and LLM providers are all swappable. A
           │  │   FTS5    │  │                               │
           │  │(keywords) │  │                               ▼
           │  └───────────┘  │                  ┌──────────────────────────┐
-          │                 │                  │   Synthesis (Claude)     │
+          │                 │                  │   Synthesis (LLM)        │
           │  SQLite (.db)   │                  │   or Raw Fragments       │
           │                 │                  └────────────┬─────────────┘
           └─────────────────┘                               │
@@ -604,21 +592,15 @@ These thresholds are suggestions. Agents and applications can define their own l
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KB_DB` | `kb.db` | SQLite database path |
-| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
-| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
-| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Chunk enrichment model |
-| `KB_EMBEDDING_DIM` | `768` | Embedding vector dimension |
-| `KB_LLM_PROVIDER` | `claude` | LLM provider (`claude`, `openai`, `ollama`) |
-| `ANTHROPIC_API_KEY` | — | Required for synthesis with Claude (default provider) |
-| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
-| `KB_LISTEN_ADDR` | `:8080` | HTTP server listen address |
-| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
-| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
-| `KB_WORKERS` | `4` | Parallel ingestion workers |
-| `KB_DEFAULT_LIMIT` | `5` | Default fragment retrieval limit |
+KB loads settings from multiple sources (later overrides earlier):
+
+1. **Defaults** — sensible built-in values
+2. **`~/.config/kb/config`** — persistent user config (respects `$XDG_CONFIG_HOME`)
+3. **`.env` in working directory** — project-local overrides
+4. **`--config <path>`** — explicit file (useful for server deployments)
+5. **Environment variables** — always highest precedence
+
+All config files use `KEY=VALUE` format. Run `kb config` to see the resolved values and where each one comes from. See the [CLI Reference](cli.md#configuration) for the full variable list.
 
 ---
 
@@ -749,11 +731,10 @@ All connectors support incremental ingestion via SHA-256 checksums. On each run:
 3. Only new or changed documents are extracted, embedded, and stored
 4. Documents that existed previously but are no longer present are deleted from the database
 
-To force a full re-ingestion, remove the source first:
+To force a full re-ingestion (ignoring checksums):
 
 ```bash
-kb sources remove confluence/ENGINEERING
-kb ingest --confluence ENGINEERING
+kb ingest --confluence ENGINEERING --force
 ```
 
 ## Re-ingesting all sources
@@ -775,7 +756,7 @@ Knowledge Broker includes an [MCP](https://modelcontextprotocol.io) server that 
 
 ## Setup
 
-The typical deployment: one KB instance runs on a shared machine (or in CI), with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
+The typical deployment: one KB instance runs on a shared machine with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
 
 ### Connecting MCP clients
 
@@ -943,18 +924,20 @@ other, surface both claims with their dates so the user can judge
 which is current.
 ```
 
-## Environment variables
+## Configuration
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For synthesis with Claude (default) | Not needed when `raw=true` or using another provider |
-| `KB_OLLAMA_URL` | No (default `http://localhost:11434`) | Embedding server URL |
-| `KB_EMBEDDING_MODEL` | No (default `nomic-embed-text`) | Embedding model |
-| `KB_DB` | No (default `kb.db`) | Database path |
+KB loads settings from config files and environment variables. The recommended approach is to save persistent settings to `~/.config/kb/config`:
+
+```bash
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+```
+
+Run `kb config` to see the resolved configuration and where each value comes from. See the [CLI Reference](cli.md#configuration) for the full search path and variable list.
 
 ## Typical setup
 
-1. **Deploy KB** on a shared machine or in CI. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
+1. **Deploy KB** on a shared machine. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
 2. **Start the server**: `kb serve`
 3. **Each developer** adds KB to their MCP client config (see above)
 4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
@@ -1080,7 +1063,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 
 - Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
 - Set `"stream": true` for SSE streaming (synthesis mode only).
-- The `messages` array follows the same format as the Claude API. Pass conversation history for multi-turn queries.
+- The `messages` array follows the same format as the Anthropic Messages API. Pass conversation history for multi-turn queries.
 
 ## kb sources
 
@@ -1215,24 +1198,68 @@ kb version
 kb version --remote http://server:8080
 ```
 
+## kb config
+
+Show the resolved configuration: where each value comes from, which config files were loaded, and the current value of every setting (secrets are masked).
+
+```bash
+kb config
+kb config --config /etc/kb/config
+```
+
+```
+Config files:
+  ~/.config/kb/config                      found
+  .env                                     not found
+  --config                                 (not specified)
+
+KEY                       VALUE                               SOURCE
+KB_DB                     kb.db                               default
+KB_OLLAMA_URL             http://localhost:11434              ~/.config/kb/config
+ANTHROPIC_API_KEY         sk-ant-a****                        env
+...
+```
+
 ## Global flags
 
 | Flag | Description |
 |------|-------------|
+| `--config` | Path to config file (overrides `.env` and `~/.config/kb/config`) |
 | `--debug` | Enable debug mode (log all API calls) |
 | `--no-setup` | Skip automatic runtime management (useful for CI or custom deployments) |
 
-## Environment variables
+## Configuration
+
+KB loads configuration from multiple sources. Later sources override earlier ones:
+
+| Precedence | Source | Description |
+|:----------:|--------|-------------|
+| 1 (lowest) | Defaults | Built-in defaults |
+| 2 | `~/.config/kb/config` | Persistent user config (respects `$XDG_CONFIG_HOME`) |
+| 3 | `.env` in working directory | Project-local overrides (useful during development) |
+| 4 | `--config <path>` | Explicit file path (useful for server deployments) |
+| 5 (highest) | Environment variables | Always take precedence |
+
+All config files use the same `KEY=VALUE` format (same as `.env`). Run `kb config` to see which source each value comes from.
+
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `KB_DB` | `kb.db` | SQLite database path |
 | `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
 | `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
 | `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
 | `KB_SKIP_SETUP` | `false` | Skip automatic runtime management |
 | `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
-| `KB_DB` | `kb.db` | Default database path |
+| `ANTHROPIC_API_KEY` | — | API key for Claude (default LLM provider) |
+| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
+| `OPENAI_API_KEY` | — | API key for OpenAI |
 | `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |
+| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
+| `KB_WORKERS` | `4` | Parallel ingestion workers |
+| `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
 
 ---
 

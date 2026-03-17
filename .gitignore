@@ -2,6 +2,9 @@
 *.db
 *.db-shm
 *.db-wal
+*.db.bak
+*.db.bak-shm
+*.db.bak-wal
 /kb
 local
 metadata.tsv

@@ -104,11 +104,12 @@ func (s *HTTPServer) routes() {
 		s.mux.HandleFunc("/v1/sources/sync", s.handleSyncSource)
 		s.mux.HandleFunc("/v1/sources/jobs", s.handleListJobs)
 	}
+	s.mux.Handle("/metrics", metricsHandler())
 }
 
-// Handler returns the http.Handler with CORS support for cross-origin UI access.
+// Handler returns the http.Handler with CORS support and metrics middleware.
 func (s *HTTPServer) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cors := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, ngrok-skip-browser-warning")
@@ -118,6 +119,7 @@ func (s *HTTPServer) Handler() http.Handler {
 		}
 		s.mux.ServeHTTP(w, r)
 	})
+	return metricsMiddleware(cors)
 }
 
 // handleQuery handles query requests. Streams SSE by default; set

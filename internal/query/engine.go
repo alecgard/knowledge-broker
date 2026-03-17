@@ -10,10 +10,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 	"github.com/knowledge-broker/knowledge-broker/internal/store"
 )
+
+var (
+	queryDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{Name: "kb_query_duration_seconds", Help: "Query duration by phase", Buckets: prometheus.DefBuckets},
+		[]string{"phase"}, // "embedding", "search", "synthesis", "total"
+	)
+	queryTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "kb_queries_total", Help: "Total queries"},
+		[]string{"mode"}, // "raw", "synthesis"
+	)
+	queryErrors = prometheus.NewCounter(
+		prometheus.CounterOpts{Name: "kb_query_errors_total", Help: "Total query errors"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(queryDuration)
+	prometheus.MustRegister(queryTotal)
+	prometheus.MustRegister(queryErrors)
+}
 
 // LLM is the interface for the language model used for synthesis.
 type LLM interface {
@@ -84,6 +106,7 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 
 	// Step 1: Embed the original query. This embedding is reused for both
 	// the vocabulary scout and the main search, avoiding a redundant Ollama call.
+	embedStart := time.Now()
 	queryEmb, err := e.embedder.Embed(ctx, lastMsg.Content)
 	if err != nil {
 		return model.Message{}, nil, nil, fmt.Errorf("embed query: %w", err)
@@ -155,7 +178,10 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 		allEmbeddings[0] = combineEmbeddings(queryEmb, topicsEmb, 0.3)
 	}
 
+	queryDuration.WithLabelValues("embedding").Observe(time.Since(embedStart).Seconds())
+
 	// Step 4: Vector search for each embedding.
+	searchStart := time.Now()
 	var resultLists []rankedList
 	for _, emb := range allEmbeddings {
 		var frags []model.SourceFragment
@@ -195,6 +221,7 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 
 	// Step 6: Merge all result lists via RRF.
 	fragments := mergeRRF(resultLists, limit)
+	queryDuration.WithLabelValues("search").Observe(time.Since(searchStart).Seconds())
 
 	return lastMsg, allEmbeddings[0], fragments, nil
 }
@@ -204,7 +231,14 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 // Returns the complete Answer after streaming finishes.
 // If req.Concise is true, the LLM produces terse, agent-friendly output.
 func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	totalStart := time.Now()
+	queryTotal.WithLabelValues("synthesis").Inc()
+	defer func() {
+		queryDuration.WithLabelValues("total").Observe(time.Since(totalStart).Seconds())
+	}()
+
 	if e.llm == nil {
+		queryErrors.Inc()
 		return nil, fmt.Errorf("LLM client not configured")
 	}
 
@@ -223,6 +257,7 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 
 	lastMsg, _, fragments, err := e.embedAndSearch(ctx, req)
 	if err != nil {
+		queryErrors.Inc()
 		return nil, err
 	}
 
@@ -266,8 +301,11 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 	}
 
 	// Stream the LLM response.
+	synthesisStart := time.Now()
 	fullResponse, err := e.llm.StreamAnswer(ctx, systemPrompt, req.Messages, onText)
+	queryDuration.WithLabelValues("synthesis").Observe(time.Since(synthesisStart).Seconds())
 	if err != nil {
+		queryErrors.Inc()
 		return nil, fmt.Errorf("llm synthesis: %w", err)
 	}
 
@@ -355,8 +393,15 @@ func combineEmbeddings(a, b []float32, weight float64) []float32 {
 // QueryRaw performs raw retrieval: embed, search, compute local confidence signals,
 // and return fragments directly without LLM synthesis.
 func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.RawResult, error) {
+	totalStart := time.Now()
+	queryTotal.WithLabelValues("raw").Inc()
+	defer func() {
+		queryDuration.WithLabelValues("total").Observe(time.Since(totalStart).Seconds())
+	}()
+
 	_, queryEmb, fragments, err := e.embedAndSearch(ctx, req)
 	if err != nil {
+		queryErrors.Inc()
 		return nil, err
 	}
 

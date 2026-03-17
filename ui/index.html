@@ -1409,6 +1409,7 @@ function showTab(tab) {
     sourcesPage.classList.remove('visible');
     tabQuery.classList.add('active');
     tabSources.classList.remove('active');
+    stopPolling();
   }
 }
 
@@ -1510,16 +1511,16 @@ function toggleConnectForm() {
 }
 
 function updateConnectFields() {
-  const type = $('connectType').value;
-  $('gitFields').style.display = type === 'git' ? '' : 'none';
-  $('slackFields').style.display = type === 'slack' ? '' : 'none';
+  const connType = $('connectType').value;
+  $('gitFields').style.display = connType === 'git' ? '' : 'none';
+  $('slackFields').style.display = connType === 'slack' ? '' : 'none';
 }
 
 async function connectSource() {
-  const type = $('connectType').value;
+  const connType = $('connectType').value;
   let config = {};
 
-  if (type === 'git') {
+  if (connType === 'git') {
     const url = $('gitURL').value.trim();
     if (!url) { showToast('Repository URL is required'); return; }
     config.url = url;
@@ -1527,7 +1528,7 @@ async function connectSource() {
     if (token) config.token = token;
     const branch = $('gitBranch').value.trim();
     if (branch) config.branch = branch;
-  } else if (type === 'slack') {
+  } else if (connType === 'slack') {
     const token = $('slackToken').value.trim();
     const channels = $('slackChannels').value.trim();
     if (!token) { showToast('Bot Token is required'); return; }
@@ -1543,7 +1544,7 @@ async function connectSource() {
     const resp = await fetch(SERVER_URL + '/v1/sources/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_type: type, config: config }),
+      body: JSON.stringify({ source_type: connType, config: config }),
     });
     if (!resp.ok) {
       const text = await resp.text();

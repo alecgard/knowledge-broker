@@ -56,27 +56,16 @@ type HTTPServer struct {
 	pipelineCfg *PipelineConfig
 	httpClient  *http.Client
 	jobs        *JobTracker
+	serverCtx   context.Context      // cancelled on shutdown
 }
 
 // NewHTTPServer creates a new HTTP server.
 func NewHTTPServer(engine *query.Engine, emb embedding.Embedder, st store.Store, logger *slog.Logger, version ...string) *HTTPServer {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	v := "0.1.0"
-	if len(version) > 0 && version[0] != "" {
+	v := ""
+	if len(version) > 0 {
 		v = version[0]
 	}
-	s := &HTTPServer{
-		engine:   engine,
-		embedder: emb,
-		store:    st,
-		logger:   logger,
-		mux:      http.NewServeMux(),
-		version:  v,
-	}
-	s.routes()
-	return s
+	return NewHTTPServerWithOptions(engine, emb, st, logger, v)
 }
 
 // NewHTTPServerWithOptions creates a new HTTP server with optional pipeline support.
@@ -88,12 +77,13 @@ func NewHTTPServerWithOptions(engine *query.Engine, emb embedding.Embedder, st s
 		ver = "0.1.0"
 	}
 	s := &HTTPServer{
-		engine:   engine,
-		embedder: emb,
-		store:    st,
-		logger:   logger,
-		mux:      http.NewServeMux(),
-		version:  ver,
+		engine:    engine,
+		embedder:  emb,
+		store:     st,
+		logger:    logger,
+		mux:       http.NewServeMux(),
+		version:   ver,
+		serverCtx: context.Background(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -623,22 +613,33 @@ func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request)
 	src.SourceName = conn.SourceName()
 	src.Config = conn.Config(model.SourceModeLocal)
 
-	// Reject if already running.
-	if s.jobs.IsRunning(src.SourceType, src.SourceName) {
+	// Strip secrets from the config stored in the database. The connector
+	// already has the token in memory for this ingestion run.
+	storedSrc := src
+	storedCfg := make(map[string]string, len(src.Config))
+	for k, v := range src.Config {
+		storedCfg[k] = v
+	}
+	delete(storedCfg, "token")
+	storedSrc.Config = storedCfg
+
+	// Atomically claim the job slot — reject if already running.
+	jobID, ok := s.jobs.Start(src.SourceType, src.SourceName)
+	if !ok {
 		http.Error(w, "ingestion already running for this source", http.StatusConflict)
 		return
 	}
 
-	// Register source in store.
-	if err := s.store.RegisterSource(r.Context(), src); err != nil {
+	// Register source in store (without token).
+	if err := s.store.RegisterSource(r.Context(), storedSrc); err != nil {
 		s.logger.Error("register source failed", "error", err)
+		s.jobs.Finish(jobID, 0, 0, 0, err)
 		http.Error(w, fmt.Sprintf("register source failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Start background ingestion.
-	jobID, _ := s.jobs.Start(src.SourceType, src.SourceName)
-	go s.runIngestion(context.Background(), src, jobID)
+	// Start background ingestion (with token still in src.Config for the connector).
+	go s.runIngestion(s.serverCtx, src, jobID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -665,18 +666,22 @@ func (s *HTTPServer) handleSyncSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := s.store.GetSource(r.Context(), req.SourceType, req.SourceName)
-	if err != nil || src == nil {
+	if err != nil {
+		s.logger.Error("get source failed", "error", err)
+		http.Error(w, fmt.Sprintf("get source failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if src == nil {
 		http.Error(w, "source not found", http.StatusNotFound)
 		return
 	}
 
-	if s.jobs.IsRunning(src.SourceType, src.SourceName) {
+	jobID, ok := s.jobs.Start(src.SourceType, src.SourceName)
+	if !ok {
 		http.Error(w, "ingestion already running for this source", http.StatusConflict)
 		return
 	}
-
-	jobID, _ := s.jobs.Start(src.SourceType, src.SourceName)
-	go s.runIngestion(context.Background(), *src, jobID)
+	go s.runIngestion(s.serverCtx, *src, jobID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -734,6 +739,7 @@ func (s *HTTPServer) runIngestion(ctx context.Context, src model.Source, jobID s
 
 // ListenAndServe starts the HTTP server.
 func (s *HTTPServer) ListenAndServe(ctx context.Context, addr string) error {
+	s.serverCtx = ctx
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      s.Handler(),

@@ -510,7 +510,7 @@ func makeProgressFunc(label string) ingest.ProgressFunc {
 
 func makeBatchFunc(label string) ingest.BatchFunc {
 	return func(batch, totalBatches, added int) {
-		fmt.Fprintf(os.Stderr, "\r  [%s] Stored batch %d/%d (%d fragments)\n", label, batch, totalBatches, added)
+		fmt.Fprintf(os.Stderr, "\r\033[K  [%s] Stored batch %d/%d (%d fragments)\n", label, batch, totalBatches, added)
 	}
 }
 
@@ -528,6 +528,8 @@ func makeScanCompleteFunc(label string) ingest.ScanCompleteFunc {
 
 func makeEmbedFunc(label string) ingest.EmbedFunc {
 	return func(batch, totalBatches, fragments int) {
+		// Clear any in-place progress line (e.g. extraction) before printing.
+		fmt.Fprint(os.Stderr, "\r\033[K")
 		prefix := fmt.Sprintf("  [%s] ", label)
 		if totalBatches > 1 {
 			fmt.Fprintf(os.Stderr, "%sEmbedding batch %d/%d (%d fragments)...\n", prefix, batch, totalBatches, fragments)

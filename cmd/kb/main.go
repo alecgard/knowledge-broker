@@ -45,6 +45,7 @@ func main() {
 	root.AddCommand(ingestCmd())
 	root.AddCommand(enrichCmd())
 	root.AddCommand(queryCmd())
+	root.AddCommand(chatCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(exportCmd())
 	root.AddCommand(sourcesCmd())

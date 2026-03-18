@@ -69,6 +69,52 @@ kb query --raw --source-type git "deployment process"
 | `--db` | SQLite database path (default: `kb.db`) |
 | `--remote` | URL of a remote KB server to query |
 
+## kb chat
+
+Start an interactive multi-turn conversation with the knowledge base. Each turn sends the full conversation history to the query engine, so follow-up questions have full context.
+
+```bash
+# Start a chat session
+kb chat
+
+# With filters
+kb chat --topics "billing,payments" --source owner/repo
+
+# Against a remote server
+kb chat --remote http://server:8080
+```
+
+Type your question at the `kb> ` prompt. The answer streams to the terminal. Type `exit`, `quit`, or press `Ctrl+C` to end the session.
+
+| Flag | Description |
+|------|-------------|
+| `--db` | SQLite database path (default: `kb.db`) |
+| `--limit` | Maximum number of fragments to retrieve |
+| `--topics` | Comma-separated topics to boost relevance |
+| `--source` | Filter results to this source name (repeatable) |
+| `--source-type` | Filter results to this source type (repeatable) |
+| `--llm` | LLM provider override: `claude`, `openai`, `ollama` |
+| `--no-expand` | Disable multi-query expansion |
+| `--remote` | URL of a remote KB server |
+
+Example session:
+
+```
+$ kb chat
+Knowledge Broker — interactive chat (type 'exit' or 'quit' to end)
+kb> how does authentication work?
+Authentication uses JWT tokens issued by the auth service...
+
+--- Confidence: 0.82 ---
+
+kb> what happens when a token expires?
+When a JWT token expires, the client must request a new one...
+
+--- Confidence: 0.79 ---
+
+kb> exit
+```
+
 ## kb serve
 
 Start the HTTP API and MCP server. Runs the HTTP API, MCP stdio transport, and MCP SSE transport in a single process.

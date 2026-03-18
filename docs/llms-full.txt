@@ -395,7 +395,13 @@ This writes a timestamped copy to the KB data directory. Pass `--out <path>` to 
 
 ### Restore
 
-A `kb restore` command is planned but not yet implemented. It will require explicit confirmation before overwriting an existing database. Until then, restoring from a backup is a manual process — stop the server, replace the database file, and restart.
+Restore from a backup file:
+
+```bash
+kb restore /path/to/kb-backup-20250115-030000.db
+```
+
+This validates that the backup is a valid SQLite database, then prompts for confirmation before overwriting. Pass `--force` to skip the prompt. Stop the server before restoring, then restart it afterward.
 
 ### Migration between machines
 

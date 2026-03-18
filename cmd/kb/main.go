@@ -51,6 +51,8 @@ func main() {
 	root.AddCommand(clusterCmd())
 	root.AddCommand(newSetupCmd())
 	root.AddCommand(configCmd())
+	root.AddCommand(backupCmd())
+	root.AddCommand(restoreCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

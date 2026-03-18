@@ -186,7 +186,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		}
 
 		batchNum := batchIdx + 1
-		p.logger.Info("extracting chunks", "batch", batchNum, "batches", len(batches), "docs", len(batch))
+		p.logger.Debug("extracting chunks", "batch", batchNum, "batches", len(batches), "docs", len(batch))
 		fragments, errs := p.processDocuments(ctx, batch, progressOffset, totalDocs)
 		progressOffset += len(batch)
 		result.Errors += errs
@@ -202,13 +202,13 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 			if p.OnEmbedding != nil {
 				p.OnEmbedding(batchNum, len(batches), len(fragments))
 			}
-			p.logger.Info("embedding fragments", "batch", batchNum, "batches", len(batches), "fragments", len(fragments))
+			p.logger.Debug("embedding fragments", "batch", batchNum, "batches", len(batches), "fragments", len(fragments))
 			embedStart := time.Now()
 			embedded, err := p.embedBatch(ctx, fragments)
 			if err != nil {
 				return result, fmt.Errorf("embed batch: %w", err)
 			}
-			p.logger.Info("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", len(embedded), "elapsed_ms", time.Since(embedStart).Milliseconds())
+			p.logger.Debug("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", len(embedded), "elapsed_ms", time.Since(embedStart).Milliseconds())
 
 			if err := p.store.UpsertFragments(ctx, embedded); err != nil {
 				return result, fmt.Errorf("upsert fragments: %w", err)
@@ -221,7 +221,7 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		}
 	}
 
-	p.logger.Info("ingestion complete",
+	p.logger.Debug("ingestion complete",
 		"added", result.Added,
 		"deleted", result.Deleted,
 		"skipped", result.Skipped,
@@ -266,10 +266,10 @@ func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFrag
 
 	needEnrichment := len(fragments) - len(cached)
 	if needEnrichment == 0 {
-		p.logger.Info("enrichment cached, skipping LLM calls", "chunks", len(fragments))
+		p.logger.Debug("enrichment cached, skipping LLM calls", "chunks", len(fragments))
 		return
 	}
-	p.logger.Info("starting enrichment",
+	p.logger.Debug("starting enrichment",
 		"model", modelName,
 		"prompt_version", enrich.PromptVersion,
 		"hprev", cfg.HPrev,
@@ -320,7 +320,7 @@ func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFrag
 			if pct > 100 {
 				pct = 100
 			}
-			p.logger.Info("enriching", "chunk", done+chunkDone, "total", needEnrichment, "pct", pct)
+			p.logger.Debug("enriching", "chunk", done+chunkDone, "total", needEnrichment, "pct", pct)
 		}
 		enriched, err := enrich.EnrichChunks(ctx, cfg.Enricher, g.chunks, cfg.HPrev, cfg.HNext, cfg.Concurrency, progress)
 		if err != nil {

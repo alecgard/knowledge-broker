@@ -921,6 +921,96 @@ func TestSlackBuildDocumentsUsesContext(t *testing.T) {
 	}
 }
 
+func TestSlackIncrementalScanWithLastIngest(t *testing.T) {
+	// Set LastIngest to 7 days ago. The oldest param should be ~8 days ago (7 days minus 1-day buffer).
+	lastIngest := time.Now().Add(-7 * 24 * time.Hour)
+
+	mock := &slackMockHTTPClient{
+		responses: []mockResponse{
+			{statusCode: 200, body: channelInfoJSON("incremental")},
+			{statusCode: 200, body: historyJSON(nil, "")},
+		},
+	}
+
+	c := NewSlackConnector("xoxb-test", []string{"CINC"}, "")
+	c.httpClient = mock
+
+	_, _, err := c.Scan(context.Background(), ScanOptions{LastIngest: &lastIngest})
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Verify the history request uses an oldest param ~8 days ago (LastIngest minus 1-day buffer).
+	for _, req := range mock.requests {
+		if strings.Contains(req.URL.String(), "conversations.history") {
+			reqURL := req.URL.String()
+			if !strings.Contains(reqURL, "oldest=") {
+				t.Error("expected oldest parameter in history request")
+				continue
+			}
+			for _, part := range strings.Split(reqURL, "&") {
+				if strings.HasPrefix(part, "oldest=") {
+					val := strings.TrimPrefix(part, "oldest=")
+					ts, err := strconv.ParseInt(val, 10, 64)
+					if err != nil {
+						t.Errorf("failed to parse oldest: %v", err)
+						continue
+					}
+					expected := lastIngest.AddDate(0, 0, -1).Unix()
+					diff := ts - expected
+					if diff < -60 || diff > 60 {
+						t.Errorf("oldest timestamp off by more than 60s: got %d, expected ~%d (LastIngest minus 1-day buffer)", ts, expected)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestSlackFirstScanNoLastIngest(t *testing.T) {
+	// Zero LastIngest should fall back to the default 90-day lookback window.
+	mock := &slackMockHTTPClient{
+		responses: []mockResponse{
+			{statusCode: 200, body: channelInfoJSON("first-scan")},
+			{statusCode: 200, body: historyJSON(nil, "")},
+		},
+	}
+
+	c := NewSlackConnector("xoxb-test", []string{"CFIRST"}, "")
+	c.httpClient = mock
+
+	_, _, err := c.Scan(context.Background(), ScanOptions{})
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Verify the history request uses an oldest param ~90 days ago.
+	for _, req := range mock.requests {
+		if strings.Contains(req.URL.String(), "conversations.history") {
+			reqURL := req.URL.String()
+			if !strings.Contains(reqURL, "oldest=") {
+				t.Error("expected oldest parameter in history request")
+				continue
+			}
+			for _, part := range strings.Split(reqURL, "&") {
+				if strings.HasPrefix(part, "oldest=") {
+					val := strings.TrimPrefix(part, "oldest=")
+					ts, err := strconv.ParseInt(val, 10, 64)
+					if err != nil {
+						t.Errorf("failed to parse oldest: %v", err)
+						continue
+					}
+					expected := time.Now().AddDate(0, 0, -defaultLookbackDays).Unix()
+					diff := ts - expected
+					if diff < -60 || diff > 60 {
+						t.Errorf("oldest timestamp off by more than 60s: got %d, expected ~%d (90-day lookback)", ts, expected)
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestSlackNetworkError(t *testing.T) {
 	// Use a mock that returns an error on Do.
 	errMock := &slackMockHTTPClient{

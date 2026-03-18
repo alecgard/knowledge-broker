@@ -120,8 +120,19 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		}
 	}
 
+	// Look up the source to get LastIngest for incremental time-based filtering.
+	// Skip when Force is set so connectors like Slack scan the full lookback window.
+	scanOpts := connector.ScanOptions{Known: known, Force: opt.Force}
+	if !opt.Force {
+		if src, err := p.store.GetSource(ctx, conn.Name(), conn.SourceName()); err != nil {
+			p.logger.Warn("failed to look up source for incremental scan, falling back to full scan", "error", err)
+		} else if src != nil && src.LastIngest != nil {
+			scanOpts.LastIngest = src.LastIngest
+		}
+	}
+
 	// Scan for new/changed documents and deleted paths.
-	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known, Force: opt.Force})
+	docs, deleted, err := conn.Scan(ctx, scanOpts)
 	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}

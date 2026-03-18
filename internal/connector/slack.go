@@ -89,7 +89,16 @@ func (c *SlackConnector) Config(mode string) map[string]string {
 // Scan fetches messages from configured Slack channels and returns them as documents.
 func (c *SlackConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawDocument, []string, error) {
 	known := opts.Known
-	oldest := strconv.FormatInt(time.Now().AddDate(0, 0, -c.lookbackDays).Unix(), 10)
+
+	// Determine the oldest timestamp for the API query.
+	// If LastIngest is set (subsequent scan), use it minus a 1-day overlap buffer.
+	// Otherwise (first scan), fall back to the configured lookback window.
+	var oldest string
+	if opts.LastIngest != nil {
+		oldest = strconv.FormatInt(opts.LastIngest.AddDate(0, 0, -1).Unix(), 10)
+	} else {
+		oldest = strconv.FormatInt(time.Now().AddDate(0, 0, -c.lookbackDays).Unix(), 10)
+	}
 
 	var docs []model.RawDocument
 	for _, channelID := range c.channelIDs {

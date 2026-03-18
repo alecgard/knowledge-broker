@@ -99,6 +99,8 @@ type MockConnector struct {
 	ConnectorName string
 	Docs          []model.RawDocument
 	RemovedPaths  []string
+	// LastScanOpts captures the ScanOptions from the most recent Scan call.
+	LastScanOpts connector.ScanOptions
 }
 
 var _ connector.Connector = (*MockConnector)(nil)
@@ -108,6 +110,7 @@ func (m *MockConnector) SourceName() string       { return m.ConnectorName }
 func (m *MockConnector) Config(mode string) map[string]string { return map[string]string{} }
 
 func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]model.RawDocument, []string, error) {
+	m.LastScanOpts = opts
 	known := opts.Known
 	// Build the set of currently-known paths for deletion detection.
 	currentPaths := make(map[string]bool)
@@ -622,4 +625,140 @@ func Bad() {
 		t.Fatal("expected at least some fragments to be added despite one failure")
 	}
 	t.Logf("With nil embedding: added=%d (normal was %d)", result2.Added, totalFragments)
+}
+
+func TestPipelinePassesLastIngestToConnector(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content := "# Test Doc\n\nSome content.\n"
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs:          []model.RawDocument{makeDoc("docs/test.md", content, checksum(content))},
+	}
+
+	// Register a source with a LastIngest timestamp.
+	lastIngest := time.Now().Add(-24 * time.Hour)
+	err := s.RegisterSource(ctx, model.Source{
+		SourceType: "mock",
+		SourceName: "mock",
+		Config:     map[string]string{},
+		LastIngest: &lastIngest,
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	_, err = pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Pipeline.Run: %v", err)
+	}
+
+	// Verify that the connector received the LastIngest value.
+	if conn.LastScanOpts.LastIngest == nil {
+		t.Fatal("expected LastIngest to be passed to connector, got nil")
+	}
+	// Allow 1 second tolerance for timestamp comparison.
+	diff := conn.LastScanOpts.LastIngest.Sub(lastIngest)
+	if diff < -time.Second || diff > time.Second {
+		t.Errorf("LastIngest mismatch: got %v, want ~%v", *conn.LastScanOpts.LastIngest, lastIngest)
+	}
+}
+
+func TestPipelineNoLastIngestForNewSource(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content := "# New Doc\n\nBrand new content.\n"
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs:          []model.RawDocument{makeDoc("docs/new.md", content, checksum(content))},
+	}
+
+	// Do NOT register a source — simulates first-ever ingestion.
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	_, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Pipeline.Run: %v", err)
+	}
+
+	// Verify that LastIngest is nil (no previous source record).
+	if conn.LastScanOpts.LastIngest != nil {
+		t.Errorf("expected nil LastIngest for new source, got %v", conn.LastScanOpts.LastIngest)
+	}
+}
+
+func TestPipelineForceSkipsLastIngest(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content := "# Force Test\n\nContent for force test.\n"
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs:          []model.RawDocument{makeDoc("docs/force.md", content, checksum(content))},
+	}
+
+	// Register a source with a LastIngest timestamp.
+	forceLastIngest := time.Now().Add(-24 * time.Hour)
+	err := s.RegisterSource(ctx, model.Source{
+		SourceType: "mock",
+		SourceName: "mock",
+		Config:     map[string]string{},
+		LastIngest: &forceLastIngest,
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	// Run with Force — LastIngest should NOT be passed to the connector.
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	_, err = pipeline.Run(ctx, conn, ingest.Options{Force: true})
+	if err != nil {
+		t.Fatalf("Pipeline.Run: %v", err)
+	}
+
+	if conn.LastScanOpts.LastIngest != nil {
+		t.Errorf("expected nil LastIngest when Force is true, got %v", conn.LastScanOpts.LastIngest)
+	}
+}
+
+func TestPipelineZeroLastIngestSource(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content := "# Zero Test\n\nContent for zero LastIngest test.\n"
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs:          []model.RawDocument{makeDoc("docs/zero.md", content, checksum(content))},
+	}
+
+	// Register a source WITHOUT setting LastIngest (zero value).
+	err := s.RegisterSource(ctx, model.Source{
+		SourceType: "mock",
+		SourceName: "mock",
+		Config:     map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("RegisterSource: %v", err)
+	}
+
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	_, err = pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Pipeline.Run: %v", err)
+	}
+
+	// Source exists but LastIngest is nil — should NOT pass LastIngest to connector.
+	if conn.LastScanOpts.LastIngest != nil {
+		t.Errorf("expected nil LastIngest for source with nil LastIngest, got %v", conn.LastScanOpts.LastIngest)
+	}
 }

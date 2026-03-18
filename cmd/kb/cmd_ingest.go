@@ -537,9 +537,15 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		return fmt.Errorf("get checksums: %w", err)
 	}
 
+	// Look up the source to get LastIngest for incremental time-based filtering.
+	scanOpts := connector.ScanOptions{Known: known}
+	if src, err := s.GetSource(ctx, conn.Name(), conn.SourceName()); err == nil && src != nil && src.LastIngest != nil {
+		scanOpts.LastIngest = src.LastIngest
+	}
+
 	// Scan for new/changed documents and deleted paths.
 	fmt.Fprintf(os.Stderr, "Scanning %s...\n", conn.Name())
-	docs, deleted, err := conn.Scan(ctx, connector.ScanOptions{Known: known})
+	docs, deleted, err := conn.Scan(ctx, scanOpts)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}

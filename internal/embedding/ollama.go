@@ -309,6 +309,10 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 		}
 		chunkVecs, err := o.embedWithRetry(ctx, input)
 		if err != nil {
+			// If context was cancelled, return immediately — don't retry.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			// Sub-batch failed — fall back to one-at-a-time for this chunk.
 			slog.Warn("sub-batch embed failed, falling back to individual requests", "error", err, "count", len(chunk))
 			for i, text := range chunk {

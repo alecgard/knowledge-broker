@@ -261,10 +261,6 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 		fmt.Fprintf(os.Stderr, "\r  Scanning: %d files processed, done\n", filesProcessed)
 	}
 
-	if skipped > 0 {
-		log.Printf("skipped %d unchanged file(s)", skipped)
-	}
-
 	// Detect deleted paths: paths in known that were not seen during the walk.
 	var deleted []string
 	for knownPath := range known {

@@ -86,7 +86,7 @@ func sourcesListCmd() *cobra.Command {
 				count := counts[key]
 				size := sizes[key]
 				lastIngest := ""
-				if !src.LastIngest.IsZero() {
+				if src.LastIngest != nil && !src.LastIngest.IsZero() {
 					lastIngest = src.LastIngest.Local().Format("2006-01-02 15:04")
 				}
 				fmt.Printf("%-14s %-30s %10d %10s  %-19s  %s\n",

@@ -43,6 +43,7 @@ func main() {
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(ingestCmd())
+	root.AddCommand(enrichCmd())
 	root.AddCommand(queryCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(exportCmd())

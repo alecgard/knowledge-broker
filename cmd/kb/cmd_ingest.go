@@ -43,7 +43,10 @@ func ingestCmd() *cobra.Command {
 
 			watchMode, _ := cmd.Flags().GetBool("watch")
 			description, _ := cmd.Flags().GetString("description")
-			skipEnrichment, _ := cmd.Flags().GetBool("skip-enrichment")
+			skipEnrichmentFlag, _ := cmd.Flags().GetBool("skip-enrichment")
+			enrichFlag, _ := cmd.Flags().GetBool("enrich")
+			// --skip-enrichment defaults to true; --enrich overrides it to false.
+			skipEnrichment := skipEnrichmentFlag && !enrichFlag
 			enrichModel, _ := cmd.Flags().GetString("enrich-model")
 			reEnrich, _ := cmd.Flags().GetBool("re-enrich")
 			promptVersion, _ := cmd.Flags().GetString("prompt-version")
@@ -494,7 +497,8 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().Bool("watch", false, "Watch for file changes and re-ingest automatically (local sources only)")
 	cmd.Flags().Bool("parallel", false, "Ingest multiple sources in parallel (default: sequential)")
 	cmd.Flags().String("description", "", "Human-readable description of this source (shown to agents via MCP)")
-	cmd.Flags().Bool("skip-enrichment", false, "Skip LLM chunk enrichment (faster ingestion)")
+	cmd.Flags().Bool("skip-enrichment", true, "Skip LLM chunk enrichment (default: true)")
+	cmd.Flags().Bool("enrich", false, "Enable LLM chunk enrichment during ingestion")
 	cmd.Flags().String("enrich-model", "", "Ollama model for chunk enrichment (default: qwen2.5:0.5b)")
 	cmd.Flags().Bool("re-enrich", false, "Re-run enrichment on already-ingested chunks, then re-embed")
 	cmd.Flags().String("prompt-version", "", "Enrichment prompt version: v1 (full rewrite), v2 (append keywords)")

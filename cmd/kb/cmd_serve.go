@@ -79,6 +79,7 @@ func serveCmd() *cobra.Command {
 				OllamaURL:      cfg.OllamaURL,
 				EnrichModel:    cfg.EnrichModel,
 				WorkerCount:    cfg.WorkerCount,
+				SkipEnrichment: true,
 				MaxChunkSize:   cfg.MaxChunkSize,
 				ChunkOverlap:   cfg.ChunkOverlap,
 			}

@@ -683,18 +683,127 @@ input:focus, textarea:focus, select:focus {
 .sources-page { display: none; }
 .sources-page.visible { display: block; }
 
-.sources-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text2);
+  margin-bottom: 10px;
 }
 
-.sources-header-title {
-  font-size: 12px;
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .provider-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .provider-grid { grid-template-columns: 1fr; }
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.provider-card:hover {
+  background: var(--surface2);
+  border-color: var(--text2);
+}
+
+.provider-card.active {
+  border-color: var(--text);
+  background: var(--surface2);
+}
+
+.provider-card-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--text);
+}
+
+.provider-card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.provider-card-name {
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
+}
+
+.provider-card-desc {
+  font-size: 9px;
+  color: var(--text2);
+  text-align: center;
+}
+
+.provider-form {
+  border: 1px solid var(--border);
+  padding: 12px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.provider-form.visible { display: block; }
+
+.provider-form-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+
+.provider-group {
+  margin-bottom: 12px;
+}
+
+.provider-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+
+.provider-group-header svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+
+.provider-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.provider-group-count {
+  font-size: 9px;
+  color: var(--text2);
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
 }
 
 .source-row {
@@ -766,23 +875,7 @@ input:focus, textarea:focus, select:focus {
   text-align: center;
 }
 
-/* Connect form */
-.connect-form {
-  border: 1px solid var(--border);
-  padding: 12px;
-  margin-top: 12px;
-  display: none;
-}
-
-.connect-form.visible { display: block; }
-
-.connect-form-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 10px;
-}
+/* (provider-form replaces old connect-form — see above) */
 
 .form-row {
   display: flex;
@@ -916,57 +1009,99 @@ input:focus, textarea:focus, select:focus {
 
   <!-- Sources page -->
   <div class="sources-page" id="sourcesPage">
-    <div class="sources-header">
-      <span class="sources-header-title">Connected Sources</span>
-      <button class="btn btn-sm" id="btnShowConnect" onclick="toggleConnectForm()">+ Connect</button>
-    </div>
-    <div id="sourcesList"></div>
 
-    <div class="connect-form" id="connectForm">
-      <div class="connect-form-title">Connect Source</div>
+    <!-- Provider cards -->
+    <div class="section-label">Add Connection</div>
+    <div class="provider-grid">
+      <div class="provider-card" id="cardGit" onclick="toggleProviderForm('git')">
+        <div class="provider-card-icon" id="iconGit"></div>
+        <span class="provider-card-name">GitHub</span>
+        <span class="provider-card-desc">Git repositories</span>
+      </div>
+      <div class="provider-card" id="cardSlack" onclick="toggleProviderForm('slack')">
+        <div class="provider-card-icon" id="iconSlack"></div>
+        <span class="provider-card-name">Slack</span>
+        <span class="provider-card-desc">Channels &amp; threads</span>
+      </div>
+      <div class="provider-card" id="cardConfluence" onclick="toggleProviderForm('confluence')">
+        <div class="provider-card-icon" id="iconConfluence"></div>
+        <span class="provider-card-name">Confluence</span>
+        <span class="provider-card-desc">Wiki pages &amp; spaces</span>
+      </div>
+    </div>
+
+    <!-- Git form -->
+    <div class="provider-form" id="formGit">
+      <div class="provider-form-title">Connect GitHub Repository</div>
       <div class="form-row">
-        <span class="form-label">Type</span>
-        <select class="form-input" id="connectType" onchange="updateConnectFields()">
-          <option value="git">Git</option>
-          <option value="slack">Slack</option>
-        </select>
+        <span class="form-label">Repo URL</span>
+        <input class="form-input" id="gitURL" type="text" placeholder="https://github.com/owner/repo">
       </div>
-      <!-- Git fields -->
-      <div id="gitFields">
-        <div class="form-row">
-          <span class="form-label">Repo URL</span>
-          <input class="form-input" id="gitURL" type="text" placeholder="https://github.com/owner/repo">
-        </div>
-        <div class="form-row">
-          <span class="form-label">Token</span>
-          <input class="form-input" id="gitToken" type="password" placeholder="ghp_... (optional for public repos)">
-        </div>
-        <div class="form-hint">Required for private repositories</div>
-        <div class="form-row">
-          <span class="form-label">Branch</span>
-          <input class="form-input" id="gitBranch" type="text" placeholder="main (optional)">
-        </div>
+      <div class="form-row">
+        <span class="form-label">Token</span>
+        <input class="form-input" id="gitToken" type="password" placeholder="ghp_... (optional for public repos)">
       </div>
-      <!-- Slack fields -->
-      <div id="slackFields" style="display:none">
-        <div class="form-row">
-          <span class="form-label">Bot Token</span>
-          <input class="form-input" id="slackToken" type="password" placeholder="xoxb-...">
-        </div>
-        <div class="form-row">
-          <span class="form-label">Channel IDs</span>
-          <input class="form-input" id="slackChannels" type="text" placeholder="C01ABC, C02DEF">
-        </div>
-        <div class="form-row">
-          <span class="form-label">Workspace</span>
-          <input class="form-input" id="slackWorkspace" type="text" placeholder="my-team (optional)">
-        </div>
+      <div class="form-hint">Required for private repositories</div>
+      <div class="form-row">
+        <span class="form-label">Branch</span>
+        <input class="form-input" id="gitBranch" type="text" placeholder="main (optional)">
       </div>
       <div class="form-actions">
-        <button class="btn" onclick="toggleConnectForm()">Cancel</button>
-        <button class="btn btn-primary" id="btnConnect" onclick="connectSource()">Connect</button>
+        <button class="btn" onclick="toggleProviderForm(null)">Cancel</button>
+        <button class="btn btn-primary" id="btnConnectGit" onclick="connectSource('git')">Connect</button>
       </div>
     </div>
+
+    <!-- Slack form -->
+    <div class="provider-form" id="formSlack">
+      <div class="provider-form-title">Connect Slack Workspace</div>
+      <div class="form-row">
+        <span class="form-label">Bot Token</span>
+        <input class="form-input" id="slackToken" type="password" placeholder="xoxb-...">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Channel IDs</span>
+        <input class="form-input" id="slackChannels" type="text" placeholder="C01ABC, C02DEF">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Workspace</span>
+        <input class="form-input" id="slackWorkspace" type="text" placeholder="my-team (optional)">
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="toggleProviderForm(null)">Cancel</button>
+        <button class="btn btn-primary" id="btnConnectSlack" onclick="connectSource('slack')">Connect</button>
+      </div>
+    </div>
+
+    <!-- Confluence form -->
+    <div class="provider-form" id="formConfluence">
+      <div class="provider-form-title">Connect Confluence Space</div>
+      <div class="form-row">
+        <span class="form-label">Base URL</span>
+        <input class="form-input" id="confBaseURL" type="text" placeholder="https://your-domain.atlassian.net/wiki">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Space Key</span>
+        <input class="form-input" id="confSpaceKey" type="text" placeholder="ENG">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Username</span>
+        <input class="form-input" id="confUsername" type="text" placeholder="user@example.com">
+      </div>
+      <div class="form-row">
+        <span class="form-label">API Token</span>
+        <input class="form-input" id="confApiToken" type="password" placeholder="Atlassian API token">
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="toggleProviderForm(null)">Cancel</button>
+        <button class="btn btn-primary" id="btnConnectConf" onclick="connectSource('confluence')">Connect</button>
+      </div>
+    </div>
+
+    <!-- Connected sources (grouped) -->
+    <div class="section-label">Connected Sources</div>
+    <div id="sourcesList"></div>
+
   </div>
 
 </div>
@@ -1389,6 +1524,7 @@ function loadSources() {
 }
 
 loadSources();
+initProviderIcons();
 
 // --- Tab navigation ---
 
@@ -1424,7 +1560,7 @@ function refreshSourcesList() {
   ]).then(([sources, jobs]) => {
     const list = $('sourcesList');
     if (!sources || sources.length === 0) {
-      list.innerHTML = '<div class="empty-state">No sources connected yet. Click "+ Connect" to add one.</div>';
+      list.innerHTML = '<div class="empty-state">No sources connected yet. Click a provider above to add one.</div>';
       stopPolling();
       return;
     }
@@ -1438,34 +1574,56 @@ function refreshSourcesList() {
       }
     }
 
-    let html = '';
+    // Group sources by type
+    const groups = {};
+    const groupOrder = ['git', 'slack', 'confluence'];
     for (const s of sources) {
-      const key = s.source_type + '/' + s.source_name;
-      const job = jobMap[key];
-      html += '<div class="source-row">';
-      html += '<span class="source-row-type">' + esc(s.source_type) + '</span>';
-      html += '<span class="source-row-name">' + esc(s.source_name) + '</span>';
+      const t = s.source_type || 'other';
+      if (!groups[t]) groups[t] = [];
+      groups[t].push(s);
+    }
 
-      if (job && job.state === 'running') {
-        const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
-        const label = job.total > 0 ? 'Batch ' + job.progress + '/' + job.total : 'Starting...';
-        html += '<span class="source-row-status">Syncing... ' + esc(label) +
-          '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div></span>';
-      } else if (job && job.state === 'failed') {
-        html += '<span class="source-row-status" style="color:var(--danger)">Failed: ' + esc(job.error) + '</span>';
-      } else if (s.last_ingest && s.last_ingest !== '0001-01-01T00:00:00Z') {
-        html += '<span class="source-row-status">Last ingested: ' + timeAgo(s.last_ingest) + '</span>';
-      } else if (job && job.state === 'completed') {
-        html += '<span class="source-row-status" style="color:var(--success)">Completed (' + job.added + ' added)</span>';
-      } else {
-        html += '<span class="source-row-status">Not yet ingested</span>';
-      }
+    // Render known types first, then any unknown
+    const allTypes = [...groupOrder.filter(t => groups[t]), ...Object.keys(groups).filter(t => groupOrder.indexOf(t) === -1)];
 
-      const syncing = job && job.state === 'running';
-      html += '<div class="source-row-actions">';
-      html += '<button class="btn-sm" ' + (syncing ? 'disabled' : '') + ' onclick="syncSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Sync</button>';
-      html += '<button class="btn-sm btn-danger-sm" onclick="deleteSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Delete</button>';
+    let html = '';
+    for (const type of allTypes) {
+      const items = groups[type];
+      html += '<div class="provider-group">';
+      html += '<div class="provider-group-header">';
+      html += providerIcon(type, 16);
+      html += '<span class="provider-group-label">' + esc(providerLabel(type)) + '</span>';
+      html += '<span class="provider-group-count">' + items.length + '</span>';
       html += '</div>';
+
+      for (const s of items) {
+        const key = s.source_type + '/' + s.source_name;
+        const job = jobMap[key];
+        html += '<div class="source-row">';
+        html += '<span class="source-row-name">' + esc(s.source_name) + '</span>';
+
+        if (job && job.state === 'running') {
+          const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
+          const label = job.total > 0 ? 'Batch ' + job.progress + '/' + job.total : 'Starting...';
+          html += '<span class="source-row-status">Syncing... ' + esc(label) +
+            '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div></span>';
+        } else if (job && job.state === 'failed') {
+          html += '<span class="source-row-status" style="color:var(--danger)">Failed: ' + esc(job.error) + '</span>';
+        } else if (s.last_ingest && s.last_ingest !== '0001-01-01T00:00:00Z') {
+          html += '<span class="source-row-status">Last ingested: ' + timeAgo(s.last_ingest) + '</span>';
+        } else if (job && job.state === 'completed') {
+          html += '<span class="source-row-status" style="color:var(--success)">Completed (' + job.added + ' added)</span>';
+        } else {
+          html += '<span class="source-row-status">Not yet ingested</span>';
+        }
+
+        const syncing = job && job.state === 'running';
+        html += '<div class="source-row-actions">';
+        html += '<button class="btn-sm" ' + (syncing ? 'disabled' : '') + ' onclick="syncSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Sync</button>';
+        html += '<button class="btn-sm btn-danger-sm" onclick="deleteSource(\'' + esc(s.source_type) + '\',\'' + esc(s.source_name) + '\')">Delete</button>';
+        html += '</div>';
+        html += '</div>';
+      }
       html += '</div>';
     }
     list.innerHTML = html;
@@ -1504,20 +1662,68 @@ function timeAgo(dateStr) {
   } catch { return dateStr; }
 }
 
-// --- Connect form ---
+// --- Provider icons ---
 
-function toggleConnectForm() {
-  $('connectForm').classList.toggle('visible');
+function providerIcon(type, size) {
+  const s = size || 32;
+  if (type === 'git') {
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
+  }
+  if (type === 'slack') {
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z"/></svg>';
+  }
+  if (type === 'confluence') {
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="currentColor"><path d="M.87 18.257c-.248.382-.53.875-.763 1.245a.764.764 0 0 0 .255 1.04l4.965 3.054a.764.764 0 0 0 1.058-.26c.199-.332.498-.86.782-1.36 1.547-2.735 3.088-2.39 5.898-1.16l4.063 1.78a.764.764 0 0 0 1.006-.392l2.14-5.135a.764.764 0 0 0-.385-1.003l-4.005-1.756c-5.77-2.528-10.735-2.122-14.014 3.947zm22.26-12.514c.249-.382.531-.875.764-1.245a.764.764 0 0 0-.256-1.04L18.673.404a.764.764 0 0 0-1.058.26c-.199.332-.498.86-.782 1.36-1.547 2.735-3.088 2.39-5.898 1.16L6.872 1.404a.764.764 0 0 0-1.006.391L3.726 6.93a.764.764 0 0 0 .385 1.003l4.005 1.756c5.77 2.528 10.735 2.122 14.014-3.946z"/></svg>';
+  }
+  // Generic fallback
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
 }
 
-function updateConnectFields() {
-  const connType = $('connectType').value;
-  $('gitFields').style.display = connType === 'git' ? '' : 'none';
-  $('slackFields').style.display = connType === 'slack' ? '' : 'none';
+function providerLabel(type) {
+  if (type === 'git') return 'GitHub';
+  if (type === 'slack') return 'Slack';
+  if (type === 'confluence') return 'Confluence';
+  return type;
 }
 
-async function connectSource() {
-  const connType = $('connectType').value;
+// Inject card icons on load
+function initProviderIcons() {
+  $('iconGit').innerHTML = providerIcon('git', 32);
+  $('iconSlack').innerHTML = providerIcon('slack', 32);
+  $('iconConfluence').innerHTML = providerIcon('confluence', 32);
+}
+
+// --- Provider form toggle ---
+
+let activeProvider = null;
+
+function toggleProviderForm(provider) {
+  const providers = ['git', 'slack', 'confluence'];
+  const formIds = { git: 'formGit', slack: 'formSlack', confluence: 'formConfluence' };
+  const cardIds = { git: 'cardGit', slack: 'cardSlack', confluence: 'cardConfluence' };
+
+  if (provider === activeProvider) {
+    // Toggle off
+    provider = null;
+  }
+
+  for (const p of providers) {
+    const form = $(formIds[p]);
+    const card = $(cardIds[p]);
+    if (p === provider) {
+      form.classList.add('visible');
+      card.classList.add('active');
+    } else {
+      form.classList.remove('visible');
+      card.classList.remove('active');
+    }
+  }
+  activeProvider = provider;
+}
+
+// --- Connect source ---
+
+async function connectSource(connType) {
   let config = {};
 
   if (connType === 'git') {
@@ -1537,9 +1743,25 @@ async function connectSource() {
     config.channels = channels;
     const workspace = $('slackWorkspace').value.trim();
     if (workspace) config.workspace = workspace;
+  } else if (connType === 'confluence') {
+    const baseURL = $('confBaseURL').value.trim();
+    const spaceKey = $('confSpaceKey').value.trim();
+    const username = $('confUsername').value.trim();
+    const apiToken = $('confApiToken').value.trim();
+    if (!baseURL) { showToast('Base URL is required'); return; }
+    if (!spaceKey) { showToast('Space Key is required'); return; }
+    if (!username) { showToast('Username is required'); return; }
+    if (!apiToken) { showToast('API Token is required'); return; }
+    config.base_url = baseURL;
+    config.space_key = spaceKey;
+    config.username = username;
+    config.api_token = apiToken;
   }
 
-  $('btnConnect').disabled = true;
+  const btnIds = { git: 'btnConnectGit', slack: 'btnConnectSlack', confluence: 'btnConnectConf' };
+  const btn = $(btnIds[connType]);
+  if (btn) btn.disabled = true;
+
   try {
     const resp = await fetch(SERVER_URL + '/v1/sources/connect', {
       method: 'POST',
@@ -1551,21 +1773,29 @@ async function connectSource() {
       showToast('Error: ' + text);
       return;
     }
-    toggleConnectForm();
-    // Clear form fields.
-    $('gitURL').value = '';
-    $('gitToken').value = '';
-    $('gitBranch').value = '';
-    $('slackToken').value = '';
-    $('slackChannels').value = '';
-    $('slackWorkspace').value = '';
+    toggleProviderForm(null);
+    // Clear form fields
+    if (connType === 'git') {
+      $('gitURL').value = '';
+      $('gitToken').value = '';
+      $('gitBranch').value = '';
+    } else if (connType === 'slack') {
+      $('slackToken').value = '';
+      $('slackChannels').value = '';
+      $('slackWorkspace').value = '';
+    } else if (connType === 'confluence') {
+      $('confBaseURL').value = '';
+      $('confSpaceKey').value = '';
+      $('confUsername').value = '';
+      $('confApiToken').value = '';
+    }
     showToast('Source connected, ingestion started');
     refreshSourcesList();
     loadSources(); // refresh status bar
   } catch (err) {
     showToast('Connection failed: ' + err.message);
   } finally {
-    $('btnConnect').disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 

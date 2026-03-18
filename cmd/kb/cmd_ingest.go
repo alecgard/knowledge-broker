@@ -163,7 +163,7 @@ func ingestCmd() *cobra.Command {
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
 							pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
-							pipeline.OnBatchDone = makeBatchFunc()
+							pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 							r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 							resultCh <- reIngestResult{src: src, result: r, err: err}
 						}(src)
@@ -198,11 +198,11 @@ func ingestCmd() *cobra.Command {
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
-						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
-						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
-						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, false)
-						pipeline.OnBatchDone = makeBatchFunc()
+						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
+						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
+						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+						pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						if err != nil {
 							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
@@ -386,7 +386,7 @@ func ingestCmd() *cobra.Command {
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
 						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
-						pipeline.OnBatchDone = makeBatchFunc()
+						pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						resultCh <- ingestResult{
 							name:        name,
@@ -446,11 +446,11 @@ func ingestCmd() *cobra.Command {
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
-					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
-					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
-					pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, false)
-					pipeline.OnBatchDone = makeBatchFunc()
+					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
+					pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
+					pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+					pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 					r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("ingest %s: %v", name, err))
@@ -538,9 +538,9 @@ func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
 	}
 }
 
-func makeBatchFunc() ingest.BatchFunc {
+func makeBatchFunc(label string) ingest.BatchFunc {
 	return func(batch, totalBatches, added int) {
-		fmt.Fprintf(os.Stderr, "\r  Stored batch %d/%d (%d fragments)\n", batch, totalBatches, added)
+		fmt.Fprintf(os.Stderr, "\r  [%s] Stored batch %d/%d (%d fragments)\n", label, batch, totalBatches, added)
 	}
 }
 

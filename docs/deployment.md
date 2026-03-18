@@ -166,6 +166,16 @@ Any developer can push their local repo to the shared instance:
 kb ingest --source ./my-project --remote http://server:8080 --description "Payment service"
 ```
 
+## Monitoring
+
+The HTTP server exposes a `/metrics` endpoint for Prometheus scraping. Use it with Prometheus + Grafana for dashboards and alerting.
+
+```bash
+curl http://server:8080/metrics
+```
+
+Available metrics include HTTP request counts and latency (`kb_http_requests_total`, `kb_http_request_duration_seconds`), query counts by mode (`kb_queries_total`), query latency by phase (`kb_query_duration_seconds`), and query errors (`kb_query_errors_total`).
+
 ## Network and security
 
 KB does not include authentication. For production deployments:

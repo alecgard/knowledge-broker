@@ -108,6 +108,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/export` | GET | Export fragment embeddings as JSON |
 | `/v1/version` | GET | Server version |
 | `/v1/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
 
 ### Query request format
 

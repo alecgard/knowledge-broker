@@ -1,0 +1,13 @@
+.git
+*.db
+*.db-wal
+*.db-shm
+kb
+tmp/
+eval/corpus/
+docs/
+.github/
+CLAUDE.md
+*.md
+!go.mod
+!go.sum

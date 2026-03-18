@@ -159,10 +159,10 @@ func ingestCmd() *cobra.Command {
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-							pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
-							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
-							pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
-							pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+							pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel)
+							pipeline.OnProgress = makeProgressFunc(srcLabel)
+							pipeline.OnEmbedding = makeEmbedFunc(srcLabel)
+							pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel)
 							pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 							r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 							resultCh <- reIngestResult{src: src, result: r, err: err}
@@ -198,10 +198,10 @@ func ingestCmd() *cobra.Command {
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
-						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
-						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
-						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel)
+						pipeline.OnProgress = makeProgressFunc(srcLabel)
+						pipeline.OnEmbedding = makeEmbedFunc(srcLabel)
+						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel)
 						pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						if err != nil {
@@ -382,10 +382,10 @@ func ingestCmd() *cobra.Command {
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
-						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
-						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
-						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel)
+						pipeline.OnProgress = makeProgressFunc(srcLabel)
+						pipeline.OnEmbedding = makeEmbedFunc(srcLabel)
+						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel)
 						pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						resultCh <- ingestResult{
@@ -446,10 +446,10 @@ func ingestCmd() *cobra.Command {
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
-					pipeline.OnProgress = makeProgressFunc(srcLabel, true)
-					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
-					pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
+					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel)
+					pipeline.OnProgress = makeProgressFunc(srcLabel)
+					pipeline.OnEmbedding = makeEmbedFunc(srcLabel)
+					pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel)
 					pipeline.OnBatchDone = makeBatchFunc(srcLabel)
 					r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 					if err != nil {
@@ -517,21 +517,13 @@ func ingestCmd() *cobra.Command {
 	return cmd
 }
 
-// makeProgressFunc returns a progress callback that writes an in-place
-// progress line to stderr. When prefixed is true (multiple sources running
-// in parallel), the source label is included so the user can tell which
-// source each line belongs to.
-func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
+func makeProgressFunc(label string) ingest.ProgressFunc {
 	return func(completed, total int) {
 		pct := 0
 		if total > 0 {
 			pct = completed * 100 / total
 		}
-		if prefixed {
-			fmt.Fprintf(os.Stderr, "\r  [%s] Extracting: %d/%d docs (%d%%)", label, completed, total, pct)
-		} else {
-			fmt.Fprintf(os.Stderr, "\r  Extracting: %d/%d docs (%d%%)", completed, total, pct)
-		}
+		fmt.Fprintf(os.Stderr, "\r  [%s] Extracting: %d/%d docs (%d%%)", label, completed, total, pct)
 		if completed == total {
 			fmt.Fprintln(os.Stderr)
 		}
@@ -544,12 +536,9 @@ func makeBatchFunc(label string) ingest.BatchFunc {
 	}
 }
 
-func makeScanCompleteFunc(label string, prefixed bool) ingest.ScanCompleteFunc {
+func makeScanCompleteFunc(label string) ingest.ScanCompleteFunc {
 	return func(total, changed, deleted, unchanged int) {
-		prefix := "  "
-		if prefixed {
-			prefix = fmt.Sprintf("  [%s] ", label)
-		}
+		prefix := fmt.Sprintf("  [%s] ", label)
 		if changed == 0 && deleted == 0 {
 			fmt.Fprintf(os.Stderr, "%sScanned %d files, all up to date\n", prefix, total)
 		} else {
@@ -559,12 +548,9 @@ func makeScanCompleteFunc(label string, prefixed bool) ingest.ScanCompleteFunc {
 	}
 }
 
-func makeEmbedFunc(label string, prefixed bool) ingest.EmbedFunc {
+func makeEmbedFunc(label string) ingest.EmbedFunc {
 	return func(batch, totalBatches, fragments int) {
-		prefix := "  "
-		if prefixed {
-			prefix = fmt.Sprintf("  [%s] ", label)
-		}
+		prefix := fmt.Sprintf("  [%s] ", label)
 		if totalBatches > 1 {
 			fmt.Fprintf(os.Stderr, "%sEmbedding batch %d/%d (%d fragments)...\n", prefix, batch, totalBatches, fragments)
 		} else {
@@ -573,17 +559,13 @@ func makeEmbedFunc(label string, prefixed bool) ingest.EmbedFunc {
 	}
 }
 
-func makeEmbedProgressFunc(label string, prefixed bool) ingest.EmbedProgressFunc {
+func makeEmbedProgressFunc(label string) ingest.EmbedProgressFunc {
 	return func(completed, total int) {
 		pct := 0
 		if total > 0 {
 			pct = completed * 100 / total
 		}
-		if prefixed {
-			fmt.Fprintf(os.Stderr, "\r  [%s] Embedding: %d/%d fragments (%d%%)", label, completed, total, pct)
-		} else {
-			fmt.Fprintf(os.Stderr, "\r  Embedding: %d/%d fragments (%d%%)", completed, total, pct)
-		}
+		fmt.Fprintf(os.Stderr, "\r  [%s] Embedding: %d/%d fragments (%d%%)", label, completed, total, pct)
 		if completed == total {
 			fmt.Fprintln(os.Stderr)
 		}

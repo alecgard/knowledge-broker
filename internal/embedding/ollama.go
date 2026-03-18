@@ -286,44 +286,54 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 		return results, nil
 	}
 
-	// Fetch uncached embeddings from Ollama.
-	var input any = uncachedTexts
-	if len(uncachedTexts) == 1 {
-		input = uncachedTexts[0]
-	}
-	vectors, err := o.embedWithRetry(ctx, input)
-	if err != nil {
-		// Batch request failed — fall back to embedding one-at-a-time so that
-		// a single oversized text doesn't fail the entire batch.
-		slog.Warn("batch embed failed, falling back to individual requests", "error", err, "count", len(uncachedTexts))
-		vectors = make([][]float32, len(uncachedTexts))
-		for i, text := range uncachedTexts {
-			vec, singleErr := o.embedWithRetry(ctx, text)
-			if singleErr != nil {
-				slog.Warn("skipping text that failed to embed", "error", singleErr, "text_length", len(text), "input_preview", truncateForLog(text))
-				vectors[i] = nil
-			} else if len(vec) > 0 {
-				vectors[i] = vec[0]
-			}
+	// Fetch uncached embeddings from Ollama in sub-batches. Ollama processes
+	// texts sequentially, so sending thousands at once blocks for too long
+	// and prevents progress reporting or timely cancellation.
+	const embedSubBatchSize = 200
+
+	vectors := make([][]float32, len(uncachedTexts))
+	for start := 0; start < len(uncachedTexts); start += embedSubBatchSize {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 
-		// Place results and cache successful ones.
-		for j, idx := range uncachedIndices {
-			results[idx] = vectors[j]
-			if vectors[j] != nil {
-				o.cachePut(embCacheKey(uncachedTexts[j]), vectors[j])
-			}
+		end := start + embedSubBatchSize
+		if end > len(uncachedTexts) {
+			end = len(uncachedTexts)
 		}
-		return results, nil
-	}
-	if len(vectors) != len(uncachedTexts) {
-		return nil, fmt.Errorf("ollama embed batch: expected %d embeddings, got %d", len(uncachedTexts), len(vectors))
+		chunk := uncachedTexts[start:end]
+
+		var input any = chunk
+		if len(chunk) == 1 {
+			input = chunk[0]
+		}
+		chunkVecs, err := o.embedWithRetry(ctx, input)
+		if err != nil {
+			// Sub-batch failed — fall back to one-at-a-time for this chunk.
+			slog.Warn("sub-batch embed failed, falling back to individual requests", "error", err, "count", len(chunk))
+			for i, text := range chunk {
+				vec, singleErr := o.embedWithRetry(ctx, text)
+				if singleErr != nil {
+					slog.Warn("skipping text that failed to embed", "error", singleErr, "text_length", len(text), "input_preview", truncateForLog(text))
+					vectors[start+i] = nil
+				} else if len(vec) > 0 {
+					vectors[start+i] = vec[0]
+				}
+			}
+			continue
+		}
+		if len(chunkVecs) != len(chunk) {
+			return nil, fmt.Errorf("ollama embed batch: expected %d embeddings, got %d", len(chunk), len(chunkVecs))
+		}
+		copy(vectors[start:end], chunkVecs)
 	}
 
 	// Place results and cache them.
 	for j, idx := range uncachedIndices {
 		results[idx] = vectors[j]
-		o.cachePut(embCacheKey(uncachedTexts[j]), vectors[j])
+		if vectors[j] != nil {
+			o.cachePut(embCacheKey(uncachedTexts[j]), vectors[j])
+		}
 	}
 
 	return results, nil

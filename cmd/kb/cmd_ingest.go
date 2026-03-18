@@ -162,6 +162,7 @@ func ingestCmd() *cobra.Command {
 							pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
+							pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
 							pipeline.OnBatchDone = makeBatchFunc()
 							r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 							resultCh <- reIngestResult{src: src, result: r, err: err}
@@ -200,6 +201,7 @@ func ingestCmd() *cobra.Command {
 						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
+						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, false)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						if err != nil {
@@ -383,6 +385,7 @@ func ingestCmd() *cobra.Command {
 						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
+						pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, true)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						resultCh <- ingestResult{
@@ -446,6 +449,7 @@ func ingestCmd() *cobra.Command {
 					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
+					pipeline.OnEmbedProgress = makeEmbedProgressFunc(srcLabel, false)
 					pipeline.OnBatchDone = makeBatchFunc()
 					r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 					if err != nil {
@@ -565,6 +569,23 @@ func makeEmbedFunc(label string, prefixed bool) ingest.EmbedFunc {
 			fmt.Fprintf(os.Stderr, "%sEmbedding batch %d/%d (%d fragments)...\n", prefix, batch, totalBatches, fragments)
 		} else {
 			fmt.Fprintf(os.Stderr, "%sEmbedding %d fragments...\n", prefix, fragments)
+		}
+	}
+}
+
+func makeEmbedProgressFunc(label string, prefixed bool) ingest.EmbedProgressFunc {
+	return func(completed, total int) {
+		pct := 0
+		if total > 0 {
+			pct = completed * 100 / total
+		}
+		if prefixed {
+			fmt.Fprintf(os.Stderr, "\r  [%s] Embedding: %d/%d fragments (%d%%)", label, completed, total, pct)
+		} else {
+			fmt.Fprintf(os.Stderr, "\r  Embedding: %d/%d fragments (%d%%)", completed, total, pct)
+		}
+		if completed == total {
+			fmt.Fprintln(os.Stderr)
 		}
 	}
 }

@@ -44,6 +44,10 @@ type ScanCompleteFunc func(total, changed, deleted, unchanged int)
 // batch is 1-indexed, totalBatches is the total, fragments is the count.
 type EmbedFunc func(batch, totalBatches, fragments int)
 
+// EmbedProgressFunc is called periodically during embedding to report progress.
+// completed and total are fragment counts within the current pipeline batch.
+type EmbedProgressFunc func(completed, total int)
+
 // Pipeline orchestrates the ingestion of documents.
 type Pipeline struct {
 	store       store.Store
@@ -52,10 +56,11 @@ type Pipeline struct {
 	enrichment  *EnrichmentConfig
 	workers     int
 	logger      *slog.Logger
-	OnProgress      ProgressFunc
-	OnBatchDone     BatchFunc
-	OnScanComplete  ScanCompleteFunc
-	OnEmbedding     EmbedFunc
+	OnProgress       ProgressFunc
+	OnBatchDone      BatchFunc
+	OnScanComplete   ScanCompleteFunc
+	OnEmbedding      EmbedFunc
+	OnEmbedProgress  EmbedProgressFunc
 	BatchSize   int
 }
 
@@ -332,41 +337,61 @@ func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFrag
 	}
 }
 
+// embedSubBatchSize is the number of fragments sent to the embedder per call.
+// Keeps individual Ollama requests small enough for timely cancellation and
+// progress reporting.
+const embedSubBatchSize = 200
+
 // embedBatch embeds all fragments and returns only those with successful
 // embeddings. Uses enriched content if available, raw otherwise.
+// Fragments are sent to the embedder in sub-batches of embedSubBatchSize
+// so progress can be reported between calls.
 func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragment) ([]model.SourceFragment, error) {
-	texts := make([]string, len(fragments))
-	for i, f := range fragments {
-		texts[i] = f.Content() // enriched if available, raw otherwise
-	}
+	total := len(fragments)
+	var result []model.SourceFragment
+	embedded := 0
 
-	embeddings, err := p.embedder.EmbedBatch(ctx, texts)
-	if err != nil {
-		return nil, fmt.Errorf("embed batch: %w", err)
-	}
-
-	// If the context was cancelled, the embedder may return nil embeddings
-	// for every fragment. Return early instead of warning for each one.
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	embModel := ""
-	if oe, ok := p.embedder.(*embedding.OllamaEmbedder); ok {
-		_ = oe // TODO: expose model name from embedder
-	}
-
-	result := fragments[:0]
-	for i := range fragments {
-		if embeddings[i] == nil {
-			p.logger.Warn("skipping fragment with nil embedding",
-				"path", fragments[i].SourcePath, "id", fragments[i].ID)
-			continue
+	for start := 0; start < total; start += embedSubBatchSize {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		fragments[i].Embedding = embeddings[i]
-		fragments[i].EmbeddingModel = embModel
-		result = append(result, fragments[i])
+
+		end := start + embedSubBatchSize
+		if end > total {
+			end = total
+		}
+		chunk := fragments[start:end]
+
+		texts := make([]string, len(chunk))
+		for i, f := range chunk {
+			texts[i] = f.Content()
+		}
+
+		embeddings, err := p.embedder.EmbedBatch(ctx, texts)
+		if err != nil {
+			return nil, fmt.Errorf("embed batch: %w", err)
+		}
+
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		for i := range chunk {
+			if embeddings[i] == nil {
+				p.logger.Warn("skipping fragment with nil embedding",
+					"path", chunk[i].SourcePath, "id", chunk[i].ID)
+				continue
+			}
+			chunk[i].Embedding = embeddings[i]
+			result = append(result, chunk[i])
+		}
+
+		embedded += len(chunk)
+		if p.OnEmbedProgress != nil {
+			p.OnEmbedProgress(embedded, total)
+		}
 	}
+
 	return result, nil
 }
 

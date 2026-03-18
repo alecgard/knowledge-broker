@@ -351,7 +351,7 @@ func ingestCmd() *cobra.Command {
 					name        string
 					connType    string
 					description string
-					config      map[string]string
+					conn        connector.Connector
 					result      *ingest.Result
 					err         error
 				}
@@ -366,19 +366,6 @@ func ingestCmd() *cobra.Command {
 						name := conn.SourceName()
 						fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
 
-						srcConfig := conn.Config(model.SourceModeLocal)
-						srcConfig["mode"] = model.SourceModeLocal
-
-						// Register source immediately so it appears in kb sources list.
-						if regErr := s.RegisterSource(ctx, model.Source{
-							SourceType:  conn.Name(),
-							SourceName:  name,
-							Description: description,
-							Config:      srcConfig,
-						}); regErr != nil {
-							logger.Warn("failed to register source", "error", regErr)
-						}
-
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
@@ -392,7 +379,7 @@ func ingestCmd() *cobra.Command {
 							name:        name,
 							connType:    conn.Name(),
 							description: description,
-							config:      srcConfig,
+							conn:        conn,
 							result:      r,
 							err:         err,
 						}
@@ -413,35 +400,24 @@ func ingestCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
 						ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
 
-					// Update last_ingest timestamp on success.
+					// Save config after successful ingest so headCommit is populated.
+					srcConfig := ir.conn.Config(model.SourceModeLocal)
+					srcConfig["mode"] = model.SourceModeLocal
 					now := time.Now()
 					if regErr := s.RegisterSource(ctx, model.Source{
 						SourceType:  ir.connType,
 						SourceName:  ir.name,
 						Description: ir.description,
-						Config:      ir.config,
+						Config:      srcConfig,
 						LastIngest:  &now,
 					}); regErr != nil {
-						logger.Warn("failed to update source timestamp", "error", regErr)
+						logger.Warn("failed to update source", "error", regErr)
 					}
 				}
 			} else {
 				for _, conn := range connectors {
 					name := conn.SourceName()
 					fmt.Fprintf(os.Stderr, "Ingesting %s/%s...\n", conn.Name(), name)
-
-					srcConfig := conn.Config(model.SourceModeLocal)
-					srcConfig["mode"] = model.SourceModeLocal
-
-					// Register source immediately so it appears in kb sources list.
-					if regErr := s.RegisterSource(ctx, model.Source{
-						SourceType:  conn.Name(),
-						SourceName:  name,
-						Description: description,
-						Config:      srcConfig,
-					}); regErr != nil {
-						logger.Warn("failed to register source", "error", regErr)
-					}
 
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
@@ -460,7 +436,9 @@ func ingestCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  %s: %d added, %d deleted, %d skipped, %d errors\n",
 						name, r.Added, r.Deleted, r.Skipped, r.Errors)
 
-					// Update last_ingest timestamp on success.
+					// Save config after successful ingest so headCommit is populated.
+					srcConfig := conn.Config(model.SourceModeLocal)
+					srcConfig["mode"] = model.SourceModeLocal
 					now := time.Now()
 					if regErr := s.RegisterSource(ctx, model.Source{
 						SourceType:  conn.Name(),
@@ -469,7 +447,7 @@ func ingestCmd() *cobra.Command {
 						Config:      srcConfig,
 						LastIngest:  &now,
 					}); regErr != nil {
-						logger.Warn("failed to update source timestamp", "error", regErr)
+						logger.Warn("failed to update source", "error", regErr)
 					}
 				}
 			}

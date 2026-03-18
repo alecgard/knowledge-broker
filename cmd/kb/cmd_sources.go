@@ -31,10 +31,12 @@ func sourcesCmd() *cobra.Command {
 }
 
 func sourcesListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List registered sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			verbose, _ := cmd.Flags().GetBool("verbose")
+
 			remote, _ := cmd.Flags().GetString("remote")
 			if remote != "" {
 				remote = strings.TrimRight(remote, "/")
@@ -91,10 +93,22 @@ func sourcesListCmd() *cobra.Command {
 				}
 				fmt.Printf("%-14s %-30s %10d %10s  %-19s  %s\n",
 					src.SourceType, src.SourceName, count, formatSize(size), lastIngest, src.Description)
+				if verbose && len(src.Config) > 0 {
+					keys := make([]string, 0, len(src.Config))
+					for k := range src.Config {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					for _, k := range keys {
+						fmt.Printf("  %s=%s\n", k, src.Config[k])
+					}
+				}
 			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("verbose", "v", false, "Show source config details")
+	return cmd
 }
 
 func sourcesDescribeCmd() *cobra.Command {

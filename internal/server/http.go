@@ -12,7 +12,6 @@ import (
 
 	"github.com/knowledge-broker/knowledge-broker/internal/connector"
 	"github.com/knowledge-broker/knowledge-broker/internal/embedding"
-	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
 	"github.com/knowledge-broker/knowledge-broker/internal/extractor"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
@@ -455,6 +454,11 @@ func (s *HTTPServer) handleDeleteSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Cancel any running ingestion for this source.
+	if s.jobs != nil {
+		s.jobs.Cancel(req.SourceType, req.SourceName)
+	}
+
 	ctx := r.Context()
 
 	// Count fragments before deletion.
@@ -478,6 +482,8 @@ func (s *HTTPServer) handleDeleteSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.logger.Info("source deleted", "source", req.SourceType+"/"+req.SourceName, "fragments", fragCount)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":            "ok",
@@ -500,7 +506,7 @@ func (s *HTTPServer) handleSourcesImport(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 	for i := range sources {
-		sources[i].LastIngest = time.Time{}
+		sources[i].LastIngest = nil
 		if err := s.store.RegisterSource(ctx, sources[i]); err != nil {
 			s.logger.Error("register source failed", "error", err)
 			http.Error(w, fmt.Sprintf("register source failed: %v", err), http.StatusInternalServerError)
@@ -577,23 +583,6 @@ func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Validate required fields per source type.
-	switch req.SourceType {
-	case "slack":
-		if req.Config["token"] == "" || req.Config["channels"] == "" {
-			http.Error(w, "slack requires token and channels", http.StatusBadRequest)
-			return
-		}
-	case "git":
-		if req.Config["url"] == "" {
-			http.Error(w, "git requires url", http.StatusBadRequest)
-			return
-		}
-	default:
-		http.Error(w, fmt.Sprintf("unknown source_type: %s", req.SourceType), http.StatusBadRequest)
-		return
-	}
-
 	// Set local mode so tokens are persisted.
 	if req.Config == nil {
 		req.Config = make(map[string]string)
@@ -601,6 +590,7 @@ func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request)
 	req.Config["mode"] = model.SourceModeLocal
 
 	// Create connector to validate config and derive source name.
+	// Validation of required fields is handled by each connector's factory.
 	src := model.Source{
 		SourceType: req.SourceType,
 		Config:     req.Config,
@@ -624,7 +614,7 @@ func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request)
 	storedSrc.Config = storedCfg
 
 	// Atomically claim the job slot — reject if already running.
-	jobID, ok := s.jobs.Start(src.SourceType, src.SourceName)
+	jobID, jobCtx, ok := s.jobs.Start(s.serverCtx, src.SourceType, src.SourceName)
 	if !ok {
 		http.Error(w, "ingestion already running for this source", http.StatusConflict)
 		return
@@ -639,7 +629,7 @@ func (s *HTTPServer) handleConnectSource(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Start background ingestion (with token still in src.Config for the connector).
-	go s.runIngestion(s.serverCtx, src, jobID)
+	go s.runIngestion(jobCtx, src, jobID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -676,12 +666,12 @@ func (s *HTTPServer) handleSyncSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID, ok := s.jobs.Start(src.SourceType, src.SourceName)
+	jobID, jobCtx, ok := s.jobs.Start(s.serverCtx, src.SourceType, src.SourceName)
 	if !ok {
 		http.Error(w, "ingestion already running for this source", http.StatusConflict)
 		return
 	}
-	go s.runIngestion(s.serverCtx, *src, jobID)
+	go s.runIngestion(jobCtx, *src, jobID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -712,17 +702,17 @@ func (s *HTTPServer) runIngestion(ctx context.Context, src model.Source, jobID s
 	}
 
 	pipeline := ingest.NewPipeline(s.store, s.embedder, s.extractors, workers, s.logger)
-	pipeline.OnProgress = func(completed, total int) {
-		s.jobs.Update(jobID, completed, total)
+	pipeline.OnBatchDone = func(batch, totalBatches, added int) {
+		s.jobs.Update(jobID, batch, totalBatches)
 	}
 
-	// Configure enrichment if available.
-	if s.pipelineCfg != nil && !s.pipelineCfg.SkipEnrichment && s.pipelineCfg.EnrichModel != "" && s.httpClient != nil {
-		enricher := enrich.NewOllamaEnricher(s.pipelineCfg.OllamaURL, s.pipelineCfg.EnrichModel, "", s.httpClient, s.logger)
-		pipeline.SetEnrichment(ingest.EnrichmentConfig{Enricher: enricher})
-	}
+	// Skip enrichment for UI-initiated ingestion — it's slow and the user
+	// can re-ingest with enrichment from the CLI if needed.
 
 	result, err := pipeline.Run(ctx, conn)
+	if ctx.Err() != nil {
+		s.logger.Info("ingestion cancelled", "source", src.SourceType+"/"+src.SourceName, "job", jobID)
+	}
 	if result == nil {
 		s.jobs.Finish(jobID, 0, 0, 0, err)
 	} else {
@@ -730,7 +720,8 @@ func (s *HTTPServer) runIngestion(ctx context.Context, src model.Source, jobID s
 	}
 
 	if err == nil {
-		src.LastIngest = time.Now()
+		now := time.Now()
+		src.LastIngest = &now
 		if regErr := s.store.RegisterSource(ctx, src); regErr != nil {
 			s.logger.Error("update source last_ingest failed", "error", regErr)
 		}

@@ -21,6 +21,9 @@ const SourceTypeGit = "git"
 
 func init() {
 	Register(SourceTypeGit, func(config map[string]string) (Connector, error) {
+		if config["url"] == "" {
+			return nil, fmt.Errorf("git source missing 'url' in config")
+		}
 		c := NewGitConnector(config["url"], config["branch"], config["github_client_id"])
 		c.lastCommit = config["last_commit"]
 		c.token = config["token"]

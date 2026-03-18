@@ -927,7 +927,7 @@ input:focus, textarea:focus, select:focus {
       <div class="form-row">
         <span class="form-label">Type</span>
         <select class="form-input" id="connectType" onchange="updateConnectFields()">
-          <option value="git">GitHub</option>
+          <option value="git">Git</option>
           <option value="slack">Slack</option>
         </select>
       </div>
@@ -1448,7 +1448,7 @@ function refreshSourcesList() {
 
       if (job && job.state === 'running') {
         const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
-        const label = job.total > 0 ? job.progress + '/' + job.total + ' docs' : 'Starting...';
+        const label = job.total > 0 ? 'Batch ' + job.progress + '/' + job.total : 'Starting...';
         html += '<span class="source-row-status">Syncing... ' + esc(label) +
           '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div></span>';
       } else if (job && job.state === 'failed') {

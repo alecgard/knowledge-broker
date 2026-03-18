@@ -173,7 +173,8 @@ func ingestCmd() *cobra.Command {
 							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", ir.src.SourceType, ir.src.SourceName, ir.err))
 							continue
 						}
-						ir.src.LastIngest = time.Now()
+						now := time.Now()
+						ir.src.LastIngest = &now
 						if regErr := s.RegisterSource(ctx, ir.src); regErr != nil {
 							logger.Warn("failed to update source timestamp", "error", regErr)
 						}
@@ -198,7 +199,8 @@ func ingestCmd() *cobra.Command {
 							errs = append(errs, fmt.Sprintf("ingest %s/%s: %v", src.SourceType, src.SourceName, err))
 							continue
 						}
-						src.LastIngest = time.Now()
+						now := time.Now()
+						src.LastIngest = &now
 						if regErr := s.RegisterSource(ctx, src); regErr != nil {
 							logger.Warn("failed to update source timestamp", "error", regErr)
 						}
@@ -277,12 +279,13 @@ func ingestCmd() *cobra.Command {
 
 							srcConfig := conn.Config(model.SourceModePush)
 							srcConfig["mode"] = model.SourceModePush
+							now := time.Now()
 							if regErr := s.RegisterSource(ctx, model.Source{
 								SourceType:  conn.Name(),
 								SourceName:  name,
 								Description: description,
 								Config:      srcConfig,
-								LastIngest:  time.Now(),
+								LastIngest:  &now,
 							}); regErr != nil {
 								logger.Warn("failed to register source", "error", regErr)
 							}
@@ -307,12 +310,13 @@ func ingestCmd() *cobra.Command {
 
 						srcConfig := conn.Config(model.SourceModePush)
 						srcConfig["mode"] = model.SourceModePush
+						now := time.Now()
 						if regErr := s.RegisterSource(ctx, model.Source{
 							SourceType:  conn.Name(),
 							SourceName:  name,
 							Description: description,
 							Config:      srcConfig,
-							LastIngest:  time.Now(),
+							LastIngest:  &now,
 						}); regErr != nil {
 							logger.Warn("failed to register source", "error", regErr)
 						}
@@ -398,12 +402,13 @@ func ingestCmd() *cobra.Command {
 						ir.name, ir.result.Added, ir.result.Deleted, ir.result.Skipped, ir.result.Errors)
 
 					// Update last_ingest timestamp on success.
+					now := time.Now()
 					if regErr := s.RegisterSource(ctx, model.Source{
 						SourceType:  ir.connType,
 						SourceName:  ir.name,
 						Description: ir.description,
 						Config:      ir.config,
-						LastIngest:  time.Now(),
+						LastIngest:  &now,
 					}); regErr != nil {
 						logger.Warn("failed to update source timestamp", "error", regErr)
 					}
@@ -441,12 +446,13 @@ func ingestCmd() *cobra.Command {
 						name, r.Added, r.Deleted, r.Skipped, r.Errors)
 
 					// Update last_ingest timestamp on success.
+					now := time.Now()
 					if regErr := s.RegisterSource(ctx, model.Source{
 						SourceType:  conn.Name(),
 						SourceName:  name,
 						Description: description,
 						Config:      srcConfig,
-						LastIngest:  time.Now(),
+						LastIngest:  &now,
 					}); regErr != nil {
 						logger.Warn("failed to update source timestamp", "error", regErr)
 					}

@@ -695,6 +695,14 @@ func (s *SQLiteStore) GetFragmentsBySource(ctx context.Context, sourceName strin
 	return results, rows.Err()
 }
 
+// formatTimePtr formats a *time.Time as RFC3339 UTC, or nil (SQL NULL) if unset.
+func formatTimePtr(t *time.Time) interface{} {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // RegisterSource inserts or updates a registered source.
 func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) error {
 	configJSON, err := json.Marshal(src.Config)
@@ -709,7 +717,7 @@ func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) erro
 				config = excluded.config,
 				last_ingest = excluded.last_ingest,
 				description = excluded.description
-		`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339), src.Description)
+		`, src.SourceType, src.SourceName, string(configJSON), formatTimePtr(src.LastIngest), src.Description)
 	} else {
 		_, err = s.db.ExecContext(ctx, `
 			INSERT INTO sources (source_type, source_name, config, last_ingest)
@@ -717,7 +725,7 @@ func (s *SQLiteStore) RegisterSource(ctx context.Context, src model.Source) erro
 			ON CONFLICT(source_type, source_name) DO UPDATE SET
 				config = excluded.config,
 				last_ingest = excluded.last_ingest
-		`, src.SourceType, src.SourceName, string(configJSON), src.LastIngest.UTC().Format(time.RFC3339))
+		`, src.SourceType, src.SourceName, string(configJSON), formatTimePtr(src.LastIngest))
 	}
 	if err != nil {
 		return fmt.Errorf("register source: %w", err)
@@ -746,7 +754,9 @@ func (s *SQLiteStore) ListSources(ctx context.Context) ([]model.Source, error) {
 			return nil, fmt.Errorf("unmarshal source config: %w", err)
 		}
 		if lastIngest.Valid {
-			src.LastIngest, _ = time.Parse(time.RFC3339, lastIngest.String)
+			if t, err := time.Parse(time.RFC3339, lastIngest.String); err == nil {
+				src.LastIngest = &t
+			}
 		}
 		sources = append(sources, src)
 	}
@@ -855,7 +865,9 @@ func (s *SQLiteStore) GetSource(ctx context.Context, sourceType, sourceName stri
 		return nil, fmt.Errorf("unmarshal source config: %w", err)
 	}
 	if lastIngest.Valid {
-		src.LastIngest, _ = time.Parse(time.RFC3339, lastIngest.String)
+		if t, err := time.Parse(time.RFC3339, lastIngest.String); err == nil {
+			src.LastIngest = &t
+		}
 	}
 	return &src, nil
 }

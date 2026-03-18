@@ -607,11 +607,12 @@ func TestHandleUpdateSource(t *testing.T) {
 	srv := NewHTTPServer(nil, emb, st, nil)
 
 	// Register a source first.
+	httpNow := time.Now().UTC()
 	if err := st.RegisterSource(context.Background(), model.Source{
 		SourceType: "filesystem",
 		SourceName: "my-docs",
 		Config:     map[string]string{"path": "/docs"},
-		LastIngest: time.Now().UTC(),
+		LastIngest: &httpNow,
 	}); err != nil {
 		t.Fatalf("RegisterSource: %v", err)
 	}
@@ -1183,7 +1184,7 @@ func TestHandleConnectSourceDuplicateWhileRunning(t *testing.T) {
 	srv, _ := newTestServerWithPipeline(t)
 
 	// Pre-start a job to simulate running ingestion.
-	srv.jobs.Start("git", "test/repo")
+	srv.jobs.Start(context.Background(), "git", "test/repo")
 
 	body, _ := json.Marshal(connectRequest{
 		SourceType: "git",
@@ -1252,8 +1253,8 @@ func TestHandleSyncSourceNotFound(t *testing.T) {
 func TestHandleListJobs(t *testing.T) {
 	srv, _ := newTestServerWithPipeline(t)
 
-	srv.jobs.Start("git", "repo1")
-	srv.jobs.Start("slack", "workspace")
+	srv.jobs.Start(context.Background(), "git", "repo1")
+	srv.jobs.Start(context.Background(), "slack", "workspace")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/sources/jobs", nil)
 	rec := httptest.NewRecorder()

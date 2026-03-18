@@ -2,11 +2,11 @@ package query
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -309,8 +309,8 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 		return nil, fmt.Errorf("llm synthesis: %w", err)
 	}
 
-	// Parse the response for metadata.
-	answer := parseResponse(fullResponse, fragments)
+	// Build the answer with server-computed confidence and sources.
+	answer := buildAnswer(fullResponse, fragments)
 
 	// Cache the result.
 	e.cache.Put(lastMsg.Content, req.Concise, fragments, answer, ctx)
@@ -319,51 +319,123 @@ func (e *Engine) Query(ctx context.Context, req model.QueryRequest, onText func(
 	return answer, nil
 }
 
-const metaStart = "---KB_META---"
-const metaEnd = "---KB_META_END---"
+// citationRe matches [fragment_id] citations in LLM prose.
+var citationRe = regexp.MustCompile(`\[([a-f0-9]{8,})\]`)
 
-// parseResponse extracts the answer text and metadata JSON from the LLM response.
-func parseResponse(response string, fragments []model.SourceFragment) *model.Answer {
-	answer := &model.Answer{
-		Content: response,
-		Sources: make([]model.SourceRef, 0, len(fragments)),
+// parseCitations extracts fragment IDs cited in the LLM prose text.
+func parseCitations(text string) []string {
+	matches := citationRe.FindAllStringSubmatch(text, -1)
+	seen := make(map[string]struct{})
+	var ids []string
+	for _, m := range matches {
+		id := m[1]
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// computeConfidence computes server-side confidence from the given fragments,
+// using the same logic as QueryRaw.
+func computeConfidence(fragments []model.SourceFragment) model.Confidence {
+	// Count distinct source names for corroboration.
+	sourceNames := make(map[string]struct{})
+	for _, f := range fragments {
+		sourceNames[f.SourceName] = struct{}{}
+	}
+	corroboration := ComputeCorroboration(len(sourceNames))
+
+	// Average per-fragment signals.
+	var freshness, consistency, authority float64
+	for _, f := range fragments {
+		freshness += ComputeFreshness(f.ContentDate, f.IngestedAt, f.FileType)
+		consistency += ComputeConsistency(f.ConfidenceAdj)
+		authority += ComputeAuthority(f.FileType)
+	}
+	n := float64(len(fragments))
+	if n > 0 {
+		freshness /= n
+		consistency /= n
+		authority /= n
 	}
 
-	// Try to extract the metadata block.
-	startIdx := strings.LastIndex(response, metaStart)
-	endIdx := strings.LastIndex(response, metaEnd)
+	breakdown := model.ConfidenceBreakdown{
+		Freshness:     math.Round(freshness*100) / 100,
+		Corroboration: corroboration,
+		Consistency:   math.Round(consistency*100) / 100,
+		Authority:     math.Round(authority*100) / 100,
+	}
 
-	if startIdx >= 0 && endIdx > startIdx {
-		jsonStr := strings.TrimSpace(response[startIdx+len(metaStart) : endIdx])
-		answer.Content = strings.TrimSpace(response[:startIdx])
+	return model.Confidence{
+		Overall:   ComputeOverallTrust(breakdown, model.DefaultTrustWeights()),
+		Breakdown: breakdown,
+	}
+}
 
-		var meta struct {
-			Confidence     model.Confidence      `json:"confidence"`
-			Sources        []model.SourceRef     `json:"sources"`
-			Contradictions []model.Contradiction `json:"contradictions"`
-		}
-		if err := json.Unmarshal([]byte(jsonStr), &meta); err == nil {
-			answer.Confidence = meta.Confidence
-			if len(meta.Sources) > 0 {
-				answer.Sources = meta.Sources
+// buildAnswer constructs an Answer from the LLM prose and retrieved fragments.
+// Confidence is computed server-side. Sources are derived from cited fragments
+// when citations are present, otherwise from all retrieved fragments.
+// If the LLM response contains a legacy ---KB_META--- block, it is stripped.
+func buildAnswer(response string, fragments []model.SourceFragment) *model.Answer {
+	// Strip legacy metadata block if present (backward compat).
+	content := response
+	if startIdx := strings.LastIndex(content, "---KB_META---"); startIdx >= 0 {
+		content = strings.TrimSpace(content[:startIdx])
+	}
+
+	// Parse citations from LLM prose.
+	cited := parseCitations(content)
+
+	// Build a lookup of retrieved fragments by ID.
+	fragByID := make(map[string]model.SourceFragment, len(fragments))
+	for _, f := range fragments {
+		fragByID[f.ID] = f
+	}
+
+	// Build sources list from cited fragments if any, else all fragments.
+	var sources []model.SourceRef
+	var confidenceFragments []model.SourceFragment
+	if len(cited) > 0 {
+		seen := make(map[string]struct{})
+		for _, id := range cited {
+			if f, ok := fragByID[id]; ok {
+				if _, dup := seen[id]; !dup {
+					seen[id] = struct{}{}
+					sources = append(sources, model.SourceRef{
+						FragmentID: f.ID,
+						SourceURI:  f.SourceURI,
+						SourcePath: f.SourcePath,
+						SourceName: f.SourceName,
+					})
+					confidenceFragments = append(confidenceFragments, f)
+				}
 			}
-			answer.Contradictions = meta.Contradictions
 		}
 	}
 
-	// If no sources from metadata, include all retrieved fragments as sources.
-	if len(answer.Sources) == 0 {
+	// Fall back to all retrieved fragments if no valid citations found.
+	if len(sources) == 0 {
 		for _, f := range fragments {
-			answer.Sources = append(answer.Sources, model.SourceRef{
+			sources = append(sources, model.SourceRef{
 				FragmentID: f.ID,
 				SourceURI:  f.SourceURI,
 				SourcePath: f.SourcePath,
 				SourceName: f.SourceName,
 			})
 		}
+		confidenceFragments = fragments
 	}
 
-	return answer
+	// Compute confidence server-side from the fragments.
+	confidence := computeConfidence(confidenceFragments)
+
+	return &model.Answer{
+		Content:    content,
+		Confidence: confidence,
+		Sources:    sources,
+	}
 }
 
 // combineEmbeddings blends two embedding vectors: result = normalize(a + b * weight).

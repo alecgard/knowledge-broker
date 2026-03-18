@@ -204,16 +204,13 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 			}
 			p.logger.Debug("embedding fragments", "batch", batchNum, "batches", len(batches), "fragments", len(fragments))
 			embedStart := time.Now()
-			embedded, err := p.embedBatch(ctx, fragments)
+			stored, err := p.embedAndStore(ctx, fragments)
 			if err != nil {
+				result.Added += stored // count what was committed before the error
 				return result, fmt.Errorf("embed batch: %w", err)
 			}
-			p.logger.Debug("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", len(embedded), "elapsed_ms", time.Since(embedStart).Milliseconds())
-
-			if err := p.store.UpsertFragments(ctx, embedded); err != nil {
-				return result, fmt.Errorf("upsert fragments: %w", err)
-			}
-			result.Added += len(embedded)
+			p.logger.Debug("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", stored, "elapsed_ms", time.Since(embedStart).Milliseconds())
+			result.Added += stored
 		}
 
 		if p.OnBatchDone != nil {
@@ -342,18 +339,16 @@ func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFrag
 // progress reporting.
 const embedSubBatchSize = 200
 
-// embedBatch embeds all fragments and returns only those with successful
-// embeddings. Uses enriched content if available, raw otherwise.
-// Fragments are sent to the embedder in sub-batches of embedSubBatchSize
-// so progress can be reported between calls.
-func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragment) ([]model.SourceFragment, error) {
+// embedAndStore embeds fragments in sub-batches and stores each sub-batch
+// immediately, so progress is committed incrementally rather than waiting
+// for the entire batch to complete.
+func (p *Pipeline) embedAndStore(ctx context.Context, fragments []model.SourceFragment) (int, error) {
 	total := len(fragments)
-	var result []model.SourceFragment
-	embedded := 0
+	stored := 0
 
 	for start := 0; start < total; start += embedSubBatchSize {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return stored, ctx.Err()
 		}
 
 		end := start + embedSubBatchSize
@@ -369,13 +364,14 @@ func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragm
 
 		embeddings, err := p.embedder.EmbedBatch(ctx, texts)
 		if err != nil {
-			return nil, fmt.Errorf("embed batch: %w", err)
+			return stored, fmt.Errorf("embed batch: %w", err)
 		}
 
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return stored, ctx.Err()
 		}
 
+		var ready []model.SourceFragment
 		for i := range chunk {
 			if embeddings[i] == nil {
 				p.logger.Warn("skipping fragment with nil embedding",
@@ -383,16 +379,22 @@ func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragm
 				continue
 			}
 			chunk[i].Embedding = embeddings[i]
-			result = append(result, chunk[i])
+			ready = append(ready, chunk[i])
 		}
 
-		embedded += len(chunk)
+		if len(ready) > 0 {
+			if err := p.store.UpsertFragments(ctx, ready); err != nil {
+				return stored, fmt.Errorf("upsert fragments: %w", err)
+			}
+			stored += len(ready)
+		}
+
 		if p.OnEmbedProgress != nil {
-			p.OnEmbedProgress(embedded, total)
+			p.OnEmbedProgress(start+len(chunk), total)
 		}
 	}
 
-	return result, nil
+	return stored, nil
 }
 
 // processDocuments extracts chunks from documents concurrently.

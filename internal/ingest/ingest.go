@@ -175,14 +175,41 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		batchSize = len(docs)
 	}
 	batches := batchSlice(docs, batchSize)
-	progressOffset := 0
 	totalDocs := len(docs)
 
+	// When enrichment is disabled (default), pipeline extraction and
+	// embedding: extract batch N+1 on CPU while batch N embeds on GPU.
+	if p.enrichment == nil {
+		err := p.runPipelined(ctx, batches, totalDocs, result)
+		if err != nil {
+			return result, err
+		}
+	} else {
+		err := p.runSequential(ctx, batches, totalDocs, result)
+		if err != nil {
+			return result, err
+		}
+	}
+
+	p.logger.Debug("ingestion complete",
+		"added", result.Added,
+		"deleted", result.Deleted,
+		"skipped", result.Skipped,
+		"errors", result.Errors,
+	)
+
+	return result, nil
+}
+
+// runSequential processes batches one at a time: extract → enrich → embed → store.
+// Used when enrichment is enabled (needs all chunks before sliding window).
+func (p *Pipeline) runSequential(ctx context.Context, batches [][]model.RawDocument, totalDocs int, result *Result) error {
+	progressOffset := 0
 	for batchIdx, batch := range batches {
 		if ctx.Err() != nil {
 			p.logger.Info("ingestion interrupted, partial result committed",
 				"added", result.Added, "errors", result.Errors)
-			return result, ctx.Err()
+			return ctx.Err()
 		}
 
 		batchNum := batchIdx + 1
@@ -192,7 +219,6 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		result.Errors += errs
 
 		if len(fragments) > 0 {
-			// Per-batch phasing: enrich all chunks first, then embed all chunks.
 			if p.enrichment != nil {
 				enrichStart := time.Now()
 				p.enrichBatch(ctx, fragments)
@@ -206,8 +232,8 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 			embedStart := time.Now()
 			stored, err := p.embedAndStore(ctx, fragments)
 			if err != nil {
-				result.Added += stored // count what was committed before the error
-				return result, fmt.Errorf("embed batch: %w", err)
+				result.Added += stored
+				return fmt.Errorf("embed batch: %w", err)
 			}
 			p.logger.Debug("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", stored, "elapsed_ms", time.Since(embedStart).Milliseconds())
 			result.Added += stored
@@ -217,15 +243,74 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 			p.OnBatchDone(batchNum, len(batches), len(fragments))
 		}
 	}
+	return nil
+}
 
-	p.logger.Debug("ingestion complete",
-		"added", result.Added,
-		"deleted", result.Deleted,
-		"skipped", result.Skipped,
-		"errors", result.Errors,
-	)
+// extractedBatch holds the results of extracting a single document batch.
+type extractedBatch struct {
+	batchNum   int
+	fragments  []model.SourceFragment
+	errors     int
+}
 
-	return result, nil
+// runPipelined overlaps extraction (CPU) with embedding (GPU).
+// While batch N is being embedded, batch N+1 is being extracted.
+func (p *Pipeline) runPipelined(ctx context.Context, batches [][]model.RawDocument, totalDocs int, result *Result) error {
+	// Channel with capacity 1: extraction can run one batch ahead.
+	extracted := make(chan extractedBatch, 1)
+
+	// Start extraction goroutine.
+	go func() {
+		defer close(extracted)
+		progressOffset := 0
+		for batchIdx, batch := range batches {
+			if ctx.Err() != nil {
+				return
+			}
+			batchNum := batchIdx + 1
+			p.logger.Debug("extracting chunks", "batch", batchNum, "batches", len(batches), "docs", len(batch))
+			fragments, errs := p.processDocuments(ctx, batch, progressOffset, totalDocs)
+			progressOffset += len(batch)
+
+			select {
+			case extracted <- extractedBatch{batchNum: batchNum, fragments: fragments, errors: errs}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Main goroutine: embed + store as batches arrive.
+	for eb := range extracted {
+		result.Errors += eb.errors
+
+		if len(eb.fragments) > 0 {
+			if p.OnEmbedding != nil {
+				p.OnEmbedding(eb.batchNum, len(batches), len(eb.fragments))
+			}
+			p.logger.Debug("embedding fragments", "batch", eb.batchNum, "batches", len(batches), "fragments", len(eb.fragments))
+			embedStart := time.Now()
+			stored, err := p.embedAndStore(ctx, eb.fragments)
+			if err != nil {
+				result.Added += stored
+				return fmt.Errorf("embed batch: %w", err)
+			}
+			p.logger.Debug("embedding complete", "batch", eb.batchNum, "batches", len(batches), "fragments", stored, "elapsed_ms", time.Since(embedStart).Milliseconds())
+			result.Added += stored
+		}
+
+		if p.OnBatchDone != nil {
+			p.OnBatchDone(eb.batchNum, len(batches), len(eb.fragments))
+		}
+	}
+
+	if ctx.Err() != nil {
+		p.logger.Info("ingestion interrupted, partial result committed",
+			"added", result.Added, "errors", result.Errors)
+		return ctx.Err()
+	}
+
+	return nil
 }
 
 // enrichBatch runs enrichment on all fragments in the batch.

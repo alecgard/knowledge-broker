@@ -102,7 +102,7 @@ func (e *Engine) embedAndSearch(ctx context.Context, req model.QueryRequest) (mo
 	}
 
 	hasFilters := len(req.Sources) > 0 || len(req.SourceTypes) > 0
-	skipExpand := req.Mode == model.ModeRaw || req.NoExpand
+	skipExpand := req.Mode == model.ModeRaw || req.Mode == model.ModeLocal || req.NoExpand
 
 	// Step 1: Embed the original query. This embedding is reused for both
 	// the vocabulary scout and the main search, avoiding a redundant Ollama call.
@@ -463,6 +463,115 @@ func (e *Engine) QueryRaw(ctx context.Context, req model.QueryRequest) (*model.R
 	}
 
 	return result, nil
+}
+
+// QueryLocal performs local LLM synthesis: retrieval + simplified prompt + heuristic confidence.
+// It uses the same hybrid search as other modes but sends a simpler prompt suitable for
+// small local models. Confidence scores are computed heuristically from fragments, not by the LLM.
+func (e *Engine) QueryLocal(ctx context.Context, req model.QueryRequest, onText func(string)) (*model.Answer, error) {
+	totalStart := time.Now()
+	queryTotal.WithLabelValues("local").Inc()
+	defer func() {
+		queryDuration.WithLabelValues("total").Observe(time.Since(totalStart).Seconds())
+	}()
+
+	if e.llm == nil {
+		queryErrors.Inc()
+		return nil, fmt.Errorf("LLM client not configured")
+	}
+
+	// Force no expansion — too slow/poor on small models.
+	req.NoExpand = true
+
+	// Cap fragments at 5 for local mode — small models produce better answers
+	// from a focused set of top-ranked sources, and inference is much faster.
+	if req.Limit <= 0 || req.Limit > 5 {
+		req.Limit = 5
+	}
+
+	lastMsg, _, fragments, err := e.embedAndSearch(ctx, req)
+	if err != nil {
+		queryErrors.Inc()
+		return nil, err
+	}
+	_ = lastMsg
+
+	if len(fragments) == 0 {
+		noInfo := "I don't have any relevant information to answer this question."
+		if onText != nil {
+			onText(noInfo)
+		}
+		return &model.Answer{
+			Content: noInfo,
+			Confidence: model.Confidence{
+				Overall:   0,
+				Breakdown: model.ConfidenceBreakdown{},
+			},
+		}, nil
+	}
+
+	// Build simplified prompt for local LLM.
+	systemPrompt := BuildLocalPrompt(fragments)
+
+	if e.logger != nil {
+		e.logger.LogAttrs(ctx, slog.LevelDebug, "local LLM synthesis",
+			slog.Int("fragments", len(fragments)),
+			slog.Int("prompt_chars", len(systemPrompt)),
+		)
+	}
+
+	// Stream the LLM response.
+	synthesisStart := time.Now()
+	fullResponse, err := e.llm.StreamAnswer(ctx, systemPrompt, req.Messages, onText)
+	queryDuration.WithLabelValues("synthesis").Observe(time.Since(synthesisStart).Seconds())
+	if err != nil {
+		queryErrors.Inc()
+		return nil, fmt.Errorf("local llm synthesis: %w", err)
+	}
+
+	// Compute heuristic confidence from fragments (same approach as QueryRaw).
+	sourceNames := make(map[string]struct{})
+	var maxFreshness, maxAuthority float64
+	var totalConsistency float64
+	for _, f := range fragments {
+		sourceNames[f.SourceName] = struct{}{}
+		freshness := ComputeFreshness(f.ContentDate, f.IngestedAt, f.FileType)
+		if freshness > maxFreshness {
+			maxFreshness = freshness
+		}
+		authority := ComputeAuthority(f.FileType)
+		if authority > maxAuthority {
+			maxAuthority = authority
+		}
+		totalConsistency += ComputeConsistency(f.ConfidenceAdj)
+	}
+
+	breakdown := model.ConfidenceBreakdown{
+		Freshness:     maxFreshness,
+		Corroboration: ComputeCorroboration(len(sourceNames)),
+		Consistency:   math.Round(totalConsistency/float64(len(fragments))*100) / 100,
+		Authority:     maxAuthority,
+	}
+
+	// Build sources list from all retrieved fragments.
+	sources := make([]model.SourceRef, len(fragments))
+	for i, f := range fragments {
+		sources[i] = model.SourceRef{
+			FragmentID: f.ID,
+			SourceURI:  f.SourceURI,
+			SourcePath: f.SourcePath,
+			SourceName: f.SourceName,
+		}
+	}
+
+	return &model.Answer{
+		Content: fullResponse,
+		Confidence: model.Confidence{
+			Overall:   ComputeOverallTrust(breakdown, model.DefaultTrustWeights()),
+			Breakdown: breakdown,
+		},
+		Sources: sources,
+	}, nil
 }
 
 // ComputeOverallTrust computes a weighted composite trust score from the breakdown.

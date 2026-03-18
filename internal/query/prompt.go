@@ -140,6 +140,48 @@ func groupBySource(fragments []model.SourceFragment) []sourceGroup {
 	return result
 }
 
+// BuildLocalPrompt constructs a simplified system prompt for local LLM synthesis.
+// Unlike BuildSystemPrompt, it does not ask for structured metadata output (no
+// ---KB_META--- blocks), making it suitable for small models like llama3.1:8b.
+func BuildLocalPrompt(fragments []model.SourceFragment) string {
+	var b strings.Builder
+
+	b.WriteString(`You are Knowledge Broker. Answer the question using only the numbered sources below.
+
+Rules:
+- Cite sources inline as [1], [2], etc.
+- Be concise and direct.
+- If sources contradict, note both claims with their dates.
+- If the sources don't contain enough information, say so.
+- Do NOT emit any JSON, metadata blocks, or structured output.
+- Write plain text only.
+
+`)
+
+	b.WriteString("## Sources\n\n")
+
+	now := time.Now()
+	num := 1
+	for _, f := range fragments {
+		age := now.Sub(f.ContentDate)
+		ageStr := formatAge(age)
+
+		fmt.Fprintf(&b, "[%d] %s", num, f.SourcePath)
+		if f.SourceName != "" {
+			fmt.Fprintf(&b, " (%s)", f.SourceName)
+		}
+		fmt.Fprintf(&b, "\n")
+		fmt.Fprintf(&b, "Type: %s | Date: %s (%s ago)", f.FileType, f.ContentDate.Format("2006-01-02"), ageStr)
+		if f.Author != "" {
+			fmt.Fprintf(&b, " | Author: %s", f.Author)
+		}
+		fmt.Fprintf(&b, "\n\n%s\n\n---\n\n", f.RawContent)
+		num++
+	}
+
+	return b.String()
+}
+
 func formatAge(d time.Duration) string {
 	days := int(d.Hours() / 24)
 	if days < 1 {

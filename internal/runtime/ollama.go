@@ -15,6 +15,7 @@ type Config struct {
 	OllamaURL      string // from KB_OLLAMA_URL, default http://localhost:11434
 	EmbeddingModel string // from KB_EMBEDDING_MODEL, default nomic-embed-text
 	EnrichModel    string // from KB_ENRICH_MODEL, default qwen2.5:0.5b
+	LLMModel       string // from KB_OLLAMA_LLM_MODEL; set when KB_LLM_PROVIDER=ollama
 	SkipSetup      bool   // from KB_SKIP_SETUP or --no-setup flag
 	Verbose        bool   // show progress output
 }
@@ -89,12 +90,18 @@ func ensureModelsReady(ctx context.Context, cfg Config) error {
 	if cfg.EnrichModel != "" {
 		models = append(models, cfg.EnrichModel)
 	}
+	if cfg.LLMModel != "" {
+		models = append(models, cfg.LLMModel)
+	}
 	if len(models) == 0 {
 		return nil
 	}
 	mandatoryModels := map[string]bool{}
 	if cfg.EmbeddingModel != "" {
 		mandatoryModels[cfg.EmbeddingModel] = true
+	}
+	if cfg.LLMModel != "" {
+		mandatoryModels[cfg.LLMModel] = true
 	}
 	return EnsureModels(ctx, cfg.OllamaURL, models, mandatoryModels, cfg.Verbose)
 }

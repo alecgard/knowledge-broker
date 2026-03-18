@@ -150,6 +150,93 @@ func TestBuildSystemPrompt_AgeFormatting(t *testing.T) {
 	}
 }
 
+func TestBuildLocalPrompt_NoMetaBlocks(t *testing.T) {
+	now := time.Now()
+	fragments := []model.SourceFragment{
+		{
+			ID:          "frag-local-1",
+			RawContent:  "Authentication uses OAuth2 tokens.",
+			SourceType:  "filesystem",
+			SourceName:  "docs",
+			SourcePath:  "/docs/auth.md",
+			SourceURI:   "file:///docs/auth.md",
+			ContentDate: now.Add(-24 * time.Hour),
+			Author:      "alice",
+			FileType:    "markdown",
+		},
+		{
+			ID:         "frag-local-2",
+			RawContent: "Roles are defined in the config file.",
+			SourceType: "github",
+			SourcePath: "repo/src/roles.go",
+			SourceURI:  "https://github.com/org/repo/blob/main/src/roles.go",
+			ContentDate: now.Add(-48 * time.Hour),
+			FileType:   "go",
+		},
+	}
+
+	prompt := BuildLocalPrompt(fragments)
+
+	// Must NOT contain structured output markers.
+	if strings.Contains(prompt, "---KB_META---") {
+		t.Error("local prompt must not contain ---KB_META--- marker")
+	}
+	if strings.Contains(prompt, "---KB_META_END---") {
+		t.Error("local prompt must not contain ---KB_META_END--- marker")
+	}
+
+	// Must contain Knowledge Broker identity.
+	if !strings.Contains(prompt, "Knowledge Broker") {
+		t.Error("prompt should mention Knowledge Broker")
+	}
+
+	// Must contain fragment content.
+	if !strings.Contains(prompt, "Authentication uses OAuth2 tokens.") {
+		t.Error("prompt should contain first fragment content")
+	}
+	if !strings.Contains(prompt, "Roles are defined in the config file.") {
+		t.Error("prompt should contain second fragment content")
+	}
+
+	// Must use numbered citations [1], [2].
+	if !strings.Contains(prompt, "[1]") {
+		t.Error("prompt should contain [1] numbered source")
+	}
+	if !strings.Contains(prompt, "[2]") {
+		t.Error("prompt should contain [2] numbered source")
+	}
+
+	// Must contain source paths.
+	if !strings.Contains(prompt, "/docs/auth.md") {
+		t.Error("prompt should contain source path")
+	}
+
+	// Must contain source name for the fragment that has one.
+	if !strings.Contains(prompt, "(docs)") {
+		t.Error("prompt should contain source name")
+	}
+
+	// Must contain the "no JSON" instruction.
+	if !strings.Contains(prompt, "Do NOT emit any JSON") {
+		t.Error("prompt should instruct against JSON output")
+	}
+
+	// Must contain author for the fragment that has one.
+	if !strings.Contains(prompt, "Author: alice") {
+		t.Error("prompt should contain author for first fragment")
+	}
+}
+
+func TestBuildLocalPrompt_NoFragments(t *testing.T) {
+	prompt := BuildLocalPrompt(nil)
+	if !strings.Contains(prompt, "Knowledge Broker") {
+		t.Error("prompt should mention Knowledge Broker even with no fragments")
+	}
+	if strings.Contains(prompt, "### Fragment:") {
+		t.Error("prompt should not contain fragment headers when no fragments provided")
+	}
+}
+
 func TestFormatAge(t *testing.T) {
 	tests := []struct {
 		duration time.Duration

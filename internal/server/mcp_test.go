@@ -124,12 +124,13 @@ func TestMCPKBInstructionsPrompt(t *testing.T) {
 	ctx := context.Background()
 
 	// Register sources with descriptions.
+	mcpNow := time.Now()
 	if err := st.RegisterSource(ctx, model.Source{
 		SourceType:  "git",
 		SourceName:  "owner/repo",
 		Description: "Payment processing service",
 		Config:      map[string]string{"mode": "local"},
-		LastIngest:  time.Now(),
+		LastIngest:  &mcpNow,
 	}); err != nil {
 		t.Fatalf("RegisterSource: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestMCPKBInstructionsPrompt(t *testing.T) {
 		SourceType: "filesystem",
 		SourceName: "docs",
 		Config:     map[string]string{"mode": "local"},
-		LastIngest: time.Now(),
+		LastIngest: &mcpNow,
 	}); err != nil {
 		t.Fatalf("RegisterSource: %v", err)
 	}
@@ -552,12 +553,14 @@ func TestMCPHandleListSourcesWithData(t *testing.T) {
 	ctx := context.Background()
 
 	// Register sources.
+	gitIngest := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	fsIngest := time.Date(2025, 6, 16, 12, 0, 0, 0, time.UTC)
 	if err := st.RegisterSource(ctx, model.Source{
 		SourceType:  "git",
 		SourceName:  "owner/repo",
 		Description: "Main application repository",
 		Config:      map[string]string{"mode": "local"},
-		LastIngest:  time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC),
+		LastIngest:  &gitIngest,
 	}); err != nil {
 		t.Fatalf("RegisterSource: %v", err)
 	}
@@ -565,7 +568,7 @@ func TestMCPHandleListSourcesWithData(t *testing.T) {
 		SourceType: "filesystem",
 		SourceName: "docs",
 		Config:     map[string]string{"mode": "local"},
-		LastIngest: time.Date(2025, 6, 16, 12, 0, 0, 0, time.UTC),
+		LastIngest: &fsIngest,
 	}); err != nil {
 		t.Fatalf("RegisterSource: %v", err)
 	}

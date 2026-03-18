@@ -20,6 +20,12 @@ const SourceTypeSlack = "slack"
 
 func init() {
 	Register(SourceTypeSlack, func(config map[string]string) (Connector, error) {
+		if config["token"] == "" {
+			return nil, fmt.Errorf("slack source missing 'token' in config")
+		}
+		if config["channels"] == "" {
+			return nil, fmt.Errorf("slack source missing 'channels' in config")
+		}
 		channels := strings.Split(config["channels"], ",")
 		return NewSlackConnector(config["token"], channels, config["workspace"]), nil
 	})

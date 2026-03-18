@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -323,7 +322,7 @@ func sourcesImportCmd() *cobra.Command {
 			ctx := context.Background()
 			for _, src := range sources {
 				// Clear LastIngest so the source is treated as not-yet-ingested.
-				src.LastIngest = time.Time{}
+				src.LastIngest = nil
 				if err := s.RegisterSource(ctx, src); err != nil {
 					return fmt.Errorf("register source %s/%s: %w", src.SourceType, src.SourceName, err)
 				}

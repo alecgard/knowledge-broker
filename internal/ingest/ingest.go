@@ -153,6 +153,8 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 			return result, ctx.Err()
 		}
 
+		batchNum := batchIdx + 1
+		p.logger.Info("extracting chunks", "batch", batchNum, "batches", len(batches), "docs", len(batch))
 		fragments, errs := p.processDocuments(ctx, batch, progressOffset, totalDocs)
 		progressOffset += len(batch)
 		result.Errors += errs
@@ -165,18 +167,22 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 				result.EnrichmentTimeMS += time.Since(enrichStart).Milliseconds()
 			}
 
-			if err := p.embedBatch(ctx, fragments); err != nil {
+			p.logger.Info("embedding fragments", "batch", batchNum, "batches", len(batches), "fragments", len(fragments))
+			embedStart := time.Now()
+			embedded, err := p.embedBatch(ctx, fragments)
+			if err != nil {
 				return result, fmt.Errorf("embed batch: %w", err)
 			}
+			p.logger.Info("embedding complete", "batch", batchNum, "batches", len(batches), "fragments", len(embedded), "elapsed_ms", time.Since(embedStart).Milliseconds())
 
-			if err := p.store.UpsertFragments(ctx, fragments); err != nil {
+			if err := p.store.UpsertFragments(ctx, embedded); err != nil {
 				return result, fmt.Errorf("upsert fragments: %w", err)
 			}
-			result.Added += len(fragments)
+			result.Added += len(embedded)
 		}
 
 		if p.OnBatchDone != nil {
-			p.OnBatchDone(batchIdx+1, len(batches), len(fragments))
+			p.OnBatchDone(batchNum, len(batches), len(fragments))
 		}
 	}
 
@@ -296,8 +302,9 @@ func (p *Pipeline) enrichBatch(ctx context.Context, fragments []model.SourceFrag
 	}
 }
 
-// embedBatch embeds all fragments. Uses enriched content if available, raw otherwise.
-func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragment) error {
+// embedBatch embeds all fragments and returns only those with successful
+// embeddings. Uses enriched content if available, raw otherwise.
+func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragment) ([]model.SourceFragment, error) {
 	texts := make([]string, len(fragments))
 	for i, f := range fragments {
 		texts[i] = f.Content() // enriched if available, raw otherwise
@@ -305,7 +312,7 @@ func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragm
 
 	embeddings, err := p.embedder.EmbedBatch(ctx, texts)
 	if err != nil {
-		return fmt.Errorf("embed batch: %w", err)
+		return nil, fmt.Errorf("embed batch: %w", err)
 	}
 
 	embModel := ""
@@ -313,11 +320,18 @@ func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragm
 		_ = oe // TODO: expose model name from embedder
 	}
 
+	result := fragments[:0]
 	for i := range fragments {
+		if embeddings[i] == nil {
+			p.logger.Warn("skipping fragment with nil embedding",
+				"path", fragments[i].SourcePath, "id", fragments[i].ID)
+			continue
+		}
 		fragments[i].Embedding = embeddings[i]
 		fragments[i].EmbeddingModel = embModel
+		result = append(result, fragments[i])
 	}
-	return nil
+	return result, nil
 }
 
 // processDocuments extracts chunks from documents concurrently.
@@ -389,29 +403,12 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 		}
 	}
 
-	// When enrichment is enabled, skip embedding here — it will be done
-	// per-batch after enrichment. When disabled, embed inline as before.
-	var embeddings [][]float32
-	if p.enrichment == nil {
-		texts := make([]string, len(result.Chunks))
-		for i, c := range result.Chunks {
-			texts[i] = c.Content
-		}
-		embeddings, err = p.embedder.EmbedBatch(ctx, texts)
-		if err != nil {
-			return nil, fmt.Errorf("embed %s: %w", doc.Path, err)
-		}
-	}
-
-	// Build fragments, skipping any chunks whose embedding failed (nil).
+	// Build fragments — embedding is always deferred to embedBatch (called
+	// per-batch in Run) so we get a single batched Ollama call instead of
+	// one per document.
 	var fragments []model.SourceFragment
 	for i, chunk := range result.Chunks {
-		if embeddings != nil && embeddings[i] == nil {
-			p.logger.Warn("skipping chunk with nil embedding",
-				"path", doc.Path, "chunk_index", i, "chunk_length", len(chunk.Content))
-			continue
-		}
-		f := model.SourceFragment{
+		fragments = append(fragments, model.SourceFragment{
 			ID:          model.FragmentID(doc.SourceType, doc.Path, i),
 			RawContent:  chunk.Content,
 			SourceType:  doc.SourceType,
@@ -422,11 +419,7 @@ func (p *Pipeline) processDocument(ctx context.Context, doc model.RawDocument) (
 			Author:      doc.Author,
 			FileType:    fileType,
 			Checksum:    doc.Checksum,
-		}
-		if embeddings != nil {
-			f.Embedding = embeddings[i]
-		}
-		fragments = append(fragments, f)
+		})
 	}
 
 	return fragments, nil

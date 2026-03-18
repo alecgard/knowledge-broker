@@ -277,7 +277,7 @@ func (s *MCPServer) handleListSources(ctx context.Context, request mcp.CallToolR
 			Description:   src.Description,
 			FragmentCount: counts[key],
 		}
-		if !src.LastIngest.IsZero() {
+		if src.LastIngest != nil {
 			info.LastIngest = src.LastIngest.Format("2006-01-02T15:04:05Z")
 		}
 		result = append(result, info)

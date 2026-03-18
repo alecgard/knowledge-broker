@@ -453,11 +453,12 @@ func TestDeleteSource(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
+	now := time.Now().UTC().Truncate(time.Second)
 	src := model.Source{
 		SourceType: "filesystem",
 		SourceName: "proj1",
 		Config:     map[string]string{"path": "/tmp"},
-		LastIngest: time.Now().UTC().Truncate(time.Second),
+		LastIngest: &now,
 	}
 
 	if err := s.RegisterSource(ctx, src); err != nil {
@@ -670,12 +671,13 @@ func TestSourceDescription(t *testing.T) {
 	ctx := context.Background()
 
 	// Register source with description.
+	descNow := time.Now()
 	err := s.RegisterSource(ctx, model.Source{
 		SourceType:  "git",
 		SourceName:  "owner/repo",
 		Description: "Payment processing service",
 		Config:      map[string]string{"mode": "local"},
-		LastIngest:  time.Now(),
+		LastIngest:  &descNow,
 	})
 	if err != nil {
 		t.Fatalf("RegisterSource: %v", err)
@@ -693,11 +695,12 @@ func TestSourceDescription(t *testing.T) {
 	}
 
 	// Re-register without description — should preserve existing.
+	now2 := time.Now()
 	err = s.RegisterSource(ctx, model.Source{
 		SourceType: "git",
 		SourceName: "owner/repo",
 		Config:     map[string]string{"mode": "local"},
-		LastIngest: time.Now(),
+		LastIngest: &now2,
 	})
 	if err != nil {
 		t.Fatalf("RegisterSource (no desc): %v", err)
@@ -712,12 +715,13 @@ func TestSourceDescription(t *testing.T) {
 	}
 
 	// Re-register with new description — should update.
+	now3 := time.Now()
 	err = s.RegisterSource(ctx, model.Source{
 		SourceType:  "git",
 		SourceName:  "owner/repo",
 		Description: "Updated description",
 		Config:      map[string]string{"mode": "local"},
-		LastIngest:  time.Now(),
+		LastIngest:  &now3,
 	})
 	if err != nil {
 		t.Fatalf("RegisterSource (new desc): %v", err)

@@ -72,7 +72,19 @@ func serveCmd() *cobra.Command {
 				return nil
 			}
 
-			httpServer := server.NewHTTPServer(engine, emb, s, logger, version)
+			// Wire pipeline deps for source management UI.
+			reg := newExtractorRegistry(cfg)
+			jobs := server.NewJobTracker()
+			pipelineCfg := server.PipelineConfig{
+				OllamaURL:      cfg.OllamaURL,
+				EnrichModel:    cfg.EnrichModel,
+				WorkerCount:    cfg.WorkerCount,
+				MaxChunkSize:   cfg.MaxChunkSize,
+				ChunkOverlap:   cfg.ChunkOverlap,
+			}
+			httpServer := server.NewHTTPServerWithOptions(engine, emb, s, logger, version,
+				server.WithPipeline(reg, pipelineCfg, client, jobs),
+			)
 			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
 		},
 	}

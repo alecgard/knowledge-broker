@@ -52,7 +52,6 @@ type Pipeline struct {
 	enrichment  *EnrichmentConfig
 	workers     int
 	logger      *slog.Logger
-	OnScanning      func()
 	OnProgress      ProgressFunc
 	OnBatchDone     BatchFunc
 	OnScanComplete  ScanCompleteFunc
@@ -144,9 +143,6 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 	}
 
 	// Scan for new/changed documents and deleted paths.
-	if p.OnScanning != nil {
-		p.OnScanning()
-	}
 	docs, deleted, err := conn.Scan(ctx, scanOpts)
 	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)

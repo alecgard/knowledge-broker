@@ -243,8 +243,11 @@ func (c *GitConnector) fullScan(ctx context.Context, tmpDir string, opts ScanOpt
 		opts.Known = abs
 	}
 
-	// Delegate to filesystem connector.
+	// Delegate to filesystem connector. Skip per-file git log calls since
+	// this is a temp clone — the metadata would be from the shallow copy and
+	// spawning git-log for every file is prohibitively slow for large repos.
 	fs := NewFilesystemConnector(tmpDir)
+	fs.SkipGitMeta = true
 	docs, deleted, err := fs.Scan(ctx, opts)
 	if err != nil {
 		return nil, nil, err

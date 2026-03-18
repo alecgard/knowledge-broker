@@ -75,7 +75,8 @@ var binaryExts = map[string]bool{
 
 // FilesystemConnector scans a local directory tree for content files.
 type FilesystemConnector struct {
-	rootPath string
+	rootPath    string
+	SkipGitMeta bool // skip per-file git log calls (used by GitConnector)
 }
 
 // NewFilesystemConnector creates a new connector rooted at the given path.
@@ -130,6 +131,9 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 
 	var docs []model.RawDocument
 	var skipped int
+	var filesProcessed int
+	var progressPrinted bool
+	lastProgress := time.Now()
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -212,10 +216,21 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			return nil
 		}
 
-		// Extract git metadata.
-		lastModified, author := gitMetadata(path)
+		// Extract git metadata (skip if caller opted out, e.g. git connector).
+		var lastModified time.Time
+		var author string
+		if !c.SkipGitMeta {
+			lastModified, author = gitMetadata(path)
+		}
 		if lastModified.IsZero() {
 			lastModified = info.ModTime()
+		}
+
+		filesProcessed++
+		if now := time.Now(); now.Sub(lastProgress) >= 2*time.Second {
+			fmt.Fprintf(os.Stderr, "\r  Scanning: %d files processed...", filesProcessed)
+			lastProgress = now
+			progressPrinted = true
 		}
 
 		absPath, err := filepath.Abs(path)
@@ -239,6 +254,11 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 
 	if walkErr != nil {
 		return nil, nil, fmt.Errorf("walking directory: %w", walkErr)
+	}
+
+	// Clear the in-place progress line if we printed one.
+	if progressPrinted {
+		fmt.Fprintf(os.Stderr, "\r  Scanning: %d files processed, done\n", filesProcessed)
 	}
 
 	if skipped > 0 {

@@ -159,7 +159,6 @@ func ingestCmd() *cobra.Command {
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-							pipeline.OnScanning = makeScanningFunc(srcLabel, true)
 							pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 							pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
@@ -198,7 +197,6 @@ func ingestCmd() *cobra.Command {
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-						pipeline.OnScanning = makeScanningFunc(srcLabel, false)
 						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
@@ -382,7 +380,6 @@ func ingestCmd() *cobra.Command {
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-						pipeline.OnScanning = makeScanningFunc(srcLabel, true)
 						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
 						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
@@ -446,7 +443,6 @@ func ingestCmd() *cobra.Command {
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
-					pipeline.OnScanning = makeScanningFunc(srcLabel, false)
 					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
 					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
@@ -541,16 +537,6 @@ func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
 func makeBatchFunc() ingest.BatchFunc {
 	return func(batch, totalBatches, added int) {
 		fmt.Fprintf(os.Stderr, "\r  Stored batch %d/%d (%d fragments)\n", batch, totalBatches, added)
-	}
-}
-
-func makeScanningFunc(label string, prefixed bool) func() {
-	return func() {
-		if prefixed {
-			fmt.Fprintf(os.Stderr, "  [%s] Scanning...\n", label)
-		} else {
-			fmt.Fprintln(os.Stderr, "  Scanning...")
-		}
 	}
 }
 

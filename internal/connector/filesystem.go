@@ -157,6 +157,14 @@ func (c *FilesystemConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 			return nil
 		}
 
+		// Skip symlinks that point to directories.
+		if d.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Stat(path)
+			if err != nil || target.IsDir() {
+				return nil
+			}
+		}
+
 		// Skip hidden files.
 		if strings.HasPrefix(name, ".") {
 			return nil

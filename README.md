@@ -74,8 +74,6 @@ export KB_LLM_PROVIDER=ollama
 kb query "How does the payment retry logic work?"
 ```
 
-The model is pulled automatically on first run. In the web UI, click **Local** to switch modes. Answers stream back with inline source citations and the same confidence signals as every other mode.
-
 Best for: quick lookups, onboarding onto a new codebase, and environments where external API calls aren't an option.
 
 ## Serve

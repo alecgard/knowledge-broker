@@ -35,6 +35,15 @@ type EnrichmentConfig struct {
 	Concurrency int // parallel enrichment workers (default 4)
 }
 
+// ScanCompleteFunc is called after scanning completes with the results.
+// total is all files seen, changed is new/modified, deleted is removed,
+// unchanged is skipped due to matching checksums.
+type ScanCompleteFunc func(total, changed, deleted, unchanged int)
+
+// EmbedFunc is called before embedding starts for a batch.
+// batch is 1-indexed, totalBatches is the total, fragments is the count.
+type EmbedFunc func(batch, totalBatches, fragments int)
+
 // Pipeline orchestrates the ingestion of documents.
 type Pipeline struct {
 	store       store.Store
@@ -43,8 +52,10 @@ type Pipeline struct {
 	enrichment  *EnrichmentConfig
 	workers     int
 	logger      *slog.Logger
-	OnProgress  ProgressFunc
-	OnBatchDone BatchFunc
+	OnProgress      ProgressFunc
+	OnBatchDone     BatchFunc
+	OnScanComplete  ScanCompleteFunc
+	OnEmbedding     EmbedFunc
 	BatchSize   int
 }
 
@@ -147,6 +158,11 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 
 	result.Skipped = len(known) - len(deleted) - countOverlap(known, docs)
 
+	if p.OnScanComplete != nil {
+		total := len(docs) + len(deleted) + result.Skipped
+		p.OnScanComplete(total, len(docs), len(deleted), result.Skipped)
+	}
+
 	// Process and store documents in batches so that completed batches
 	// survive cancellation and are skipped on re-run.
 	batchSize := p.BatchSize
@@ -178,6 +194,9 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 				result.EnrichmentTimeMS += time.Since(enrichStart).Milliseconds()
 			}
 
+			if p.OnEmbedding != nil {
+				p.OnEmbedding(batchNum, len(batches), len(fragments))
+			}
 			p.logger.Info("embedding fragments", "batch", batchNum, "batches", len(batches), "fragments", len(fragments))
 			embedStart := time.Now()
 			embedded, err := p.embedBatch(ctx, fragments)

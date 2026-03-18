@@ -159,7 +159,9 @@ func ingestCmd() *cobra.Command {
 							srcLabel := src.SourceType + "/" + src.SourceName
 							pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 							configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
+							pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 							pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+							pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
 							pipeline.OnBatchDone = makeBatchFunc()
 							r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 							resultCh <- reIngestResult{src: src, result: r, err: err}
@@ -195,7 +197,9 @@ func ingestCmd() *cobra.Command {
 						srcLabel := src.SourceType + "/" + src.SourceName
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
+						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, false)
+						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						if err != nil {
@@ -376,7 +380,9 @@ func ingestCmd() *cobra.Command {
 						srcLabel := conn.Name() + "/" + name
 						pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 						configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
+						pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, true)
 						pipeline.OnProgress = makeProgressFunc(srcLabel, true)
+						pipeline.OnEmbedding = makeEmbedFunc(srcLabel, true)
 						pipeline.OnBatchDone = makeBatchFunc()
 						r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 						resultCh <- ingestResult{
@@ -437,7 +443,9 @@ func ingestCmd() *cobra.Command {
 					srcLabel := conn.Name() + "/" + name
 					pipeline := ingest.NewPipeline(s, emb, reg, cfg.WorkerCount, logger)
 					configureEnrichment(pipeline, cfg, client, logger, skipEnrichment, enrichModel, promptVersion)
+					pipeline.OnScanComplete = makeScanCompleteFunc(srcLabel, false)
 					pipeline.OnProgress = makeProgressFunc(srcLabel, false)
+					pipeline.OnEmbedding = makeEmbedFunc(srcLabel, false)
 					pipeline.OnBatchDone = makeBatchFunc()
 					r, err := pipeline.Run(ctx, conn, ingest.Options{Force: forceMode})
 					if err != nil {
@@ -516,9 +524,9 @@ func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
 			pct = completed * 100 / total
 		}
 		if prefixed {
-			fmt.Fprintf(os.Stderr, "\r  [%s] Embedding: %d/%d docs (%d%%)", label, completed, total, pct)
+			fmt.Fprintf(os.Stderr, "\r  [%s] Extracting: %d/%d docs (%d%%)", label, completed, total, pct)
 		} else {
-			fmt.Fprintf(os.Stderr, "\r  Embedding: %d/%d docs (%d%%)", completed, total, pct)
+			fmt.Fprintf(os.Stderr, "\r  Extracting: %d/%d docs (%d%%)", completed, total, pct)
 		}
 		if completed == total {
 			fmt.Fprintln(os.Stderr)
@@ -529,6 +537,35 @@ func makeProgressFunc(label string, prefixed bool) ingest.ProgressFunc {
 func makeBatchFunc() ingest.BatchFunc {
 	return func(batch, totalBatches, added int) {
 		fmt.Fprintf(os.Stderr, "\r  Stored batch %d/%d (%d fragments)\n", batch, totalBatches, added)
+	}
+}
+
+func makeScanCompleteFunc(label string, prefixed bool) ingest.ScanCompleteFunc {
+	return func(total, changed, deleted, unchanged int) {
+		prefix := "  "
+		if prefixed {
+			prefix = fmt.Sprintf("  [%s] ", label)
+		}
+		if changed == 0 && deleted == 0 {
+			fmt.Fprintf(os.Stderr, "%sScanned %d files, all up to date\n", prefix, total)
+		} else {
+			fmt.Fprintf(os.Stderr, "%sScanned %d files (%d new/changed, %d deleted, %d unchanged)\n",
+				prefix, total, changed, deleted, unchanged)
+		}
+	}
+}
+
+func makeEmbedFunc(label string, prefixed bool) ingest.EmbedFunc {
+	return func(batch, totalBatches, fragments int) {
+		prefix := "  "
+		if prefixed {
+			prefix = fmt.Sprintf("  [%s] ", label)
+		}
+		if totalBatches > 1 {
+			fmt.Fprintf(os.Stderr, "%sEmbedding batch %d/%d (%d fragments)...\n", prefix, batch, totalBatches, fragments)
+		} else {
+			fmt.Fprintf(os.Stderr, "%sEmbedding %d fragments...\n", prefix, fragments)
+		}
 	}
 }
 

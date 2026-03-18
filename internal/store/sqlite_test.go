@@ -55,6 +55,40 @@ func TestMetadataValidation(t *testing.T) {
 	}
 }
 
+// TestConcurrentOpenDuringWrite verifies that opening a second store handle
+// (e.g. for "kb sources list") succeeds even when another connection holds a
+// long-running write transaction (e.g. ingestion). This is the scenario
+// reported in GitHub issue #12.
+func TestConcurrentOpenDuringWrite(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	// First open initializes the schema.
+	s1, err := NewSQLiteStore(dbPath, 4)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	defer s1.Close()
+
+	// Start a long-running write transaction to simulate ingestion.
+	tx, err := s1.db.Begin()
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("INSERT INTO fragments (id, raw_content, source_type, source_path, source_uri, content_date, file_type, checksum) VALUES ('hold', 'data', 'test', '/x', 'file:///x', '2024-01-01T00:00:00Z', 'txt', 'aaa')"); err != nil {
+		t.Fatalf("insert in tx: %v", err)
+	}
+
+	// Second open should succeed without blocking on the write lock,
+	// because schemaReady sees the metadata via a read and skips writes.
+	s2, err := NewSQLiteStore(dbPath, 4)
+	if err != nil {
+		t.Fatalf("second open while write tx held: %v", err)
+	}
+	s2.Close()
+}
+
 func TestUpsertAndGetFragments(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

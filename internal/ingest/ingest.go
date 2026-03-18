@@ -345,6 +345,12 @@ func (p *Pipeline) embedBatch(ctx context.Context, fragments []model.SourceFragm
 		return nil, fmt.Errorf("embed batch: %w", err)
 	}
 
+	// If the context was cancelled, the embedder may return nil embeddings
+	// for every fragment. Return early instead of warning for each one.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	embModel := ""
 	if oe, ok := p.embedder.(*embedding.OllamaEmbedder); ok {
 		_ = oe // TODO: expose model name from embedder

@@ -1,7 +1,7 @@
 # Knowledge Broker — Complete Documentation
 
 Source: https://knowledgebroker.dev
-Generated: 2026-03-17
+Generated: 2026-03-18
 
 
 # Knowledge Broker
@@ -360,6 +360,16 @@ Any developer can push their local repo to the shared instance:
 kb ingest --source ./my-project --remote http://server:8080 --description "Payment service"
 ```
 
+## Monitoring
+
+The HTTP server exposes a `/metrics` endpoint for Prometheus scraping. Use it with Prometheus + Grafana for dashboards and alerting.
+
+```bash
+curl http://server:8080/metrics
+```
+
+Available metrics include HTTP request counts and latency (`kb_http_requests_total`, `kb_http_request_duration_seconds`), query counts by mode (`kb_queries_total`), query latency by phase (`kb_query_duration_seconds`), and query errors (`kb_query_errors_total`).
+
 ## Network and security
 
 KB does not include authentication. For production deployments:
@@ -506,6 +516,53 @@ Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CH
 A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
 
 Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
+
+#### What enrichment produces
+
+The enrichment LLM reads each chunk (plus its neighbors for context) and generates entity names, keywords, and domain terms that are relevant but may not appear verbatim in the text. These annotations are appended to the chunk before embedding. The original chunk text is preserved separately so the raw content is never modified.
+
+#### Choosing a model
+
+The enrichment model is configured via `KB_ENRICH_MODEL` or the `--enrich-model` flag.
+
+| Model | Speed | Quality | Memory |
+|-------|-------|---------|--------|
+| `qwen2.5:0.5b` (default) | Fast | Basic keyword extraction | ~500 MB |
+| `qwen2.5:3b` | Slower | Better entity recognition, more accurate keywords | ~2 GB |
+
+Smaller models are fine for most corpora. Use a larger model if you notice retrieval missing results that should match on entity names or domain-specific terminology.
+
+#### How enrichment affects retrieval
+
+Enriched terms are embedded alongside the chunk text, so they influence both **vector similarity** and **BM25 keyword search**. This is especially useful for vocabulary mismatch: if a chunk discusses "k8s pod autoscaling" but the user searches for "Kubernetes horizontal scaling," enrichment can bridge the gap by adding both phrasings.
+
+
+#### When to re-enrich
+
+Enrichment metadata is stored with each fragment. You need to re-enrich when:
+
+- **Changing the enrichment model** — different models produce different annotations.
+- **Changing the prompt version** — the annotation format changes.
+
+To re-enrich, either re-ingest with `--force` or use `--re-enrich` to update enrichment on existing fragments without re-scanning sources:
+
+```bash
+# Re-enrich all fragments with a new model
+kb ingest --re-enrich --enrich-model qwen2.5:3b
+
+# Re-enrich only a specific source
+kb ingest --re-enrich --source ./my-docs
+```
+
+#### Skipping enrichment
+
+Pass `--skip-enrichment` to `kb ingest` if you want faster ingestion and don't need the keyword boost. This is useful for quick iteration during development or when your corpus already uses consistent terminology that matches how users search.
+
+#### Troubleshooting
+
+- **Ollama OOM with larger models** — If Ollama crashes or returns errors during enrichment with `qwen2.5:3b` or larger, your machine may not have enough memory. Fall back to `qwen2.5:0.5b` or skip enrichment entirely.
+- **Slow enrichment on large corpora** — Enrichment adds an LLM call per chunk. For large corpora (thousands of files), expect enrichment to take significantly longer than embedding alone. Use `--parallel` to speed up multi-source ingestion, or `--skip-enrichment` for the initial ingest and run `--re-enrich` later.
+- **Enrichment model not found** — KB auto-pulls the enrichment model on first run via `kb setup`. If this fails (e.g., no internet), pull it manually: `ollama pull qwen2.5:0.5b`.
 
 ### Embedding and storage
 
@@ -972,6 +1029,13 @@ kb ingest --all
 | `--remote` | URL of a remote KB server to push fragments to |
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
+| `--skip-enrichment` | Skip LLM chunk enrichment (faster ingestion) |
+| `--enrich-model` | Ollama model for chunk enrichment (default: `qwen2.5:0.5b` or `KB_ENRICH_MODEL`) |
+| `--prompt-version` | Enrichment prompt version: `v1` (full rewrite) or `v2` (append keywords) |
+| `--re-enrich` | Re-run enrichment on already-ingested chunks, then re-embed |
+| `--watch` | Watch for file changes and re-ingest automatically (local sources only) |
+| `--parallel` | Ingest multiple sources in parallel (default: sequential) |
+| `--force` | Force re-ingestion of all files, ignoring checksums |
 
 All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
 
@@ -1045,6 +1109,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/export` | GET | Export fragment embeddings as JSON |
 | `/v1/version` | GET | Server version |
 | `/v1/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
 
 ### Query request format
 

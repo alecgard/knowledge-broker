@@ -14,7 +14,7 @@ import (
 )
 
 const defaultOllamaLLMURL = "http://localhost:11434"
-const defaultOllamaLLMModel = "llama3.2"
+const defaultOllamaLLMModel = "llama3.1:8b"
 
 // OllamaLLMClient implements the query.LLM interface using the Ollama chat API.
 type OllamaLLMClient struct {

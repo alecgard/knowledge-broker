@@ -459,6 +459,127 @@ func TestIngestFragmentIDConsistency(t *testing.T) {
 // Query endpoint tests
 // ---------------------------------------------------------------------------
 
+// mockLLM returns a fixed response for testing synthesis/local modes.
+type mockLLM struct {
+	response string
+}
+
+func (m *mockLLM) StreamAnswer(_ context.Context, _ string, _ []model.Message, onText func(string)) (string, error) {
+	if onText != nil {
+		onText(m.response)
+	}
+	return m.response, nil
+}
+
+func TestHandleQueryLocalMode(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+
+	// Insert fragments.
+	vec, _ := emb.Embed(context.Background(), "authentication login security")
+	frags := []model.SourceFragment{
+		{
+			ID:          "frag-local-1",
+			RawContent:  "Authentication is handled via OAuth2 tokens.",
+			SourceType:  "filesystem",
+			SourceName:  "docs",
+			SourcePath:  "docs/auth.md",
+			SourceURI:   "file://docs/auth.md",
+			ContentDate: time.Now().UTC(),
+			Author:      "alice",
+			FileType:    ".md",
+			Checksum:    "local1",
+			Embedding:   vec,
+		},
+	}
+	if err := st.UpsertFragments(context.Background(), frags); err != nil {
+		t.Fatalf("UpsertFragments: %v", err)
+	}
+
+	llm := &mockLLM{response: "Authentication uses OAuth2 tokens [frag-local-1]."}
+	eng := query.NewEngine(st, emb, llm, 20)
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	// Test sync (non-streaming) local mode.
+	queryReq := model.QueryRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "authentication login security"}},
+		Mode:     model.ModeLocal,
+	}
+	body, _ := json.Marshal(queryReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var answer model.Answer
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	// Verify the answer content comes from the LLM (plain text, no KB_META).
+	if !strings.Contains(answer.Content, "OAuth2 tokens") {
+		t.Fatalf("expected answer to contain OAuth2 tokens, got: %s", answer.Content)
+	}
+	if strings.Contains(answer.Content, "KB_META") {
+		t.Fatal("local mode answer should not contain KB_META")
+	}
+
+	// Verify heuristic confidence is present and positive.
+	if answer.Confidence.Overall <= 0 {
+		t.Fatalf("expected positive heuristic confidence, got %f", answer.Confidence.Overall)
+	}
+	if answer.Confidence.Breakdown.Freshness <= 0 {
+		t.Fatal("expected positive freshness score")
+	}
+	if answer.Confidence.Breakdown.Authority <= 0 {
+		t.Fatal("expected positive authority score")
+	}
+
+	// Verify sources are populated.
+	if len(answer.Sources) == 0 {
+		t.Fatal("expected at least one source")
+	}
+
+	found := false
+	for _, s := range answer.Sources {
+		if s.FragmentID == "frag-local-1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected frag-local-1 in sources")
+	}
+}
+
+func TestHandleQueryLocalModeNoLLM(t *testing.T) {
+	st := newTestStore(t)
+	emb := &mockEmbedder{dim: testEmbeddingDim}
+	eng := query.NewEngine(st, emb, nil, 20) // nil LLM
+	srv := NewHTTPServer(eng, emb, st, nil)
+
+	queryReq := model.QueryRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "test query"}},
+		Mode:     model.ModeLocal,
+	}
+	body, _ := json.Marshal(queryReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if !strings.Contains(rec.Body.String(), "KB_LLM_PROVIDER") {
+		t.Fatalf("expected error mentioning KB_LLM_PROVIDER, got: %s", rec.Body.String())
+	}
+}
+
 func TestHandleQueryMethodNotAllowed(t *testing.T) {
 	st := newTestStore(t)
 	emb := &mockEmbedder{dim: testEmbeddingDim}

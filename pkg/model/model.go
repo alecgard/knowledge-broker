@@ -17,7 +17,8 @@ const (
 
 // Query mode constants.
 const (
-	ModeRaw = "raw"
+	ModeRaw   = "raw"
+	ModeLocal = "local"
 )
 
 // FragmentID generates a deterministic fragment ID from the source type,

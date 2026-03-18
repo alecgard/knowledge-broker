@@ -147,6 +147,20 @@ func (s *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Local LLM synthesis mode: simplified prompt for small models.
+	if req.Mode == model.ModeLocal {
+		if !s.engine.HasLLM() {
+			http.Error(w, "Local mode requires an LLM provider. Set KB_LLM_PROVIDER=ollama in .env, or use \"mode\":\"raw\" for retrieval without LLM.", http.StatusBadRequest)
+			return
+		}
+		if req.Stream != nil && *req.Stream {
+			s.handleQueryLocalStream(w, r, req)
+		} else {
+			s.handleQueryLocalSync(w, r, req)
+		}
+		return
+	}
+
 	// Synthesis is the default. If no LLM is configured, return a clear error
 	// instead of silently falling back to raw mode.
 	if !s.engine.HasLLM() {
@@ -216,6 +230,55 @@ func (s *HTTPServer) handleQuerySync(w http.ResponseWriter, r *http.Request, req
 	answer, err := s.engine.Query(r.Context(), req, nil)
 	if err != nil {
 		s.logger.Error("query failed", "error", err)
+		http.Error(w, fmt.Sprintf("query failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(answer)
+}
+
+func (s *HTTPServer) handleQueryLocalStream(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ctx := r.Context()
+
+	onText := func(text string) {
+		data, _ := json.Marshal(map[string]string{"type": "text", "content": text})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	answer, err := s.engine.QueryLocal(ctx, req, onText)
+	if err != nil {
+		s.logger.Error("local query failed", "error", err)
+		data, _ := json.Marshal(map[string]string{"type": "error", "content": err.Error()})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+		return
+	}
+
+	data, _ := json.Marshal(map[string]interface{}{
+		"type":       "done",
+		"confidence": answer.Confidence,
+		"sources":    answer.Sources,
+	})
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
+func (s *HTTPServer) handleQueryLocalSync(w http.ResponseWriter, r *http.Request, req model.QueryRequest) {
+	answer, err := s.engine.QueryLocal(r.Context(), req, nil)
+	if err != nil {
+		s.logger.Error("local query failed", "error", err)
 		http.Error(w, fmt.Sprintf("query failed: %v", err), http.StatusInternalServerError)
 		return
 	}

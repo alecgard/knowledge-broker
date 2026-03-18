@@ -472,6 +472,17 @@ input:focus, textarea:focus, select:focus {
   margin-left: auto;
 }
 
+.citation-link {
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+}
+
+.citation-link:hover {
+  border-bottom-style: solid;
+}
+
 /* Fragment cards (raw mode) */
 .fragment-card {
   border: 1px solid var(--border);
@@ -891,6 +902,7 @@ input:focus, textarea:focus, select:focus {
       </select>
       <div class="mode-group">
         <button class="btn btn-active" id="btnSynth" onclick="setMode('synthesis')">Synthesised</button>
+        <button class="btn" id="btnLocal" onclick="setMode('local')">Local</button>
         <button class="btn" id="btnRaw" onclick="setMode('raw')">Raw</button>
       </div>
     </div>
@@ -1039,8 +1051,9 @@ function highlightAllFragments() {
 
 function setMode(mode) {
   state.mode = mode;
-  $('btnRaw').className = 'btn' + (mode === 'raw' ? ' btn-active' : '');
   $('btnSynth').className = 'btn' + (mode === 'synthesis' ? ' btn-active' : '');
+  $('btnLocal').className = 'btn' + (mode === 'local' ? ' btn-active' : '');
+  $('btnRaw').className = 'btn' + (mode === 'raw' ? ' btn-active' : '');
 }
 
 // --- Examples ---
@@ -1090,6 +1103,7 @@ async function submitQuery() {
       renderMeta(latency, (data.fragments || []).length);
       renderRawResults(data);
     } else {
+      if (state.mode === 'local') body.mode = 'local';
       body.stream = true;
       const resp = await fetch(url + '/v1/query', {
         method: 'POST',
@@ -1150,6 +1164,12 @@ async function handleStream(resp) {
           const dot = $('streamDot');
           if (dot) dot.remove();
 
+          // Replace raw fragment IDs with linked source names
+          const answerEl = $('answerText');
+          if (answerEl) {
+            answerEl.innerHTML = linkifyCitations(answerText, fullResponse.sources);
+          }
+
           const latency = Math.round(performance.now() - state.startTime);
           renderMeta(latency, fullResponse.sources.length);
           renderSynthMeta(fullResponse);
@@ -1159,6 +1179,40 @@ async function handleStream(resp) {
       }
     }
   }
+}
+
+// --- Citation linking ---
+
+function linkifyCitations(text, sources) {
+  if (!sources || sources.length === 0) return esc(text);
+  const sourceMap = {};
+  for (const s of sources) {
+    sourceMap[s.fragment_id] = s;
+  }
+  // Build a list of fragment IDs for positional lookup (e.g. [1] -> first source)
+  const idList = sources.map(function(s) { return s.fragment_id; });
+
+  // Replace various citation patterns small models produce:
+  //   [abc123def4567890]  — exact ID
+  //   [fragment_id: abc123def4567890]  — labelled ID
+  //   [1], [2] etc  — positional references
+  return esc(text).replace(/\[(?:fragment_id:\s*)?([a-f0-9]{16})\]|\[(\d+)\]/g, function(match, hexId, numRef) {
+    var s;
+    if (hexId) {
+      s = sourceMap[hexId];
+    } else if (numRef) {
+      var idx = parseInt(numRef, 10) - 1;
+      if (idx >= 0 && idx < idList.length) {
+        s = sourceMap[idList[idx]];
+      }
+    }
+    if (!s) return match;
+    const label = (s.source_name ? s.source_name + ' · ' : '') + (s.source_path || s.fragment_id);
+    if (s.source_uri) {
+      return '<a href="' + esc(s.source_uri) + '" target="_blank" rel="noopener" class="citation-link" title="' + esc(s.source_path || '') + '">[' + esc(label) + ']</a>';
+    }
+    return '<span class="citation-link" title="' + esc(s.source_path || '') + '">[' + esc(label) + ']</span>';
+  });
 }
 
 // --- Render helpers ---

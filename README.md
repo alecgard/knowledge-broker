@@ -65,6 +65,19 @@ kb query "What database does the inventory service use?"
 }
 ```
 
+## Local Mode
+
+Not everyone has a Claude or OpenAI API key. Local mode synthesises answers using a small model running entirely on your machine via Ollama — no data leaves your environment, no API costs, no setup beyond a single env var.
+
+```bash
+export KB_LLM_PROVIDER=ollama
+kb query "How does the payment retry logic work?"
+```
+
+The model is pulled automatically on first run. In the web UI, click **Local** to switch modes. Answers stream back with inline source citations and the same confidence signals as every other mode.
+
+Best for: quick lookups, onboarding onto a new codebase, and environments where external API calls aren't an option.
+
 ## Serve
 
 ```bash

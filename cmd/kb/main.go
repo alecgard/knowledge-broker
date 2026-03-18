@@ -94,6 +94,9 @@ func ensureOllama(ctx context.Context, cmd *cobra.Command, cfg config.Config, ve
 		SkipSetup:      cfg.SkipSetup || noSetup,
 		Verbose:        verbose,
 	}
+	if cfg.LLMProvider == "ollama" {
+		rtCfg.LLMModel = cfg.OllamaLLMModel
+	}
 	return ollamaRT.EnsureReady(ctx, rtCfg)
 }
 
@@ -116,6 +119,9 @@ func runSetupOllama(cmd *cobra.Command, args []string) error {
 		EmbeddingModel: cfg.EmbeddingModel,
 		EnrichModel:    cfg.EnrichModel,
 		Verbose:        true,
+	}
+	if cfg.LLMProvider == "ollama" {
+		rtCfg.LLMModel = cfg.OllamaLLMModel
 	}
 	return ollamaRT.EnsureReady(ctx, rtCfg)
 }

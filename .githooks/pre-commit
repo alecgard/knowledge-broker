@@ -1,6 +1,5 @@
 #!/bin/sh
-# Pre-commit hook: run tests before committing
-# Skip for docs-only changes (no Go code touched)
+# Pre-commit hook
 
 # Regenerate llms-full.txt if any docs files are staged.
 DOC_CHANGES=$(git diff --cached --name-only | grep -E '^docs/.*\.md$')
@@ -8,19 +7,3 @@ if [ -n "$DOC_CHANGES" ]; then
     ./scripts/gen-llms-full.sh
     git add docs/llms-full.txt
 fi
-
-# Check if any non-docs files are staged
-GO_CHANGES=$(git diff --cached --name-only | grep -v -E '^(docs/|overrides/|mkdocs\.yml$|scripts/gen-llms-full\.sh$|\.github/|\.env\.example$|.*\.md$|.*\.css$|.*\.txt$|.*\.html$)')
-
-if [ -z "$GO_CHANGES" ]; then
-    echo "Docs-only change — skipping tests."
-    exit 0
-fi
-
-echo "Running tests..."
-CGO_CFLAGS="-Wno-deprecated-declarations" go test -tags sqlite_fts5 ./... -count=1
-if [ $? -ne 0 ]; then
-    echo "Tests failed. Commit aborted."
-    exit 1
-fi
-echo "All tests passed."

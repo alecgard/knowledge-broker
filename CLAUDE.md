@@ -13,7 +13,7 @@ CGO flag required on macOS: `CGO_CFLAGS="-Wno-deprecated-declarations"`
 
 ## Rules
 
-- **Always run `make test` before pushing.** A pre-push git hook enforces this automatically.
+- **Always run `make test` before pushing.** Tests run automatically in CI on PRs.
 - Keep tests passing at all times. Do not push with failing tests.
 - When modifying MCP, HTTP, or CLI code, run the relevant server tests:
   - `go test ./internal/server/ -count=1 -v` for HTTP and MCP

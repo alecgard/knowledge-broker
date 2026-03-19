@@ -1,0 +1,16 @@
+# Knowledge Broker
+
+> AI knowledge retrieval engine for engineering teams. Ingest repos, Confluence, Slack, GitHub Wiki — get answers with confidence signals, contradiction detection, and source attribution. Go + SQLite, hybrid search (BM25 + vector), MCP server for AI agents. Open-source, self-hosted, no data leaves your environment.
+
+## Docs
+
+- [What is Knowledge Broker](https://knowledgebroker.dev/): Overview, key concepts, and differentiators
+- [Getting Started](https://knowledgebroker.dev/quickstart/): Installation and first query in under 5 minutes
+- [Architecture](https://knowledgebroker.dev/architecture/): Trust layer, hybrid search, confidence signals explained
+- [Connectors](https://knowledgebroker.dev/connectors/): Setup for Git, Confluence, Slack, GitHub Wiki sources
+- [MCP Server](https://knowledgebroker.dev/mcp/): Team deployment with Claude Code and other MCP clients
+- [CLI Reference](https://knowledgebroker.dev/cli/): Complete command reference
+
+## Source
+
+- [GitHub](https://github.com/alecgard/knowledge-broker): Source code, README, and issue tracker

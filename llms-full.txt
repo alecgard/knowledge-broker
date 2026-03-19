@@ -1,0 +1,1527 @@
+# Knowledge Broker — Complete Documentation
+
+Source: https://knowledgebroker.dev
+Generated: 2026-03-19
+
+
+# Knowledge Broker
+
+Your AI agents are guessing at things your org already knows, because the answer is buried across three repos, a Confluence page, and a Slack thread from February. Knowledge Broker is an AI knowledge retrieval engine that searches all of them at once and gives back one answer with sources, confidence scores, and a heads-up when things contradict each other.
+
+Run it for your whole org or just on your laptop — either way, AI agents query it over MCP or HTTP, people use the CLI, and nobody needs to already know where to look.
+
+## Why Knowledge Broker
+
+Your team's knowledge is scattered across repos, wikis, Confluence, Slack, and local docs. The answer to any question usually exists somewhere, spread across three sources that partially contradict each other. Traditional search finds documents. Knowledge Broker finds answers, tells you how much to trust them, and shows you where sources disagree.
+
+It runs on SQLite with local embedding models, no Postgres, no Elasticsearch, no cloud dependencies. One binary, one database file, everything managed automatically. The only external call is to an LLM for answer synthesis, and even that's optional (raw mode does retrieval and confidence scoring entirely locally).
+
+The MCP server gives AI agents structured access to the knowledge base with confidence scores they can branch on. When sources disagree, the contradiction is surfaced explicitly so agents and people can act on it.
+
+## What it looks like
+
+```jsonc
+$ kb query "What database does the inventory service use?"
+{
+  "answer": "The inventory service uses PostgreSQL (v16 on RDS, r6g.2xlarge).",
+  "confidence": {
+    "overall": 0.93,
+    "breakdown": {
+      "freshness": 0.94,
+      "corroboration": 0.85,
+      "consistency": 1.00,
+      "authority": 0.95
+    }
+  },
+  "sources": [
+    { "source_type": "confluence", "source_name": "ACME", "source_path": "Internal Services" },
+    { "source_type": "slack", "source_name": "acme", "source_path": "#platform-engineering/2026-03-06" }
+  ],
+  "contradictions": []
+}
+```
+
+The answer is synthesised from Confluence docs and Slack history. Every response includes a confidence breakdown and source attribution.
+
+## Who it's for
+
+Engineering teams that want AI-powered knowledge retrieval across all their repos, docs, and chat history. Platform teams that want to give everyone — and every AI coding agent — access to the same organizational knowledge without each person setting up their own tooling.
+
+## Get started
+
+```bash
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
+```
+
+Install and run your first query in under 5 minutes: [Getting Started](quickstart.md). Then [deploy for your team](deployment.md).
+
+## How it works
+
+1. **[Connectors](connectors.md)** pull content from sources: local filesystem, Git, Confluence, Slack, GitHub Wiki
+2. **Extractors** chunk files at semantic boundaries (headings for markdown, functions for code)
+3. **Embeddings** convert chunks to vectors locally; raw text is indexed with FTS5 for keyword search
+4. **Hybrid search** runs vector similarity and BM25 keyword search, merged via Reciprocal Rank Fusion
+5. **[Confidence signals](architecture.md#confidence-signals)** assess trust across four dimensions: freshness, corroboration, consistency, authority
+6. **Synthesis** (optional) produces an answer via an LLM, or returns ranked fragments directly in raw mode
+
+Read the full [architecture](architecture.md) for details on the trust layer and query pipeline.
+
+## License
+
+[BSL 1.1](https://github.com/alecgard/knowledge-broker/blob/main/LICENSE), free to use and self-host. Converts to Apache 2.0 after 4 years.
+
+---
+
+
+# Getting Started
+
+Install KB and run your first query locally. For shared team setups, see [Team Deployment](deployment.md).
+
+## Install
+
+```bash
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
+```
+
+This downloads the latest `kb` binary for your platform (macOS or Linux) and places it on your PATH.
+
+All runtime dependencies are managed automatically on first run.
+
+??? note "Build from source"
+    Requires Go 1.24+:
+
+    ```bash
+    git clone https://github.com/alecgard/knowledge-broker.git
+    cd knowledge-broker
+    make install
+    ```
+
+    `make install` builds the `kb` binary and adds it to your PATH.
+
+## Ingest
+
+Point KB at your sources. Descriptions help agents understand what each source contains:
+
+```bash
+kb ingest --source ./my-project --description "Payment processing service"
+kb ingest --git https://github.com/acme/platform --description "Platform services"
+kb ingest --confluence ENGINEERING --description "Engineering wiki"
+kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
+```
+
+KB walks each source, chunks files at semantic boundaries (headings for markdown, functions for code), embeds them locally, and stores everything in a single SQLite database.
+
+Ingestion is incremental, so re-running the same command only processes new or changed files. Set this up as a cron job or CI step to keep the knowledge base current.
+
+## Query
+
+### Raw mode (no API key needed)
+
+Raw mode runs the full retrieval pipeline (embedding, hybrid search, confidence scoring) entirely locally. No external API key required.
+
+```bash
+kb query --raw "how does authentication work?"
+```
+
+Returns ranked fragments with content, source metadata, and per-fragment confidence scores.
+
+### Synthesis mode (requires an LLM provider)
+
+For synthesised answers with cross-fragment confidence assessment and contradiction detection. Configure an API key for your preferred provider:
+
+```bash
+# Save to your persistent config (recommended — survives new shells)
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+
+# Or export for the current session
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Other providers work too:
+
+```bash
+# OpenAI
+KB_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+
+# Local model via Ollama (no API key needed)
+KB_LLM_PROVIDER=ollama
+```
+
+```bash
+kb query "how does authentication work?"
+```
+
+Returns a natural-language answer with an overall confidence score, source citations, and any contradictions between sources.
+
+### Human-readable streaming
+
+```bash
+kb query --human "how does authentication work?"
+```
+
+Streams the answer to the terminal as it's generated.
+
+## Tell your agents about KB
+
+If you use an AI coding agent (Claude Code, Cursor, etc.), add a prompt to your project config telling it when and how to use KB. Without this, agents won't know the knowledge base exists.
+
+We provide ready-made prompt templates you can drop into your `CLAUDE.md`, `.cursorrules`, or equivalent — see [Agent prompts](mcp.md#agent-prompts).
+
+## What requires an API key
+
+KB works entirely locally out of the box. An LLM provider (Claude, OpenAI, or local via Ollama) unlocks additional capabilities but is never required for core retrieval.
+
+| Capability | Local only | With API key |
+|------------|:-----------:|:------------:|
+| Ingestion, embedding, hybrid search | :material-check: | :material-check: |
+| Raw retrieval with confidence signals | :material-check: | :material-check: |
+| Chunk enrichment (entity/keyword annotations) | :material-check: | :material-check: |
+| **Multi-query expansion** | | :material-check: |
+| **Answer synthesis** | | :material-check: |
+| **Cross-fragment confidence assessment** | | :material-check: |
+| **Contradiction detection** | | :material-check: |
+
+Run `kb config` at any time to see where your settings are coming from. See [CLI Reference — Configuration](cli.md#configuration) for the full search path.
+
+## Next steps
+
+- [Deploy for your team](deployment.md) — shared server, HTTP API, remote MCP
+- [MCP Server](mcp.md) — connect AI agents to your local or shared KB instance
+- [Connect more sources](connectors.md) — Confluence, Slack, GitHub Wiki
+- [Understand the trust layer](architecture.md) — how confidence signals work
+- [CLI Reference](cli.md) — all commands and flags
+
+---
+
+
+# Team Deployment
+
+The typical setup: one KB instance runs on a shared server with your org's sources ingested. Developers and AI agents connect to it from their own machines via CLI, HTTP, or MCP.
+
+## Server setup
+
+### 1. Install
+
+On the server:
+
+```bash
+curl -fsSL https://knowledgebroker.dev/install.sh | sh
+```
+
+### 2. Ingest your org's sources
+
+```bash
+kb ingest --git https://github.com/acme/platform --description "Platform services"
+kb ingest --confluence ENGINEERING --description "Engineering wiki"
+kb ingest --slack C0ABC123DEF --description "Platform engineering channel"
+```
+
+Set up a cron job or CI step to re-run ingestion periodically. Only new or changed files are processed.
+
+### 3. Configure synthesis (optional)
+
+Set an API key on the server for answer synthesis. Without one, raw retrieval still works.
+
+The recommended approach for servers is a config file:
+
+```bash
+# Create a server config file
+cat > /etc/kb/config <<EOF
+ANTHROPIC_API_KEY=sk-ant-...
+KB_LISTEN_ADDR=:8080
+EOF
+```
+
+Or use environment variables directly (standard for containers):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### 4. Start the server
+
+```bash
+# With config file
+kb serve --config /etc/kb/config
+
+# Or with env vars
+kb serve
+```
+
+This starts three things in one process:
+
+| Transport | Address | Purpose |
+|-----------|---------|---------|
+| HTTP API | `:8080` | REST queries, ingestion, source management |
+| MCP SSE | `:8082` | Remote MCP clients |
+| MCP stdio | — | Local MCP clients (subprocess) |
+
+Customize ports with `--addr` and `--mcp-addr`. For a headless deployment with no stdio:
+
+```bash
+kb serve --no-stdio
+```
+
+## Connecting from developer machines
+
+Developers don't need to run their own KB instance. They connect to the shared server.
+
+### CLI with --remote
+
+Install `kb` locally, then point any command at the server:
+
+```bash
+# Query
+kb query --remote http://server:8080 "how does auth work?"
+kb query --remote http://server:8080 --raw "retry logic"
+
+# List sources
+kb sources list --remote http://server:8080
+
+# Push a local repo to the shared instance
+kb ingest --source ./my-repo --remote http://server:8080
+
+# Export
+kb export --remote http://server:8080 --out ./export/
+```
+
+Every CLI command accepts `--remote`. When set, it talks to the server over HTTP instead of using a local database.
+
+### MCP clients (Claude Code, Cursor, Windsurf)
+
+Point MCP clients at the server's SSE endpoint. No local `kb` binary required.
+
+For Claude Code, add to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "knowledge-broker": {
+      "type": "sse",
+      "url": "http://server:8082/sse"
+    }
+  }
+}
+```
+
+Every developer's agent queries the same shared knowledge base. No local install, no local database. Add a prompt to your project config so agents use KB automatically -- see [Agent prompts](mcp.md#agent-prompts).
+
+### HTTP API
+
+Query the server directly from scripts, CI, or custom integrations:
+
+```bash
+# Synthesised answer
+curl -s -X POST http://server:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}]}'
+
+# Raw retrieval
+curl -s -X POST http://server:8080/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"how does auth work?"}],"mode":"raw"}'
+
+# List sources
+curl -s http://server:8080/v1/sources
+
+# Health check
+curl -s http://server:8080/v1/health
+```
+
+See [CLI Reference](cli.md#endpoints) for the full API.
+
+## Keeping the knowledge base fresh
+
+### Cron
+
+Re-ingest all registered sources on a schedule:
+
+```bash
+# Every hour
+0 * * * * /usr/local/bin/kb ingest --all
+```
+
+### CI/CD
+
+Add ingestion to your deploy pipeline so the knowledge base updates whenever docs or code ship:
+
+```bash
+# In your CI job
+kb ingest --source . --remote http://kb-server:8080 --description "My service"
+```
+
+### Developer contributions
+
+Any developer can push their local repo to the shared instance:
+
+```bash
+kb ingest --source ./my-project --remote http://server:8080 --description "Payment service"
+```
+
+## Monitoring
+
+The HTTP server exposes a `/metrics` endpoint for Prometheus scraping. Use it with Prometheus + Grafana for dashboards and alerting.
+
+```bash
+curl http://server:8080/metrics
+```
+
+Available metrics include HTTP request counts and latency (`kb_http_requests_total`, `kb_http_request_duration_seconds`), query counts by mode (`kb_queries_total`), query latency by phase (`kb_query_duration_seconds`), and query errors (`kb_query_errors_total`).
+
+## Network and security
+
+KB does not include authentication. For production deployments:
+
+- Run behind a reverse proxy (nginx, Caddy) or VPN
+- Use HTTPS termination at the proxy level
+- Restrict access by IP or network
+- The SSE endpoint at `:8082` should be similarly protected
+
+## Backup and restore
+
+The KB database is a single SQLite file containing fragments, embeddings, source metadata, the FTS index, and the query cache. Everything can be regenerated by re-ingesting your sources, but a backup avoids the time and compute cost of re-embedding.
+
+### Backup
+
+Use the built-in backup command, which produces a consistent snapshot even while the server is running:
+
+```bash
+kb backup
+```
+
+This writes a timestamped copy to the KB data directory. Pass `--out <path>` to write to a specific location.
+
+### Restore
+
+Restore from a backup file:
+
+```bash
+kb restore /path/to/kb-backup-20250115-030000.db
+```
+
+This validates that the backup is a valid SQLite database, then prompts for confirmation before overwriting:
+
+```
+This will replace the current database at /home/deploy/.local/share/kb/kb.db. Continue? [y/N]
+```
+
+Pass `--force` to skip the confirmation prompt (useful in scripts):
+
+```bash
+kb restore --force /path/to/backup.db
+```
+
+Stop the server before restoring, then restart it afterward.
+
+### Migration between machines
+
+Copy the backup file to the new machine. The only requirement is that the embedding model matches — same model name and dimensions. If the models differ, re-ingest from your sources instead.
+
+## Architecture
+
+```
+                    ┌─────────────────────────────────┐
+                    │         KB Server               │
+                    │                                 │
+                    │  kb serve                       │
+                    │  ├── HTTP API    (:8080)        │
+                    │  ├── MCP SSE    (:8082)         │
+                    │  └── SQLite DB  (kb.db)         │
+                    └──────┬──────────────┬───────────┘
+                           │              │
+              ┌────────────┴──┐    ┌──────┴────────────┐
+              │  HTTP / CLI   │    │   MCP SSE         │
+              │  --remote     │    │                   │
+              ├───────────────┤    ├───────────────────┤
+              │ kb query      │    │ Claude Code       │
+              │ kb sources    │    │ Cursor            │
+              │ kb ingest     │    │ Windsurf          │
+              │ curl / scripts│    │ Any MCP client    │
+              └───────────────┘    └───────────────────┘
+```
+
+---
+
+
+# Architecture
+
+## Design principles
+
+Most knowledge tools give you an answer and hope it's right. KB tells you how much to trust the answer and why. When sources disagree, it flags the contradiction rather than silently picking one.
+
+Embeddings and search run entirely on your machine. The only external call is to an LLM for synthesis, and that's optional.
+
+Connectors, extractors, embedding models, and LLM providers are all swappable. Adding a new source type or file format doesn't touch core code.
+
+## System overview
+
+```
+ INGESTION                                          QUERY
+ ─────────                                          ─────
+
+ ┌───────────┐  ┌──────────┐  ┌──────────┐
+ │   Local   │  │   Git    │  │Confluence│  ...
+ │Filesystem │  │  Repos   │  │  Slack   │
+ └────┬──────┘  └────┬─────┘  └─────┬────┘
+      │              │              │
+      ▼              ▼              ▼
+ ┌────────────────────────────────────────┐
+ │            Connectors                  │         ┌─────────────────┐
+ │  Pull content, detect changes (SHA-256)│         │   User Query    │
+ └──────────────────┬─────────────────────┘         └────────┬────────┘
+                    │                                        │
+                    ▼                                        ▼
+ ┌────────────────────────────────────────┐    ┌──────────────────────────┐
+ │            Extractors                  │    │  Multi-Query Expansion   │
+ │  Chunk at semantic boundaries per type │    │  LLM rephrases using     │
+ │  (headings, functions, paragraphs)     │    │  corpus vocabulary       │
+ └──────────────────┬─────────────────────┘    │  (optional, needs API)   │
+                    │                          └────────────┬─────────────┘
+                    ▼                                       │
+ ┌────────────────────────────────────────┐                 ▼
+ │         Enrichment (optional)          │    ┌──────────────────────────┐
+ │  Local LLM annotates chunks with       │    │       Embedding          │
+ │  entities and keywords                 │    │  Embed original          │
+ └──────────────────┬─────────────────────┘    │  + expanded queries      │
+                    │                          └────────────┬─────────────┘
+                    ▼                                       │
+ ┌────────────────────────────────────────┐                 ▼
+ │            Embedding                   │    ┌──────────────────────────┐
+ │  Local model (nomic-embed-text, 768d)  │    │     Hybrid Search        │
+ └──────────────────┬─────────────────────┘    │                          │
+                    │                          │  ┌────────┐ ┌──────────┐ │
+                    ▼                          │  │Vector  │ │  BM25    │ │
+          ┌─────────────────┐                  │  │sqlite- │ │  FTS5    │ │
+          │                 │                  │  │vec     │ │  keyword │ │
+          │  ┌───────────┐  │                  │  └───┬────┘ └────┬─────┘ │
+          │  │sqlite-vec │  │                  │      └─────┬─────┘       │
+          │  │ (vectors) │  │◄─────────────────│            │             │
+          │  └───────────┘  │  search          │      RRF Merge           │
+          │  ┌───────────┐  │                  └────────────┬─────────────┘
+          │  │   FTS5    │  │                               │
+          │  │(keywords) │  │                               ▼
+          │  └───────────┘  │                  ┌──────────────────────────┐
+          │                 │                  │   Synthesis (LLM)        │
+          │  SQLite (.db)   │                  │   or Raw Fragments       │
+          │                 │                  └────────────┬─────────────┘
+          └─────────────────┘                               │
+                                                            ▼
+                                               ┌──────────────────────────┐
+                                               │        Response          │
+                                               │  ┌────────────────────┐  │
+                                               │  │ Answer + Sources   │  │
+                                               │  ├────────────────────┤  │
+                                               │  │ Confidence Signals │  │
+                                               │  │ (fresh/corr/cons/  │  │
+                                               │  │  auth → overall)   │  │
+                                               │  ├────────────────────┤  │
+                                               │  │ Contradictions     │  │
+                                               │  └────────────────────┘  │
+                                               └──────────────────────────┘
+```
+
+## Ingestion pipeline
+
+```
+Source → Connector → Extractor → Enrichment → Embedding → SQLite (sqlite-vec + FTS5)
+```
+
+### Connectors
+
+Pluggable adapters that pull content from sources. Each source is registered with a type and name. The connector handles authentication, pagination, and change detection.
+
+Ingestion is incremental: unchanged files (by SHA-256 checksum) are skipped. Documents that no longer exist at the source are removed from the database.
+
+Supported connectors: local filesystem, Git (GitHub, GitLab, any Git host), Confluence Cloud, Slack, GitHub Wiki. See [Connectors](connectors.md) for setup details.
+
+### Extractors
+
+Files are chunked at semantic boundaries based on file type:
+
+| File type | Strategy |
+|-----------|----------|
+| Markdown (`.md`) | Split on headings |
+| Code (`.go`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.java`, `.rs`, `.rb`) | Split on function/class boundaries |
+| PDF (`.pdf`) | Text extraction |
+| Jupyter (`.ipynb`) | Cell boundaries |
+| Config (`.yaml`, `.yml`, `.toml`, `.json`, `.ini`, `.conf`, `.env`, `.properties`) | Logical sections |
+| Everything else | Paragraph-based fallback |
+
+Oversized chunks get a fixed-size fallback with configurable overlap (`KB_MAX_CHUNK_SIZE`, `KB_CHUNK_OVERLAP`).
+
+### Enrichment (optional)
+
+A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a sliding window of neighboring chunks. It appends entity and keyword annotations that improve retrieval without modifying the original text.
+
+Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
+
+#### What enrichment produces
+
+The enrichment LLM reads each chunk (plus its neighbors for context) and generates entity names, keywords, and domain terms that are relevant but may not appear verbatim in the text. These annotations are appended to the chunk before embedding. The original chunk text is preserved separately so the raw content is never modified.
+
+#### Choosing a model
+
+The enrichment model is configured via `KB_ENRICH_MODEL` or the `--enrich-model` flag.
+
+| Model | Speed | Quality | Memory |
+|-------|-------|---------|--------|
+| `qwen2.5:0.5b` (default) | Fast | Basic keyword extraction | ~500 MB |
+| `qwen2.5:3b` | Slower | Better entity recognition, more accurate keywords | ~2 GB |
+
+Smaller models are fine for most corpora. Use a larger model if you notice retrieval missing results that should match on entity names or domain-specific terminology.
+
+#### How enrichment affects retrieval
+
+Enriched terms are embedded alongside the chunk text, so they influence both **vector similarity** and **BM25 keyword search**. This is especially useful for vocabulary mismatch: if a chunk discusses "k8s pod autoscaling" but the user searches for "Kubernetes horizontal scaling," enrichment can bridge the gap by adding both phrasings.
+
+
+#### When to re-enrich
+
+Enrichment metadata is stored with each fragment. You need to re-enrich when:
+
+- **Changing the enrichment model** — different models produce different annotations.
+- **Changing the prompt version** — the annotation format changes.
+
+To re-enrich, either re-ingest with `--force` or use `--re-enrich` to update enrichment on existing fragments without re-scanning sources:
+
+```bash
+# Re-enrich all fragments with a new model
+kb ingest --re-enrich --enrich-model qwen2.5:3b
+
+# Re-enrich only a specific source
+kb ingest --re-enrich --source ./my-docs
+```
+
+#### Skipping enrichment
+
+Pass `--skip-enrichment` to `kb ingest` if you want faster ingestion and don't need the keyword boost. This is useful for quick iteration during development or when your corpus already uses consistent terminology that matches how users search.
+
+#### Troubleshooting
+
+- **Ollama OOM with larger models** — If Ollama crashes or returns errors during enrichment with `qwen2.5:3b` or larger, your machine may not have enough memory. Fall back to `qwen2.5:0.5b` or skip enrichment entirely.
+- **Slow enrichment on large corpora** — Enrichment adds an LLM call per chunk. For large corpora (thousands of files), expect enrichment to take significantly longer than embedding alone. Use `--parallel` to speed up multi-source ingestion, or `--skip-enrichment` for the initial ingest and run `--re-enrich` later.
+- **Enrichment model not found** — KB auto-pulls the enrichment model on first run via `kb setup`. If this fails (e.g., no internet), pull it manually: `ollama pull qwen2.5:0.5b`.
+
+### Embedding and storage
+
+Each chunk is embedded locally (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
+
+Everything lives in a single SQLite database file. No external database infrastructure.
+
+## Query pipeline
+
+```
+Query → Expansion → Embedding → Hybrid Search (vector + BM25) → RRF Merge → Synthesis/Raw
+```
+
+### Multi-query expansion
+
+When an API key is available, KB does a quick scout retrieval to extract domain vocabulary from the corpus, then asks the LLM to rephrase the query using those terms. This bridges vocabulary mismatch, like when the user says "auth" but the docs say "authentication middleware."
+
+Each expanded query variant is searched independently. Results are merged in the RRF step.
+
+### Hybrid search
+
+Every query runs through both **vector similarity** (semantic meaning) and **BM25 keyword search** (exact term matching). This catches both conceptual matches and precise terminology.
+
+Results from all search paths are merged via **Reciprocal Rank Fusion** (RRF), which boosts fragments that appear in multiple result lists without requiring score normalization.
+
+### Synthesis vs raw mode
+
+**Synthesis mode** (default, requires an LLM provider) sends the top fragments to the configured LLM with a system prompt that instructs it to:
+
+- Synthesise a direct answer from the retrieved fragments
+- Assess confidence signals across the full context
+- Cite specific sources
+- Flag contradictions between sources explicitly
+
+**Raw mode** (no API key needed) returns fragments directly with per-fragment confidence scores computed locally. Useful for debugging retrieval, feeding a separate pipeline, or when no API key is configured.
+
+## The trust layer
+
+Every response includes a composite trust score built from four independent dimensions.
+
+### Confidence signals
+
+| Signal | Weight | What it measures |
+|--------|--------|-----------------|
+| **Freshness** | 0.20 | How recently were the sources modified, relative to the corpus age distribution |
+| **Corroboration** | 0.25 | How many independent sources support the answer |
+| **Consistency** | 0.30 | Do the sources agree, or are there contradictions |
+| **Authority** | 0.25 | How authoritative are the source types for this kind of query |
+
+The **overall** score is a weighted composite:
+
+```
+overall = freshness × 0.20 + corroboration × 0.25 + consistency × 0.30 + authority × 0.25
+```
+
+### How confidence is computed
+
+In **raw mode**, confidence is computed per fragment using local heuristics:
+
+- **Freshness** is scored relative to the corpus age distribution, so a document modified last week scores higher than one modified last year, calibrated to how old the corpus is overall
+- **Corroboration** reflects how many distinct sources contain similar information
+- **Consistency** is based on embedding similarity between fragments about the same topic
+- **Authority** weights source types based on query characteristics (e.g., code repos are more authoritative for implementation questions, Confluence for process questions)
+
+In **synthesis mode**, the LLM assesses confidence across the full retrieved context, considering cross-fragment agreement, source diversity, and information completeness.
+
+### Contradictions
+
+When sources disagree, Knowledge Broker flags the contradiction explicitly in the response. The `contradictions` array contains natural-language descriptions of what the sources disagree about and which sources are involved.
+
+Most knowledge tools silently pick one answer. KB surfaces the disagreement so agents can escalate to a human and humans can figure out which source is actually right.
+
+### Using confidence signals
+
+Agents can use the overall score to decide how to proceed:
+
+| Score range | Suggested behavior |
+|-------------|-------------------|
+| 0.85+ | Answer confidently |
+| 0.6–0.85 | Answer with caveats, note uncertainty |
+| Below 0.6 | Surface the contradiction or uncertainty to the user |
+
+These thresholds are suggestions. Agents and applications can define their own logic based on the confidence breakdown.
+
+## Configuration
+
+KB loads settings from multiple sources (later overrides earlier):
+
+1. **Defaults** — sensible built-in values
+2. **`~/.config/kb/config`** — persistent user config (respects `$XDG_CONFIG_HOME`)
+3. **`.env` in working directory** — project-local overrides
+4. **`--config <path>`** — explicit file (useful for server deployments)
+5. **Environment variables** — always highest precedence
+
+All config files use `KEY=VALUE` format. Run `kb config` to see the resolved values and where each one comes from. See the [CLI Reference](cli.md#configuration) for the full variable list.
+
+---
+
+
+# Connectors
+
+KB uses pluggable connectors to ingest content from different sources. Each connector scans a source, produces documents, and supports incremental re-ingestion via checksums.
+
+## Local Filesystem
+
+Ingest files from a local directory. Walks the directory tree recursively, respects `.gitignore` patterns.
+
+```bash
+kb ingest --source ./path/to/dir
+kb ingest --source ./repo-a --source ./repo-b   # multiple directories
+```
+
+No configuration needed. This is the default if no flags are given, so `kb ingest` ingests the current directory.
+
+## Git
+
+Clone and ingest a Git repository by URL. Supports public repos directly; private repos authenticate via `KB_GITHUB_TOKEN`, the `gh` CLI, or GitHub device flow. GitLab and other Git hosts are also supported.
+
+```bash
+kb ingest --git https://github.com/owner/repo
+kb ingest --git https://github.com/owner/private-repo   # uses gh CLI or device flow
+kb ingest --git https://gitlab.com/owner/repo            # uses KB_GITLAB_TOKEN
+kb ingest --git https://github.com/owner/repo#abc1234    # pin to a specific commit
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_GITHUB_TOKEN` | No | GitHub personal access token for private repos |
+| `KB_GITLAB_TOKEN` | No | GitLab personal access token for private repos |
+| `KB_GIT_TOKEN` | No | Generic Git token (works with any host) |
+| `KB_GITHUB_CLIENT_ID` | No | GitHub OAuth app client ID for device flow auth |
+
+For GitHub, if no token is set, KB tries the `gh` CLI's cached token, then falls back to device flow if a client ID is configured.
+
+## Confluence
+
+Ingest pages from an Atlassian Confluence Cloud space. Fetches all pages via the REST API with pagination, extracts body content, and supports incremental sync.
+
+```bash
+kb ingest --confluence ENGINEERING
+kb ingest --confluence ENGINEERING --confluence PRODUCT   # multiple spaces
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_CONFLUENCE_BASE_URL` | Yes | Your Confluence instance URL (e.g., `https://yoursite.atlassian.net`) |
+| `KB_CONFLUENCE_EMAIL` | Yes | Email address for API authentication |
+| `KB_CONFLUENCE_TOKEN` | Yes | Atlassian API token ([create one here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+
+The `--confluence` flag takes a **space key** (the short code visible in Confluence URLs, e.g., `ENGINEERING`). Each space is ingested as a separate source.
+
+Pages that are deleted in Confluence are automatically detected and removed from the knowledge base on re-ingestion.
+
+## Slack
+
+Ingest messages from Slack channels. Fetches message history via the Slack Web API. Threaded conversations become individual documents; non-threaded messages are grouped by day.
+
+```bash
+kb ingest --slack C0ABC123DEF
+kb ingest --slack C0ABC123DEF --slack C0XYZ789GHI   # multiple channels
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_SLACK_TOKEN` | Yes | Bot User OAuth Token (`xoxb-...`) |
+| `KB_SLACK_WORKSPACE` | No | Workspace name for display (e.g., `acme-org`) |
+
+### Slack app setup
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
+2. Add the following **Bot Token Scopes** under OAuth & Permissions:
+   - `channels:history` — read message history
+   - `channels:read` — list channels and get channel info
+   - `channels:join` — join public channels (if the bot isn't already a member)
+3. Install the app to your workspace
+4. Copy the **Bot User OAuth Token** (`xoxb-...`) to `KB_SLACK_TOKEN`
+5. Find channel IDs: right-click a channel name in Slack → "View channel details" → the ID is at the bottom
+
+By default, Slack ingestion looks back **90 days**. Messages older than that are not fetched.
+
+### How messages are structured
+
+- **Threaded conversations** (messages with replies): each thread becomes a single document containing the parent message and all replies
+- **Non-threaded messages**: grouped into daily documents per channel
+
+## GitHub Wiki
+
+Ingest pages from a GitHub repository's wiki. The wiki is a separate Git repo (`{repoURL}.wiki.git`) that KB clones and scans. Page links are rewritten to point to the GitHub wiki web UI.
+
+```bash
+kb ingest --wiki https://github.com/owner/repo
+kb ingest --wiki https://github.com/owner/repo --wiki https://github.com/owner/other-repo
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KB_GITHUB_TOKEN` | No | Required for private repos |
+
+The `--wiki` flag takes the **main repository URL** (not the wiki URL). KB automatically derives the wiki clone URL.
+
+Authentication works the same as the Git connector: `KB_GITHUB_TOKEN`, `gh` CLI, or device flow.
+
+## Combining sources
+
+All connector flags can be mixed in a single ingest command:
+
+```bash
+kb ingest \
+  --source ./local-docs \
+  --git https://github.com/acme/backend \
+  --confluence ENGINEERING \
+  --slack C0ABC123DEF \
+  --wiki https://github.com/acme/platform
+```
+
+Each source is tracked independently. Re-running the same command only processes new or changed content.
+
+## Incremental ingestion
+
+All connectors support incremental ingestion via SHA-256 checksums. On each run:
+
+1. KB loads known checksums from the database
+2. The connector scans the source and compares against known checksums
+3. Only new or changed documents are extracted, embedded, and stored
+4. Documents that existed previously but are no longer present are deleted from the database
+
+To force a full re-ingestion (ignoring checksums):
+
+```bash
+kb ingest --confluence ENGINEERING --force
+```
+
+## Re-ingesting all sources
+
+To re-ingest all previously registered local sources:
+
+```bash
+kb ingest --all
+```
+
+This is useful after upgrading KB or changing chunking/embedding settings.
+
+---
+
+
+# MCP Server
+
+Knowledge Broker includes an [MCP](https://modelcontextprotocol.io) server that any MCP-compatible client can use to query and explore the knowledge base. `kb serve` runs the HTTP API, MCP stdio, and MCP SSE transports in a single process.
+
+## Setup
+
+The typical deployment: one KB instance runs on a shared machine with your org's sources already ingested. Developers and agents connect to it via MCP or HTTP.
+
+### Connecting MCP clients
+
+Each developer adds KB to their MCP client config (Claude Code, Cursor, Windsurf, etc.):
+
+```json
+{
+  "mcpServers": {
+    "knowledge-broker": {
+      "command": "/path/to/kb",
+      "args": ["serve", "--no-http", "--no-sse"]
+    }
+  }
+}
+```
+
+If `kb` is on your PATH, you can use `"command": "kb"` directly. This launches KB as a subprocess via stdio.
+
+### SSE (remote access)
+
+`kb serve` also starts an SSE transport on `:8082` by default, so remote clients can connect without running the binary locally:
+
+```bash
+kb serve                        # HTTP on :8080, MCP SSE on :8082
+kb serve --mcp-addr :9090       # custom MCP SSE port
+```
+
+The SSE endpoint is at `http://<addr>/sse` with messages at `http://<addr>/message`. For HTTPS, put a reverse proxy or tunnel in front.
+
+### Remote ingestion
+
+Team members can push content from their local checkouts to the shared instance:
+
+```bash
+# On the server
+kb serve --addr :8080
+
+# From a developer's machine
+kb ingest --source ./my-repo --remote http://server:8080
+```
+
+## Tools
+
+### query
+
+Query the knowledge base and get an answer.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | yes | — | The query to search for |
+| `topics` | string | no | — | Comma-separated topics to boost relevance |
+| `limit` | number | no | 20 | Max fragments to retrieve |
+| `raw` | boolean | no | false | Return raw fragments instead of synthesised answer |
+| `sources` | string | no | — | Comma-separated source names to filter results |
+| `source_types` | string | no | — | Comma-separated source types to filter results |
+| `no_expand` | boolean | no | false | Disable multi-query expansion |
+
+**Synthesis mode (default):** Returns a synthesised answer with confidence signals and source citations. Requires an LLM provider (`ANTHROPIC_API_KEY` for Claude, or configure `KB_LLM_PROVIDER`).
+
+**Raw mode (raw=true):** Returns fragments with content, source metadata, and per-fragment confidence signals. No API key required.
+
+### list-sources
+
+List all ingested sources with fragment counts and last sync time. Takes no parameters.
+
+Returns an array of sources with `source_type`, `source_name`, `description`, `fragment_count`, and `last_ingest`.
+
+## Prompts
+
+### kb-instructions
+
+A prompt that returns instructions teaching the agent when and how to use the knowledge base. Takes no arguments.
+
+The response includes:
+- When to query the knowledge base (missing context, unfamiliar patterns, before making assumptions)
+- A dynamically generated list of available sources with descriptions and fragment counts
+- Tips for using synthesis vs raw mode, topics, and source filtering
+
+MCP clients that support prompts will show this in their prompt list. Use it to bootstrap agent context without manually writing instructions.
+
+## Agent prompts
+
+MCP clients discover KB's tools automatically, but agents won't reach for them unless they know the knowledge base exists. Adding a short prompt to your project config makes the difference between agents that guess and agents that check.
+
+### Claude Code
+
+Add to your project's `CLAUDE.md`:
+
+```markdown
+## Knowledge base
+
+This project is indexed in Knowledge Broker, a shared knowledge base that
+spans our repos, docs, and internal sources. It's available via MCP as the
+"knowledge-broker" server (tools: `query` and `list-sources`).
+
+Use Knowledge Broker:
+- Before asking me for context about the codebase, architecture, or how things work
+- When you encounter unfamiliar patterns, services, or conventions
+- When you need to understand why something was built a certain way
+- Instead of grepping across repos for answers that span multiple files
+
+Start with `list-sources` to see what's indexed. Use `query` for answers.
+Check the confidence score — if it's below 0.5, tell me you're uncertain
+rather than treating the answer as fact. If sources contradict each other,
+surface both claims with their dates.
+```
+
+### Codex
+
+Add to your project's `AGENTS.md` (also read by Jules, Aider, and other agents that support the format):
+
+```markdown
+## Knowledge base
+
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed.
+
+Check the confidence score in the response — if it's below 0.5, flag
+the uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Cursor
+
+Add to `.cursor/rules`:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed. Check the
+confidence score in the response — if it's below 0.5, flag the
+uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Windsurf
+
+Add to `.windsurfrules`:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker", tools: "query" and
+"list-sources"). Before making assumptions about the codebase,
+architecture, or project conventions, use Knowledge Broker's query
+tool. Start with list-sources to see what's indexed. Check the
+confidence score in the response — if it's below 0.5, flag the
+uncertainty. If sources contradict, surface both claims with dates.
+```
+
+### Generic (any MCP client)
+
+The core instruction is the same everywhere. Adapt to your client's prompt format:
+
+```
+This project is indexed in Knowledge Broker, a shared knowledge base
+available via MCP (server: "knowledge-broker"). Use the "query" tool
+to search for answers about the codebase, architecture, and project
+conventions before making assumptions. Use "list-sources" to discover
+what's indexed. Pay attention to confidence scores in the response —
+flag anything below 0.5 as uncertain. When sources contradict each
+other, surface both claims with their dates so the user can judge
+which is current.
+```
+
+## Configuration
+
+KB loads settings from config files and environment variables. The recommended approach is to save persistent settings to `~/.config/kb/config`:
+
+```bash
+mkdir -p ~/.config/kb
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.config/kb/config
+```
+
+Run `kb config` to see the resolved configuration and where each value comes from. See the [CLI Reference](cli.md#configuration) for the full search path and variable list.
+
+## Typical setup
+
+1. **Deploy KB** on a shared machine. Ingest your org's sources: `kb ingest --confluence ENGINEERING --git https://github.com/org/repo --slack C0ABC123DEF`
+2. **Start the server**: `kb serve`
+3. **Each developer** adds KB to their MCP client config (see above)
+4. Agents call `query` for answers with confidence signals, or `list-sources` to discover what's available
+5. The `kb-instructions` prompt bootstraps agent context automatically, no manual prompt engineering needed
+
+---
+
+
+# CLI Reference
+
+## kb ingest
+
+Ingest documents from one or more sources into the knowledge base.
+
+```bash
+kb ingest --source ./path/to/dir
+kb ingest --git https://github.com/owner/repo
+kb ingest --confluence ENGINEERING
+kb ingest --slack C0ABC123DEF
+kb ingest --wiki https://github.com/owner/repo
+kb ingest --all
+```
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Local directory path (repeatable) |
+| `--git` | Git repository URL (repeatable). Append `#sha` to pin to a specific commit |
+| `--confluence` | Confluence space key (repeatable) |
+| `--slack` | Slack channel ID (repeatable) |
+| `--wiki` | GitHub Wiki repository URL (repeatable) |
+| `--all` | Re-ingest all registered local sources |
+| `--remote` | URL of a remote KB server to push fragments to |
+| `--description` | Human-readable description of the source (shown to agents) |
+| `--db` | SQLite database path (default: `kb.db`) |
+| `--skip-enrichment` | Skip LLM chunk enrichment (faster ingestion) |
+| `--enrich-model` | Ollama model for chunk enrichment (default: `qwen2.5:0.5b` or `KB_ENRICH_MODEL`) |
+| `--prompt-version` | Enrichment prompt version: `v1` (full rewrite) or `v2` (append keywords) |
+| `--re-enrich` | Re-run enrichment on already-ingested chunks, then re-embed |
+| `--watch` | Watch for file changes and re-ingest automatically (local sources only) |
+| `--parallel` | Ingest multiple sources in parallel (default: sequential) |
+| `--force` | Force re-ingestion of all files, ignoring checksums |
+
+All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
+
+See [Connectors](connectors.md) for detailed setup instructions per source type.
+
+## kb query
+
+Query the knowledge base.
+
+```bash
+# Raw retrieval (no API key needed)
+kb query --raw "how does auth work?"
+
+# Synthesised answer (requires an LLM provider, Claude by default)
+kb query "what is the billing retry policy?"
+
+# Human-readable streaming
+kb query --human "how does deployment work?"
+
+# With filters
+kb query --raw --limit 10 --topics "billing,payments" "retry policy"
+kb query --raw --source-type git "deployment process"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--raw` | Return ranked fragments without LLM synthesis |
+| `--human` | Stream the answer in human-readable format |
+| `--limit` | Maximum number of fragments to retrieve |
+| `--topics` | Comma-separated topics to boost relevance |
+| `--source-type` | Filter by source type (`filesystem`, `git`, `confluence`, `slack`, `github_wiki`) |
+| `--db` | SQLite database path (default: `kb.db`) |
+| `--remote` | URL of a remote KB server to query |
+
+## kb chat
+
+Start an interactive multi-turn conversation with the knowledge base. Each turn sends the full conversation history to the query engine, so follow-up questions have full context.
+
+```bash
+# Start a chat session
+kb chat
+
+# With filters
+kb chat --topics "billing,payments" --source owner/repo
+
+# Against a remote server
+kb chat --remote http://server:8080
+```
+
+Type your question at the `kb> ` prompt. The answer streams to the terminal. Type `exit`, `quit`, or press `Ctrl+C` to end the session.
+
+| Flag | Description |
+|------|-------------|
+| `--db` | SQLite database path (default: `kb.db`) |
+| `--limit` | Maximum number of fragments to retrieve |
+| `--topics` | Comma-separated topics to boost relevance |
+| `--source` | Filter results to this source name (repeatable) |
+| `--source-type` | Filter results to this source type (repeatable) |
+| `--llm` | LLM provider override: `claude`, `openai`, `ollama` |
+| `--no-expand` | Disable multi-query expansion |
+| `--remote` | URL of a remote KB server |
+
+Example session:
+
+```
+$ kb chat
+Knowledge Broker — interactive chat (type 'exit' or 'quit' to end)
+kb> how does authentication work?
+Authentication uses JWT tokens issued by the auth service...
+
+--- Confidence: 0.82 ---
+
+kb> what happens when a token expires?
+When a JWT token expires, the client must request a new one...
+
+--- Confidence: 0.79 ---
+
+kb> exit
+```
+
+## kb serve
+
+Start the HTTP API and MCP server. Runs the HTTP API, MCP stdio transport, and MCP SSE transport in a single process.
+
+```bash
+kb serve
+kb serve --addr :9090 --mcp-addr :9091
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--addr` | `:8080` | HTTP listen address |
+| `--mcp-addr` | `:8082` | MCP SSE listen address |
+| `--db` | `kb.db` | SQLite database path |
+| `--no-http` | `false` | Disable HTTP API server |
+| `--no-sse` | `false` | Disable MCP SSE transport |
+| `--no-stdio` | `false` | Disable MCP stdio transport |
+
+Use `--no-*` flags to run only the transports you need:
+
+```bash
+kb serve                              # all transports (default)
+kb serve --no-http --no-sse           # stdio only (for MCP client configs)
+kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
+```
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/query` | POST | Query with optional SSE streaming |
+| `/v1/ingest` | POST | Receive fragments from remote ingestion |
+| `/v1/sources` | GET | List registered sources |
+| `/v1/sources` | PATCH | Update source description |
+| `/v1/sources` | DELETE | Remove a source and its fragments |
+| `/v1/sources/import` | POST | Import sources from JSON |
+| `/v1/export` | GET | Export fragment embeddings as JSON |
+| `/v1/version` | GET | Server version |
+| `/v1/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
+
+### Query request format
+
+```json
+{
+  "messages": [{"role": "user", "content": "how does auth work?"}],
+  "limit": 20,
+  "mode": "raw",
+  "stream": true,
+  "topics": ["billing", "payments"],
+  "sources": ["my-repo"],
+  "source_types": ["git", "confluence"],
+  "no_expand": false
+}
+```
+
+- Omit `mode` for synthesis (default). Set `"mode": "raw"` for raw retrieval.
+- Set `"stream": true` for SSE streaming (synthesis mode only).
+- The `messages` array follows the same format as the Anthropic Messages API. Pass conversation history for multi-turn queries.
+
+## kb sources
+
+Manage registered ingestion sources. All subcommands accept `--remote` to operate on a remote KB server.
+
+### kb sources list
+
+List all registered sources with type, name, description, fragment count, and last ingest time.
+
+```bash
+kb sources list
+kb sources list --remote http://server:8080
+```
+
+### kb sources describe
+
+Set a description for an existing source. Descriptions appear in `list-sources` results and the `kb-instructions` prompt.
+
+```bash
+kb sources describe filesystem/my-repo "Payment processing microservice"
+kb sources describe git/owner/repo "Main backend API"
+kb sources describe --remote http://server:8080 git/owner/repo "Main backend API"
+```
+
+### kb sources export
+
+Export registered sources to a JSON file.
+
+```bash
+kb sources export sources.json
+```
+
+### kb sources import
+
+Import sources from a JSON file.
+
+```bash
+kb sources import sources.json
+```
+
+### kb sources remove
+
+Remove a registered source and all its fragments from the database.
+
+```bash
+kb sources remove confluence/ENGINEERING
+kb sources remove --remote http://server:8080 git/owner/repo
+```
+
+## kb export
+
+Export fragment embeddings for visualization with TensorBoard Embedding Projector.
+
+```bash
+kb export --out ./export/
+kb export --remote http://server:8080 --out ./export/
+```
+
+Produces `tensors.tsv` and `metadata.tsv` files that can be loaded into the [Embedding Projector](https://projector.tensorflow.org/).
+
+## kb eval
+
+Run the evaluation framework to measure retrieval quality.
+
+```bash
+make eval                                            # one-command eval
+kb eval --db eval.db --testset eval/testset.json     # manual
+kb eval --db eval.db --corpus eval/corpus --ingest   # ingest corpus first
+kb eval --db eval.db --json                          # structured output
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | `kb.db` | Database path |
+| `--testset` | `eval/testset.json` | Path to test set |
+| `--corpus` | `eval/corpus` | Path to eval corpus |
+| `--limit` | `20` | Top-K retrieval limit |
+| `--ingest` | `false` | Ingest corpus before running eval |
+| `--json` | `false` | Output structured JSON |
+| `--skip-enrichment` | `false` | Skip chunk enrichment during ingestion |
+
+See [Evaluation](eval.md) for details on metrics, test cases, and extending the eval suite.
+
+## kb cluster
+
+Run k-means clustering on fragment embeddings to discover topic groups.
+
+```bash
+kb cluster
+```
+
+### kb cluster viz
+
+Generate an interactive HTML visualization of fragment clusters.
+
+```bash
+kb cluster viz
+```
+
+## kb setup
+
+Verify runtime dependencies and pull required models. Useful for checking everything works before first use, or re-running setup after problems.
+
+```bash
+kb setup
+```
+
+```
+Checking Ollama... running at http://localhost:11434
+Checking models...
+  nomic-embed-text... available
+  qwen2.5:0.5b... available
+Ready.
+```
+
+### kb setup mcp
+
+Configure MCP settings for Claude Code or Cursor.
+
+```bash
+kb setup mcp
+kb setup mcp --client claude --global
+kb setup mcp --client cursor --local
+```
+
+## kb version
+
+Print the KB version.
+
+```bash
+kb version
+kb version --remote http://server:8080
+```
+
+## kb config
+
+Show the resolved configuration: where each value comes from, which config files were loaded, and the current value of every setting (secrets are masked).
+
+```bash
+kb config
+kb config --config /etc/kb/config
+```
+
+```
+Config files:
+  ~/.config/kb/config                      found
+  .env                                     not found
+  --config                                 (not specified)
+
+KEY                       VALUE                               SOURCE
+KB_DB                     kb.db                               default
+KB_OLLAMA_URL             http://localhost:11434              ~/.config/kb/config
+ANTHROPIC_API_KEY         sk-ant-a****                        env
+...
+```
+
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--config` | Path to config file (overrides `.env` and `~/.config/kb/config`) |
+| `--debug` | Enable debug mode (log all API calls) |
+| `--no-setup` | Skip automatic runtime management (useful for CI or custom deployments) |
+
+## Configuration
+
+KB loads configuration from multiple sources. Later sources override earlier ones:
+
+| Precedence | Source | Description |
+|:----------:|--------|-------------|
+| 1 (lowest) | Defaults | Built-in defaults |
+| 2 | `~/.config/kb/config` | Persistent user config (respects `$XDG_CONFIG_HOME`) |
+| 3 | `.env` in working directory | Project-local overrides (useful during development) |
+| 4 | `--config <path>` | Explicit file path (useful for server deployments) |
+| 5 (highest) | Environment variables | Always take precedence |
+
+All config files use the same `KEY=VALUE` format (same as `.env`). Run `kb config` to see which source each value comes from.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KB_DB` | `kb.db` | SQLite database path |
+| `KB_OLLAMA_URL` | `http://localhost:11434` | Embedding server URL |
+| `KB_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
+| `KB_ENRICH_MODEL` | `qwen2.5:0.5b` | Enrichment model name |
+| `KB_SKIP_SETUP` | `false` | Skip automatic runtime management |
+| `KB_LLM_PROVIDER` | `claude` | LLM provider: `claude`, `openai`, or `ollama` |
+| `ANTHROPIC_API_KEY` | — | API key for Claude (default LLM provider) |
+| `KB_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model for synthesis |
+| `OPENAI_API_KEY` | — | API key for OpenAI |
+| `KB_LISTEN_ADDR` | `:8080` | Default HTTP listen address |
+| `KB_MAX_CHUNK_SIZE` | `2000` | Max chunk size in characters |
+| `KB_CHUNK_OVERLAP` | `150` | Chunk overlap in characters |
+| `KB_WORKERS` | `4` | Parallel ingestion workers |
+| `KB_DEFAULT_LIMIT` | `20` | Default fragment retrieval limit |
+
+---
+
+
+# Evaluation Framework
+
+A repeatable eval harness for measuring retrieval quality. Run evals before and after changes to chunking, embedding models, or prompts.
+
+## Quick start
+
+```bash
+make eval
+```
+
+This ingests the eval corpus, runs the test set, and prints a summary table. No API key needed.
+
+## Manual usage
+
+```bash
+# Ingest the eval corpus into a fresh database
+kb ingest --source eval/corpus --db eval.db
+
+# Run evaluation
+kb eval --db eval.db
+
+# Run with custom options
+kb eval --db eval.db --testset eval/testset.json --limit 10 --json
+
+# Ingest and eval in one step
+kb eval --db eval.db --corpus eval/corpus --ingest
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db` | `kb.db` | Database path |
+| `--testset` | `eval/testset.json` | Path to query/answer test set |
+| `--corpus` | `eval/corpus` | Path to eval corpus directory |
+| `--limit` | `20` | K value for retrieval (top-K fragments) |
+| `--ingest` | false | Ingest the corpus before running eval |
+| `--json` | false | Output structured JSON instead of a table |
+
+## Metrics
+
+### Retrieval metrics (reported at K=5, K=10, K=20)
+
+- **Hit@K** — Was at least one expected source file found in the top-K results?
+- **Recall@K** — Did the expected source files appear in the top-K retrieved fragments?
+- **Precision@K** — What fraction of top-K fragments came from expected source files?
+- **MRR** — Mean reciprocal rank of the first relevant fragment, averaged across queries.
+- **Avg confidence** — Mean confidence score across retrieved fragments.
+- **Avg freshness** — Mean freshness score across retrieved fragments.
+
+### Chunking stats
+
+- Total fragment count
+- Fragments per file
+- Mean, median, and P95 token length (whitespace-approximated)
+
+These track chunking quality over time, so a change that produces 3x more fragments or halves average length is immediately visible.
+
+## Eval corpus
+
+Located in `eval/corpus/`. A set of fictional files about an "Acme Widget Service" designed to exercise different retrieval scenarios:
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview, features, quick start |
+| `config.go` | Go config structs and validation |
+| `api.go` | HTTP API handlers |
+| `architecture.md` | System design (intentionally contradicts README on some details) |
+| `runbook.md` | Operational procedures and troubleshooting |
+| `CHANGELOG.md` | Version history and release notes |
+| `CONTRIBUTING.md` | Contribution guidelines |
+| `deploy/kubernetes.yaml` | Kubernetes deployment manifests |
+| `design-review.md` | Design review discussion |
+| `incident-review.md` | Incident post-mortem |
+
+The corpus is checked into the repo and should not change between eval runs unless you're intentionally updating it.
+
+## Test set
+
+Located in `eval/testset.json`. Each entry has:
+
+```json
+{
+  "id": "q01",
+  "query": "What database does the widget service use?",
+  "expected_sources": ["config.go", "architecture.md"],
+  "reference_answer": "PostgreSQL, configured via DATABASE_URL.",
+  "category": "direct_extraction"
+}
+```
+
+Categories:
+- **direct_extraction** — single-source factual lookup
+- **cross_document** — requires information from multiple files
+- **knowledge_update** — tests whether newer information is preferred
+- **abstention** — no good answer exists in the corpus
+- **pronoun_resolution** — requires resolving references across context
+- **vocabulary_mismatch** — query uses different terms than the corpus
+
+## Extending the eval
+
+**Adding queries:** Edit `eval/testset.json`. Include `expected_sources` (filenames that should appear in results) and a `reference_answer` for human comparison.
+
+**Adding corpus files:** Add files to `eval/corpus/` and write questions that reference them. Re-run `make eval` to see the impact.
+
+**Comparing configurations:** Run eval with different embedding models or chunk sizes by changing `KB_EMBEDDING_MODEL` or `KB_MAX_CHUNK_SIZE`, then compare the summary tables.
+
+---
+

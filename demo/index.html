@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo - Knowledge Broker</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f0;
+  --surface2: #eaeae5;
+  --border: #d0d0c8;
+  --text: #1a1a1a;
+  --text2: #707068;
+  --accent: #1a1a1a;
+  --accent-hover: #444444;
+  --danger: #cc3333;
+  --danger-hover: #ee4444;
+  --success: #22aa77;
+  --warn: #aa8800;
+  --font: 'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header — matches docs site */
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14.5px 16px;
+}
+
+.topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-logo {
+  width: 26.4px;
+  height: 26.4px;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 15.4px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.title:hover {
+  color: var(--accent-hover);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-link {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  color: var(--text);
+}
+
+.nav-link.active {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.badge-link {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  text-decoration: none;
+  padding: 2px 8px;
+  font-weight: 600;
+  font-family: var(--font);
+  transition: background 0.1s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge-link:hover {
+  background: var(--accent-hover);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+  flex: 1;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text2);
+}
+
+input, textarea, select {
+  font-family: var(--font);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 4px 8px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--text);
+}
+
+/* Status bar */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.health-dot.ok { background: var(--success); animation: pulse 2s infinite; }
+.health-dot.err { background: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.health-text {
+  font-size: 10px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+}
+
+.sources-inline {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.source-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text2);
+  background: var(--surface);
+}
+
+.source-badge-link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.source-badge-link:hover {
+  background: var(--surface2);
+  border-color: var(--text2);
+}
+
+.source-badge-type {
+  font-size: 8px;
+  color: var(--text2);
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+/* Query section */
+.query-section {
+  margin-bottom: 16px;
+}
+
+.query-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.query-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  font-family: var(--font);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  transition: all 0.1s;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.btn:hover { background: var(--surface2); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.mode-group {
+  display: flex;
+  gap: 0;
+}
+
+.mode-group .btn {
+  border-right-width: 0;
+}
+
+.mode-group .btn:last-child {
+  border-right-width: 1px;
+}
+
+.query-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.example-select {
+  padding: 4px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Results */
+.results-section {
+  display: none;
+}
+
+.results-section.visible {
+  display: block;
+}
+
+/* Meta bar */
+.meta-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+}
+
+.meta-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-json {
+  font-size: 10px;
+  padding: 2px 6px;
+  margin-left: auto;
+}
+
+/* Confidence display */
+.confidence-section {
+  margin-bottom: 16px;
+}
+
+.confidence-overall {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.confidence-score {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.confidence-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+@media (min-width: 480px) {
+  .confidence-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.conf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conf-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: 100px;
+  flex-shrink: 0;
+  color: var(--text2);
+}
+
+.conf-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--surface2);
+  position: relative;
+}
+
+.conf-bar-fill {
+  height: 100%;
+  background: var(--text);
+  transition: width 0.3s;
+}
+
+.conf-value {
+  font-size: 10px;
+  font-weight: 600;
+  width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Answer text */
+.answer-block {
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.streaming-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 1s infinite;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* Contradictions */
+.contradictions {
+  border: 1px solid var(--danger);
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.contradictions-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+
+.contradiction-item {
+  padding: 6px 0;
+  border-top: 1px solid var(--surface2);
+  font-size: 11px;
+}
+
+.contradiction-item:first-of-type {
+  border-top: none;
+}
+
+.contradiction-claim {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.contradiction-explanation {
+  color: var(--text2);
+}
+
+/* Sources */
+.sources-section {
+  margin-bottom: 12px;
+}
+
+.sources-toggle {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 4px 0;
+}
+
+.source-item {
+  padding: 4px 0;
+  border-top: 1px solid var(--surface2);
+  font-size: 11px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.source-name {
+  font-weight: 600;
+}
+
+.source-path {
+  color: var(--text2);
+  word-break: break-all;
+}
+
+.source-relevance {
+  color: var(--text2);
+  margin-left: auto;
+}
+
+/* Fragment cards (raw mode) */
+.fragment-card {
+  border: 1px solid var(--border);
+  padding: 10px;
+  margin-bottom: 8px;
+  background: var(--bg);
+}
+
+.fragment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fragment-source {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+}
+
+.fragment-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text2);
+}
+
+.fragment-content {
+  font-size: 11px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+}
+
+.fragment-content.truncated {
+  max-height: 80px;
+}
+
+.btn-expand {
+  font-size: 9px;
+  padding: 1px 5px;
+}
+
+.fragment-confidence {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.conf-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+/* Loading */
+.loading-bar {
+  height: 2px;
+  background: var(--surface2);
+  margin-bottom: 12px;
+  overflow: hidden;
+  display: none;
+}
+
+.loading-bar.active {
+  display: block;
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background: var(--text);
+  width: 30%;
+  animation: loading 1s ease-in-out infinite;
+}
+
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Error display */
+.error-box {
+  border: 1px solid var(--danger);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--danger);
+  display: none;
+}
+
+.error-box.visible {
+  display: block;
+}
+
+/* JSON Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  display: none;
+  z-index: 100;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+
+.modal-backdrop.visible {
+  display: flex;
+}
+
+.modal {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  max-width: 700px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.modal-body {
+  padding: 12px;
+  overflow: auto;
+  flex: 1;
+}
+
+.modal-body pre {
+  font-family: var(--font);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 14px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.toast.visible {
+  opacity: 1;
+}
+
+/* Footer — matches docs site */
+.footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+}
+
+.footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text2);
+}
+
+.footer-inner a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.footer-inner a:hover {
+  color: var(--accent-hover);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .meta-bar {
+    gap: 8px;
+  }
+  .btn-json {
+    margin-left: 0;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="topbar-left">
+      <svg class="topbar-logo" viewBox="0 0 256 256" width="24" height="24">
+        <rect width="256" height="256" fill="#1a1a1a"/>
+        <text x="128" y="145" text-anchor="middle" dominant-baseline="central"
+              font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace"
+              font-weight="700" font-size="138" letter-spacing="4" fill="#f5f5f0">KB</text>
+      </svg>
+      <a class="title" href="https://knowledgebroker.dev">Knowledge Broker</a>
+    </div>
+    <div class="topbar-right">
+      <a class="nav-link" href="https://knowledgebroker.dev">Docs</a>
+      <a class="nav-link active" href="#">Demo</a>
+      <a class="badge-link" href="https://github.com/alecgard/knowledge-broker" target="_blank" rel="noopener"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px;margin-right:6px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Status -->
+  <div class="status-bar">
+    <span class="health-dot" id="healthDot"></span>
+    <span class="health-text" id="healthText">connecting</span>
+    <div class="sources-inline" id="sourcesBar"></div>
+  </div>
+
+  <!-- Query -->
+  <div class="query-section">
+    <div class="query-top-row">
+      <select class="example-select" id="exampleSelect" onchange="loadExample()">
+        <option value="">Examples</option>
+        <option value="0">Contradiction detection</option>
+        <option value="1">Freshness signal</option>
+        <option value="2">Multi-source corroboration</option>
+        <option value="3">Low confidence</option>
+      </select>
+      <div class="mode-group">
+        <button class="btn btn-active" id="btnSynth" onclick="setMode('synthesis')">Synthesised</button>
+        <button class="btn" id="btnRaw" onclick="setMode('raw')">Raw</button>
+      </div>
+    </div>
+    <textarea class="query-textarea" id="queryInput" placeholder="Ask a question..." rows="3"></textarea>
+    <div class="query-controls">
+      <button class="btn btn-primary" id="btnQuery" onclick="submitQuery()">Query</button>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading-bar" id="loadingBar"><div class="loading-bar-fill"></div></div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Results -->
+  <div class="results-section" id="resultsSection">
+    <div class="meta-bar" id="metaBar"></div>
+    <div id="resultsContent"></div>
+  </div>
+
+</div>
+
+<!-- JSON Modal -->
+<div class="modal-backdrop" id="jsonModal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Raw API Response</span>
+      <button class="btn" onclick="document.getElementById('jsonModal').classList.remove('visible')">Close</button>
+    </div>
+    <div class="modal-body">
+      <pre id="jsonContent"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<div class="footer">
+  <div class="footer-inner">
+    <span><a href="https://knowledgebroker.dev">Knowledge Broker</a></span>
+    <span><a href="https://github.com/alecgard/knowledge-broker">GitHub</a></span>
+  </div>
+</div>
+
+<script>
+const EXAMPLES = [
+  { label: 'Contradiction detection', query: 'What are the different recommended approaches to authentication?' },
+  { label: 'Freshness signal', query: 'What is the latest version of the model context protocol specification?' },
+  { label: 'Multi-source corroboration', query: 'How do different sources describe the tool use workflow?' },
+  { label: 'Low confidence', query: 'What is the pricing structure for enterprise deployments?' },
+];
+
+const SERVER_URL = 'https://06ba-5-181-57-89.ngrok-free.app';
+
+const state = {
+  mode: 'synthesis',
+  loading: false,
+  lastResponse: null,
+  startTime: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+// --- Mode ---
+
+function setMode(mode) {
+  state.mode = mode;
+  $('btnRaw').className = 'btn' + (mode === 'raw' ? ' btn-active' : '');
+  $('btnSynth').className = 'btn' + (mode === 'synthesis' ? ' btn-active' : '');
+}
+
+// --- Examples ---
+
+function loadExample() {
+  const idx = $('exampleSelect').value;
+  if (idx !== '') {
+    $('queryInput').value = EXAMPLES[parseInt(idx)].query;
+    $('exampleSelect').value = '';
+  }
+}
+
+// --- Query ---
+
+async function submitQuery() {
+  const query = $('queryInput').value.trim();
+  if (!query || state.loading) return;
+
+  state.loading = true;
+  state.startTime = performance.now();
+  state.lastResponse = null;
+
+  $('btnQuery').disabled = true;
+  $('loadingBar').classList.add('active');
+  $('errorBox').classList.remove('visible');
+  $('resultsSection').classList.remove('visible');
+  $('resultsContent').innerHTML = '';
+  $('metaBar').innerHTML = '';
+
+  const url = SERVER_URL;
+  const body = {
+    messages: [{ role: 'user', content: query }],
+  };
+
+  try {
+    if (state.mode === 'raw') {
+      body.mode = 'raw';
+      const resp = await fetch(url + '/v1/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      state.lastResponse = data;
+      const latency = Math.round(performance.now() - state.startTime);
+      renderMeta(latency, (data.fragments || []).length);
+      renderRawResults(data);
+    } else {
+      body.stream = true;
+      const resp = await fetch(url + '/v1/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      await handleStream(resp);
+    }
+  } catch (err) {
+    showError(err.message || 'Request failed');
+  } finally {
+    state.loading = false;
+    $('btnQuery').disabled = false;
+    $('loadingBar').classList.remove('active');
+  }
+}
+
+// --- Streaming ---
+
+async function handleStream(resp) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answerText = '';
+  const fullResponse = { content: '', confidence: null, sources: [], contradictions: [] };
+
+  const content = $('resultsContent');
+  content.innerHTML = '<div class="answer-block" id="answerBlock"><span id="answerText"></span><span class="streaming-indicator" id="streamDot"></span></div>' +
+    '<div id="synthMeta"></div>';
+  $('resultsSection').classList.add('visible');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        let event;
+        try { event = JSON.parse(trimmed.slice(6)); } catch { continue; }
+
+        if (event.type === 'text') {
+          answerText += event.content;
+          $('answerText').textContent = answerText;
+          fullResponse.content = answerText;
+        } else if (event.type === 'done') {
+          fullResponse.confidence = event.confidence;
+          fullResponse.sources = event.sources || [];
+          fullResponse.contradictions = event.contradictions || [];
+          state.lastResponse = fullResponse;
+
+          const dot = $('streamDot');
+          if (dot) dot.remove();
+
+          const latency = Math.round(performance.now() - state.startTime);
+          renderMeta(latency, fullResponse.sources.length);
+          renderSynthMeta(fullResponse);
+        } else if (event.type === 'error') {
+          showError(event.content);
+        }
+      }
+    }
+  }
+}
+
+// --- Render helpers ---
+
+function renderMeta(latency, count) {
+  $('metaBar').innerHTML =
+    '<span class="meta-item">Latency <span class="meta-value">' + latency + 'ms</span></span>' +
+    '<span class="meta-item">Fragments <span class="meta-value">' + count + '</span></span>' +
+    '<button class="btn btn-json" onclick="showJson()">View as JSON</button>';
+}
+
+function renderSynthMeta(data) {
+  const el = $('synthMeta');
+  if (!el) return;
+  let html = '';
+
+  if (data.confidence) {
+    html += renderConfidenceHTML(data.confidence);
+  }
+
+  if (data.contradictions && data.contradictions.length > 0) {
+    html += renderContradictionsHTML(data.contradictions);
+  }
+
+  if (data.sources && data.sources.length > 0) {
+    html += '<details class="sources-section"><summary class="sources-toggle">Sources (' + data.sources.length + ')</summary>';
+    for (const s of data.sources) {
+      html += '<div class="source-item">' +
+        '<span class="source-name">' + esc(s.source_name || '') + '</span>' +
+        '<span class="source-path">' + esc(s.source_path || '') + '</span>' +
+        (s.relevance != null ? '<span class="source-relevance">' + (s.relevance * 100).toFixed(0) + '%</span>' : '') +
+        '</div>';
+    }
+    html += '</details>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderRawResults(data) {
+  const content = $('resultsContent');
+  let html = '';
+
+  if (data.contradictions && data.contradictions.length > 0) {
+    html += renderContradictionsHTML(data.contradictions);
+  }
+
+  const fragments = data.fragments || [];
+  if (fragments.length === 0) {
+    html += '<div style="color:var(--text2);padding:16px 0;">No results found.</div>';
+  }
+
+  for (let i = 0; i < fragments.length; i++) {
+    const f = fragments[i];
+    const text = f.enriched_content || f.content || '';
+    const truncated = text.length > 300;
+
+    html += '<div class="fragment-card">';
+    html += '<div class="fragment-header">';
+    html += '<span class="fragment-source">' + esc(f.source_name || '') + ' · ' + esc(f.source_path || '') + '</span>';
+    html += '<div class="fragment-meta">';
+    if (f.file_type) html += '<span>' + esc(f.file_type) + '</span>';
+    if (f.author) html += '<span>' + esc(f.author) + '</span>';
+    if (f.content_date) html += '<span>' + formatDate(f.content_date) + '</span>';
+    html += '</div></div>';
+
+    html += '<div class="fragment-content' + (truncated ? ' truncated' : '') + '" id="frag-' + i + '">' + esc(text) + '</div>';
+    if (truncated) {
+      html += '<button class="btn btn-expand" onclick="toggleExpand(' + i + ', this)">Expand</button>';
+    }
+
+    if (f.confidence && f.confidence.breakdown) {
+      const b = f.confidence.breakdown;
+      html += '<div class="fragment-confidence">';
+      html += confBadge('Fresh', b.freshness);
+      html += confBadge('Auth', b.authority);
+      html += confBadge('Corrob', b.corroboration);
+      html += confBadge('Consist', b.consistency);
+      if (f.confidence.overall != null) {
+        html += confBadge('Overall', f.confidence.overall);
+      }
+      html += '</div>';
+    }
+
+    if (f.source_uri) {
+      html += '<div style="margin-top:4px;font-size:10px;"><a href="' + esc(f.source_uri) + '" target="_blank" rel="noopener" style="color:var(--text2);">' + esc(f.source_uri) + '</a></div>';
+    }
+
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+  $('resultsSection').classList.add('visible');
+}
+
+function renderConfidenceHTML(conf) {
+  let html = '<div class="confidence-section">';
+  if (conf.overall != null) {
+    html += '<div class="confidence-overall"><span class="label">Confidence</span> <span class="confidence-score">' + (conf.overall * 100).toFixed(0) + '%</span></div>';
+  }
+  if (conf.breakdown) {
+    html += '<div class="confidence-grid">';
+    const dims = ['freshness', 'authority', 'corroboration', 'consistency'];
+    for (const d of dims) {
+      const val = conf.breakdown[d] || 0;
+      html += '<div class="conf-row">' +
+        '<span class="conf-label">' + d + '</span>' +
+        '<div class="conf-bar-track"><div class="conf-bar-fill" style="width:' + (val * 100) + '%"></div></div>' +
+        '<span class="conf-value">' + (val * 100).toFixed(0) + '%</span>' +
+        '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderContradictionsHTML(contradictions) {
+  let html = '<div class="contradictions">';
+  html += '<div class="contradictions-title">Contradictions Detected</div>';
+  for (const c of contradictions) {
+    html += '<div class="contradiction-item">';
+    if (c.claim) html += '<div class="contradiction-claim">' + esc(c.claim) + '</div>';
+    if (c.explanation) html += '<div class="contradiction-explanation">' + esc(c.explanation) + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function confBadge(label, val) {
+  if (val == null) return '';
+  const pct = (val * 100).toFixed(0);
+  let color = 'var(--text2)';
+  if (val >= 0.7) color = 'var(--success)';
+  else if (val < 0.4) color = 'var(--warn)';
+  return '<span class="conf-badge" style="border-color:' + color + ';color:' + color + '">' + label + ' ' + pct + '%</span>';
+}
+
+function toggleExpand(idx, btn) {
+  const el = $('frag-' + idx);
+  if (el.classList.contains('truncated')) {
+    el.classList.remove('truncated');
+    btn.textContent = 'Collapse';
+  } else {
+    el.classList.add('truncated');
+    btn.textContent = 'Expand';
+  }
+}
+
+function showJson() {
+  if (!state.lastResponse) return;
+  $('jsonContent').textContent = JSON.stringify(state.lastResponse, null, 2);
+  $('jsonModal').classList.add('visible');
+}
+
+function closeModal(e) {
+  if (e.target === $('jsonModal')) {
+    $('jsonModal').classList.remove('visible');
+  }
+}
+
+function showError(msg) {
+  $('errorBox').textContent = msg;
+  $('errorBox').classList.add('visible');
+}
+
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  setTimeout(() => t.classList.remove('visible'), 3000);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatDate(s) {
+  if (!s) return '';
+  try {
+    return new Date(s).toLocaleDateString();
+  } catch { return s; }
+}
+
+// --- Keyboard ---
+$('queryInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    submitQuery();
+  }
+});
+
+// --- Sources & Health ---
+function loadSources() {
+  fetch(SERVER_URL + '/v1/sources', { method: 'GET', headers: { 'ngrok-skip-browser-warning': '1' }, signal: AbortSignal.timeout(5000) })
+    .then(r => r.json())
+    .then(sources => {
+      $('healthDot').className = 'health-dot ok';
+      $('healthText').textContent = 'connected';
+      if (!sources || sources.length === 0) return;
+      const bar = $('sourcesBar');
+      let html = '';
+      for (const s of sources) {
+        const isGit = s.source_type === 'git' && s.config && s.config.url;
+        if (isGit) {
+          html += '<a class="source-badge source-badge-link" href="' + esc(s.config.url) + '" target="_blank" rel="noopener">' + esc(s.source_name) + '<span class="source-badge-type"> · ' + esc(s.source_type) + '</span></a>';
+        } else {
+          html += '<span class="source-badge">' + esc(s.source_name) + '<span class="source-badge-type"> · ' + esc(s.source_type) + '</span></span>';
+        }
+      }
+      bar.innerHTML = html;
+    })
+    .catch(() => {
+      $('healthDot').className = 'health-dot err';
+      $('healthText').textContent = 'disconnected';
+    });
+}
+
+loadSources();
+</script>
+
+<script data-goatcounter="https://knowledgebroker.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>

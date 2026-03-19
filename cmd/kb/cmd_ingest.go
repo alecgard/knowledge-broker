@@ -507,10 +507,11 @@ func ingestCmd() *cobra.Command {
 
 func makeProgressFunc(label string) ingest.ProgressFunc {
 	return func(completed, total int) {
-		pct := 0
-		if total > 0 {
-			pct = completed * 100 / total
+		if total == 0 {
+			fmt.Fprintf(os.Stderr, "\r  [%s] Extracting: %d docs...", label, completed)
+			return
 		}
+		pct := completed * 100 / total
 		fmt.Fprintf(os.Stderr, "\r  [%s] Extracting: %d/%d docs (%d%%)", label, completed, total, pct)
 		if completed == total {
 			fmt.Fprintln(os.Stderr)
@@ -520,7 +521,11 @@ func makeProgressFunc(label string) ingest.ProgressFunc {
 
 func makeBatchFunc(label string) ingest.BatchFunc {
 	return func(batch, totalBatches, added int) {
-		fmt.Fprintf(os.Stderr, "\r\033[K  [%s] Stored batch %d/%d (%d fragments)\n", label, batch, totalBatches, added)
+		if totalBatches == 0 {
+			fmt.Fprintf(os.Stderr, "\r\033[K  [%s] Stored batch %d... (%d fragments)\n", label, batch, added)
+		} else {
+			fmt.Fprintf(os.Stderr, "\r\033[K  [%s] Stored batch %d/%d (%d fragments)\n", label, batch, totalBatches, added)
+		}
 	}
 }
 
@@ -577,17 +582,18 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		scanOpts.LastIngest = src.LastIngest
 	}
 
+	label := conn.Name() + "/" + conn.SourceName()
+
 	// Scan for new/changed documents and deleted paths.
-	fmt.Fprintf(os.Stderr, "Scanning %s...\n", conn.Name())
+	fmt.Fprintf(os.Stderr, "  [%s] Scanning...\n", label)
 	docs, deleted, err := conn.Scan(ctx, scanOpts)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}
-
-	fmt.Fprintf(os.Stderr, "Found %d new/changed files, %d deleted\n", len(docs), len(deleted))
+	fmt.Fprintf(os.Stderr, "  [%s] Found %d new/changed files, %d deleted\n", label, len(docs), len(deleted))
 
 	// Build fragments from documents using extractors (without embedding).
-	fmt.Fprintf(os.Stderr, "Extracting chunks...\n")
+	fmt.Fprintf(os.Stderr, "  [%s] Extracting chunks...\n", label)
 	var allFragments []model.IngestFragment
 	for _, doc := range docs {
 		result, err := ingest.ExtractChunks(doc, reg)
@@ -623,7 +629,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		})
 	}
 
-	fmt.Fprintf(os.Stderr, "Pushing %d fragments to %s...\n", len(allFragments), remote)
+	fmt.Fprintf(os.Stderr, "  [%s] Pushing %d fragments to %s...\n", label, len(allFragments), remote)
 
 	totalIngested := 0
 
@@ -639,7 +645,7 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		}
 
 		if len(batches) > 1 {
-			fmt.Fprintf(os.Stderr, "  Sending batch %d/%d...\n", i+1, len(batches))
+			fmt.Fprintf(os.Stderr, "  [%s] Sending batch %d/%d...\n", label, i+1, len(batches))
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, remote+"/v1/ingest", bytes.NewReader(bodyBytes))
@@ -699,8 +705,8 @@ func remoteIngest(ctx context.Context, conn connector.Connector, remote string, 
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Push complete: %d fragments ingested, %d paths deleted\n",
-		totalIngested, len(deleted))
+	fmt.Fprintf(os.Stderr, "  [%s] Push complete: %d fragments ingested, %d paths deleted\n",
+		label, totalIngested, len(deleted))
 	return nil
 }
 
@@ -762,7 +768,11 @@ func reEnrichFragments(ctx context.Context, s store.Store, emb *embedding.Ollama
 	if err := s.UpsertFragments(ctx, frags); err != nil {
 		return fmt.Errorf("upsert re-enriched: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "  Re-enriched and re-embedded %d fragments\n", len(frags))
+	reEnrichLabel := ""
+	if len(frags) > 0 {
+		reEnrichLabel = frags[0].SourceType + "/" + frags[0].SourceName
+	}
+	fmt.Fprintf(os.Stderr, "  [%s] Re-enriched and re-embedded %d fragments\n", reEnrichLabel, len(frags))
 	return nil
 }
 

@@ -26,6 +26,21 @@ type ScanOptions struct {
 	LastIngest *time.Time
 }
 
+// ScanEvent represents a single event from a streaming scan.
+type ScanEvent struct {
+	Doc     *model.RawDocument // non-nil for a new/changed document
+	Deleted []string           // non-empty only in the final event (scan complete)
+	Err     error              // non-nil signals a fatal scan error
+}
+
+// StreamingConnector extends Connector with streaming scan support.
+// Connectors that implement this interface allow the pipeline to start
+// processing documents before the full scan completes.
+type StreamingConnector interface {
+	Connector
+	ScanStream(ctx context.Context, opts ScanOptions) <-chan ScanEvent
+}
+
 // Connector pulls documents from a source.
 type Connector interface {
 	// Name returns the connector type identifier (e.g., "filesystem", "git", "confluence").

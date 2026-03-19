@@ -105,10 +105,53 @@ type MockConnector struct {
 }
 
 var _ connector.Connector = (*MockConnector)(nil)
+var _ connector.StreamingConnector = (*MockConnector)(nil)
 
 func (m *MockConnector) Name() string             { return m.ConnectorName }
 func (m *MockConnector) SourceName() string       { return m.ConnectorName }
 func (m *MockConnector) Config(mode string) map[string]string { return map[string]string{} }
+
+func (m *MockConnector) ScanStream(ctx context.Context, opts connector.ScanOptions) <-chan connector.ScanEvent {
+	ch := make(chan connector.ScanEvent, 64)
+	go func() {
+		defer close(ch)
+		m.LastScanOpts = opts
+		known := opts.Known
+
+		currentPaths := make(map[string]bool)
+		for _, d := range m.Docs {
+			currentPaths[d.Path] = true
+		}
+
+		// Send each doc as an event.
+		for _, d := range m.Docs {
+			oldChecksum, exists := known[d.Path]
+			if !exists || oldChecksum != d.Checksum {
+				doc := d // copy
+				select {
+				case ch <- connector.ScanEvent{Doc: &doc}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+
+		// Compute deletions.
+		var deleted []string
+		for path := range known {
+			if !currentPaths[path] {
+				deleted = append(deleted, path)
+			}
+		}
+
+		// Send final event with deletions.
+		select {
+		case ch <- connector.ScanEvent{Deleted: deleted}:
+		case <-ctx.Done():
+		}
+	}()
+	return ch
+}
 
 func (m *MockConnector) Scan(_ context.Context, opts connector.ScanOptions) ([]model.RawDocument, []string, error) {
 	m.LastScanOpts = opts
@@ -767,3 +810,168 @@ func TestPipelineZeroLastIngestSource(t *testing.T) {
 		t.Errorf("expected nil LastIngest for source with nil LastIngest, got %v", conn.LastScanOpts.LastIngest)
 	}
 }
+
+func TestStreamingIngestion(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	mdContent := "# Streaming Test\n\nThis document tests streaming ingestion.\n"
+	goContent := "package main\n\nfunc main() {}\n"
+	yamlContent := "key: value\nnested:\n  a: 1\n  b: 2\n"
+
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs: []model.RawDocument{
+			makeDoc("docs/streaming.md", mdContent, checksum(mdContent)),
+			makeDoc("pkg/main.go", goContent, checksum(goContent)),
+			makeDoc("config/app.yaml", yamlContent, checksum(yamlContent)),
+		},
+	}
+
+	// The MockConnector implements StreamingConnector, so the pipeline
+	// should use the streaming path (enrichment is nil by default).
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+	result, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Pipeline.Run (streaming): %v", err)
+	}
+
+	if result.Added == 0 {
+		t.Fatal("expected fragments to be added via streaming path, got 0")
+	}
+	t.Logf("Streaming ingestion: added=%d deleted=%d skipped=%d errors=%d",
+		result.Added, result.Deleted, result.Skipped, result.Errors)
+
+	// Verify fragments are searchable.
+	checksums, err := s.GetChecksums(ctx, "mock", "mock")
+	if err != nil {
+		t.Fatalf("GetChecksums: %v", err)
+	}
+	if len(checksums) != 3 {
+		t.Fatalf("expected 3 path checksums, got %d", len(checksums))
+	}
+
+	// Re-ingest: everything should be skipped.
+	result2, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Pipeline.Run (streaming, re-ingest): %v", err)
+	}
+	if result2.Added != 0 {
+		t.Fatalf("expected 0 added on re-ingest, got %d", result2.Added)
+	}
+	if result2.Skipped == 0 {
+		t.Fatal("expected skipped > 0 on re-ingest")
+	}
+	t.Logf("Streaming re-ingest: added=%d skipped=%d", result2.Added, result2.Skipped)
+}
+
+func TestStreamingDeletions(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	content1 := "# Doc One\n\nFirst document.\n"
+	content2 := "# Doc Two\n\nSecond document.\n"
+
+	conn := &MockConnector{
+		ConnectorName: "mock",
+		Docs: []model.RawDocument{
+			makeDoc("docs/one.md", content1, checksum(content1)),
+			makeDoc("docs/two.md", content2, checksum(content2)),
+		},
+	}
+
+	pipeline := ingest.NewPipeline(s, embedder, registry, 2, nil)
+
+	// Initial ingest.
+	result1, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("First Run: %v", err)
+	}
+	if result1.Added == 0 {
+		t.Fatal("first ingestion should add fragments")
+	}
+
+	// Remove one document.
+	conn.Docs = []model.RawDocument{
+		makeDoc("docs/one.md", content1, checksum(content1)),
+	}
+
+	result2, err := pipeline.Run(ctx, conn)
+	if err != nil {
+		t.Fatalf("Second Run: %v", err)
+	}
+	if result2.Deleted == 0 {
+		t.Fatal("expected deletions after removing a file")
+	}
+
+	// Verify only one document remains.
+	checksums, err := s.GetChecksums(ctx, "mock", "mock")
+	if err != nil {
+		t.Fatalf("GetChecksums: %v", err)
+	}
+	if _, exists := checksums["docs/two.md"]; exists {
+		t.Fatal("docs/two.md should have been deleted")
+	}
+	t.Logf("After streaming deletion: added=%d deleted=%d skipped=%d",
+		result2.Added, result2.Deleted, result2.Skipped)
+}
+
+func TestStreamingMatchesNonStreaming(t *testing.T) {
+	ctx := context.Background()
+	embedder := NewMockEmbedder(embeddingDim)
+	registry := newTestRegistry()
+
+	mdContent := "# Comparison Test\n\nThis document compares streaming vs non-streaming.\n"
+
+	// Run via streaming path (MockConnector implements StreamingConnector).
+	s1 := newTestStore(t)
+	conn1 := &MockConnector{
+		ConnectorName: "mock",
+		Docs: []model.RawDocument{
+			makeDoc("docs/compare.md", mdContent, checksum(mdContent)),
+		},
+	}
+	pipeline1 := ingest.NewPipeline(s1, embedder, registry, 2, nil)
+	result1, err := pipeline1.Run(ctx, conn1)
+	if err != nil {
+		t.Fatalf("Streaming Run: %v", err)
+	}
+
+	// Run via non-streaming path (use enrichment to force non-streaming).
+	s2 := newTestStore(t)
+	conn2 := &MockConnector{
+		ConnectorName: "mock",
+		Docs: []model.RawDocument{
+			makeDoc("docs/compare.md", mdContent, checksum(mdContent)),
+		},
+	}
+	pipeline2 := ingest.NewPipeline(s2, embedder, registry, 2, nil)
+	// Set a dummy enrichment config to force the non-streaming path.
+	pipeline2.SetEnrichment(ingest.EnrichmentConfig{
+		Enricher: &noopEnricher{},
+	})
+	result2, err := pipeline2.Run(ctx, conn2)
+	if err != nil {
+		t.Fatalf("Non-streaming Run: %v", err)
+	}
+
+	if result1.Added != result2.Added {
+		t.Errorf("Added mismatch: streaming=%d non-streaming=%d", result1.Added, result2.Added)
+	}
+	if result1.Errors != result2.Errors {
+		t.Errorf("Errors mismatch: streaming=%d non-streaming=%d", result1.Errors, result2.Errors)
+	}
+	t.Logf("Streaming: added=%d, Non-streaming: added=%d", result1.Added, result2.Added)
+}
+
+// noopEnricher is an enricher that returns content unchanged (used to force non-streaming path).
+type noopEnricher struct{}
+
+func (e *noopEnricher) Enrich(_ context.Context, chunk model.Chunk, _, _ []model.Chunk) (string, error) {
+	return chunk.Content, nil
+}
+func (e *noopEnricher) Model() string { return "noop" }

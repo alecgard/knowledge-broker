@@ -255,6 +255,47 @@ func TestConnectorInterface(t *testing.T) {
 	var _ Connector = (*FilesystemConnector)(nil)
 }
 
+func TestScanSkipsNonUsefulFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Non-useful files that should be skipped.
+	writeFile(t, dir, "package-lock.json", `{"lockfileVersion": 3}`)
+	writeFile(t, dir, "app.min.js", "var a=1;")
+	writeFile(t, dir, "types.pb.go", "package types")
+	writeFile(t, dir, "LICENSE", "MIT License")
+	writeFile(t, dir, "LICENSE.md", "# MIT License")
+	writeFile(t, dir, "pnpm-lock.yaml", "lockfileVersion: 5")
+	writeFile(t, dir, "styles.min.css", "body{margin:0}")
+	writeFile(t, dir, "bundle.map", `{"version":3}`)
+	writeFile(t, dir, "code.gen.go", "package gen")
+	writeFile(t, dir, "schema.generated.ts", "export type X = {}")
+	writeFile(t, dir, "_generated_types.go", "package gen")
+	writeFile(t, dir, ".gitignore", "node_modules/")
+	writeFile(t, dir, ".editorconfig", "[*]\nindent_size = 2")
+	writeFile(t, dir, "NOTICE", "Copyright 2024")
+
+	// Valid file that should be returned.
+	writeFile(t, dir, "main.go", "package main")
+
+	c := NewFilesystemConnector(dir)
+	docs, _, err := c.Scan(context.Background(), ScanOptions{})
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	if len(docs) != 1 {
+		names := make([]string, len(docs))
+		for i, d := range docs {
+			names[i] = filepath.Base(d.Path)
+		}
+		t.Fatalf("expected 1 document (main.go), got %d: %v", len(docs), names)
+	}
+
+	if filepath.Base(docs[0].Path) != "main.go" {
+		t.Errorf("expected main.go, got %s", docs[0].Path)
+	}
+}
+
 // writeFile creates parent directories and writes content to a file.
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()

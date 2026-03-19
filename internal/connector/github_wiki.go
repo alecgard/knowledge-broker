@@ -100,7 +100,7 @@ func (c *GitHubWikiConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 	cloneArgs = append(cloneArgs, cloneURL, tmpDir)
 
 	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
 	if err := cmd.Run(); err != nil {
 		return nil, nil, fmt.Errorf("git clone wiki: %w (does the wiki exist for %s?)", err, c.repoURL)
 	}
@@ -141,6 +141,95 @@ func (c *GitHubWikiConnector) Scan(ctx context.Context, opts ScanOptions) ([]mod
 	}
 
 	return docs, deleted, nil
+}
+
+// ScanStream returns a channel of ScanEvents for streaming ingestion.
+// Clones the wiki repo and delegates to FilesystemConnector.ScanStream,
+// rewriting metadata on each event.
+func (c *GitHubWikiConnector) ScanStream(ctx context.Context, opts ScanOptions) <-chan ScanEvent {
+	ch := make(chan ScanEvent, 64)
+
+	go func() {
+		defer close(ch)
+
+		cloneURL, err := c.authenticatedURL(ctx)
+		if err != nil {
+			ch <- ScanEvent{Err: fmt.Errorf("resolve auth: %w", err)}
+			return
+		}
+
+		tmpDir, err := os.MkdirTemp("", "kb-github-wiki-*")
+		if err != nil {
+			ch <- ScanEvent{Err: fmt.Errorf("create temp dir: %w", err)}
+			return
+		}
+
+		fmt.Fprintf(os.Stderr, "Cloning wiki for %s...\n", c.repoURL)
+
+		cloneArgs := []string{"clone", "--depth", "1"}
+		if c.branch != "" {
+			cloneArgs = append(cloneArgs, "--branch", c.branch)
+		}
+		cloneArgs = append(cloneArgs, cloneURL, tmpDir)
+
+		cmd := exec.CommandContext(ctx, "git", cloneArgs...)
+		cmd.Stderr = newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
+		if err := cmd.Run(); err != nil {
+			os.RemoveAll(tmpDir)
+			ch <- ScanEvent{Err: fmt.Errorf("git clone wiki: %w (does the wiki exist for %s?)", err, c.repoURL)}
+			return
+		}
+
+		fsOpts := ScanOptions{}
+		if len(opts.Known) > 0 {
+			fsOpts.Known = make(map[string]string, len(opts.Known))
+			for relPath, checksum := range opts.Known {
+				fsOpts.Known[filepath.Join(tmpDir, relPath)] = checksum
+			}
+		}
+
+		fs := NewFilesystemConnector(tmpDir)
+		fsCh := fs.ScanStream(ctx, fsOpts)
+
+		baseURI := strings.TrimSuffix(c.repoURL, ".git")
+		sourceName := c.SourceName()
+
+		for ev := range fsCh {
+			if ev.Err != nil {
+				ch <- ev
+				os.RemoveAll(tmpDir)
+				return
+			}
+			if ev.Doc != nil {
+				relPath, _ := filepath.Rel(tmpDir, ev.Doc.Path)
+				ev.Doc.Path = relPath
+				ev.Doc.SourceType = SourceTypeGitHubWiki
+				ev.Doc.SourceName = sourceName
+				ev.Doc.SourceURI = baseURI + "/wiki/" + wikiPageName(relPath)
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+					os.RemoveAll(tmpDir)
+					return
+				}
+			}
+			if ev.Deleted != nil {
+				for i := range ev.Deleted {
+					if rel, err := filepath.Rel(tmpDir, ev.Deleted[i]); err == nil {
+						ev.Deleted[i] = rel
+					}
+				}
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+				}
+			}
+		}
+
+		os.RemoveAll(tmpDir)
+	}()
+
+	return ch
 }
 
 // wikiPageName derives the wiki page name from a file path.

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -200,8 +201,8 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	if resolved.Config.EmbeddingDim != 768 {
 		t.Errorf("EmbeddingDim: got %d, want %d", resolved.Config.EmbeddingDim, 768)
 	}
-	if resolved.Config.WorkerCount != 4 {
-		t.Errorf("WorkerCount: got %d, want %d", resolved.Config.WorkerCount, 4)
+	if resolved.Config.WorkerCount != runtime.NumCPU() {
+		t.Errorf("WorkerCount: got %d, want %d", resolved.Config.WorkerCount, runtime.NumCPU())
 	}
 
 	// Check that all origins show "default".

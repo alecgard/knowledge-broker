@@ -268,7 +268,7 @@ func (o *OllamaEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 
 	for i, text := range texts {
 		if isEmptyOrWhitespace(text) {
-			slog.Warn("skipping empty/whitespace-only text in batch", "index", i)
+			slog.Debug("skipping empty/whitespace-only text in batch", "index", i)
 			results[i] = nil
 			continue
 		}

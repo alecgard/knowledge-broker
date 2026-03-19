@@ -147,6 +147,12 @@ func (p *Pipeline) Run(ctx context.Context, conn connector.Connector, opts ...Op
 		}
 	}
 
+	// Use streaming scan path when the connector supports it and enrichment
+	// is disabled (enrichment needs the full batch context).
+	if sc, ok := conn.(connector.StreamingConnector); ok && p.enrichment == nil {
+		return p.runStreaming(ctx, sc, scanOpts, opt, known)
+	}
+
 	// Scan for new/changed documents and deleted paths.
 	docs, deleted, err := conn.Scan(ctx, scanOpts)
 	if err != nil {
@@ -256,8 +262,8 @@ type extractedBatch struct {
 // runPipelined overlaps extraction (CPU) with embedding (GPU).
 // While batch N is being embedded, batch N+1 is being extracted.
 func (p *Pipeline) runPipelined(ctx context.Context, batches [][]model.RawDocument, totalDocs int, result *Result) error {
-	// Channel with capacity 1: extraction can run one batch ahead.
-	extracted := make(chan extractedBatch, 1)
+	// Channel with capacity 4: allow better overlap between extraction (CPU) and embedding (GPU).
+	extracted := make(chan extractedBatch, 4)
 
 	// Start extraction goroutine.
 	go func() {
@@ -311,6 +317,157 @@ func (p *Pipeline) runPipelined(ctx context.Context, batches [][]model.RawDocume
 	}
 
 	return nil
+}
+
+// runStreaming processes documents from a StreamingConnector, overlapping
+// scanning, extraction, and embedding. Documents are batched as they arrive
+// from the scan channel and handed off to extraction/embedding.
+func (p *Pipeline) runStreaming(ctx context.Context, sc connector.StreamingConnector,
+	scanOpts connector.ScanOptions, opt Options, known map[string]string) (*Result, error) {
+
+	result := &Result{}
+	eventCh := sc.ScanStream(ctx, scanOpts)
+
+	// docBatch channel: batches of documents ready for extraction.
+	docBatch := make(chan []model.RawDocument, 4)
+	// extracted channel: extraction results ready for embedding.
+	extracted := make(chan extractedBatch, 4)
+
+	// Track totals from the stream.
+	var scannedDocs int
+	var overlap int
+
+	// Goroutine 1: Read from event channel, batch documents, send to docBatch.
+	scanErr := make(chan error, 1)
+	go func() {
+		defer close(docBatch)
+		var batch []model.RawDocument
+		var deleted []string
+
+		for ev := range eventCh {
+			if ev.Err != nil {
+				scanErr <- ev.Err
+				return
+			}
+			if ev.Doc != nil {
+				scannedDocs++
+				if _, ok := known[ev.Doc.Path]; ok {
+					overlap++
+				}
+				batch = append(batch, *ev.Doc)
+				if len(batch) >= p.BatchSize {
+					select {
+					case docBatch <- batch:
+					case <-ctx.Done():
+						scanErr <- ctx.Err()
+						return
+					}
+					batch = nil
+				}
+			}
+			if ev.Deleted != nil {
+				deleted = ev.Deleted
+			}
+		}
+
+		// Send remaining batch.
+		if len(batch) > 0 {
+			select {
+			case docBatch <- batch:
+			case <-ctx.Done():
+				scanErr <- ctx.Err()
+				return
+			}
+		}
+
+		// Handle deletions.
+		if len(deleted) > 0 {
+			if err := p.store.DeleteByPaths(ctx, sc.Name(), sc.SourceName(), deleted); err != nil {
+				scanErr <- fmt.Errorf("delete: %w", err)
+				return
+			}
+			result.Deleted = len(deleted)
+		}
+
+		scanErr <- nil
+	}()
+
+	// Goroutine 2: Extract chunks from document batches.
+	go func() {
+		defer close(extracted)
+		batchNum := 0
+		progressOffset := 0
+		for batch := range docBatch {
+			if ctx.Err() != nil {
+				return
+			}
+			batchNum++
+			p.logger.Debug("extracting chunks (streaming)", "batch", batchNum, "docs", len(batch))
+			fragments, errs := p.processDocuments(ctx, batch, progressOffset, 0)
+			progressOffset += len(batch)
+
+			select {
+			case extracted <- extractedBatch{batchNum: batchNum, fragments: fragments, errors: errs}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Main goroutine: embed + store as extracted batches arrive.
+	totalBatches := 0
+	for eb := range extracted {
+		totalBatches++
+		result.Errors += eb.errors
+
+		if len(eb.fragments) > 0 {
+			if p.OnEmbedding != nil {
+				p.OnEmbedding(eb.batchNum, 0, len(eb.fragments))
+			}
+			p.logger.Debug("embedding fragments (streaming)", "batch", eb.batchNum, "fragments", len(eb.fragments))
+			embedStart := time.Now()
+			stored, err := p.embedAndStore(ctx, eb.fragments)
+			if err != nil {
+				result.Added += stored
+				return result, fmt.Errorf("embed batch: %w", err)
+			}
+			p.logger.Debug("embedding complete (streaming)", "batch", eb.batchNum, "fragments", stored, "elapsed_ms", time.Since(embedStart).Milliseconds())
+			result.Added += stored
+		}
+
+		if p.OnBatchDone != nil {
+			p.OnBatchDone(eb.batchNum, 0, len(eb.fragments))
+		}
+	}
+
+	// Wait for scan goroutine to finish and check for errors.
+	if err := <-scanErr; err != nil {
+		return result, fmt.Errorf("scan: %w", err)
+	}
+
+	// Compute skipped count.
+	result.Skipped = len(known) - result.Deleted - overlap
+
+	// Fire scan complete callback now that we know the totals.
+	if p.OnScanComplete != nil {
+		total := scannedDocs + result.Deleted + result.Skipped
+		p.OnScanComplete(total, scannedDocs, result.Deleted, result.Skipped)
+	}
+
+	if ctx.Err() != nil {
+		p.logger.Info("ingestion interrupted, partial result committed",
+			"added", result.Added, "errors", result.Errors)
+		return result, ctx.Err()
+	}
+
+	p.logger.Debug("streaming ingestion complete",
+		"added", result.Added,
+		"deleted", result.Deleted,
+		"skipped", result.Skipped,
+		"errors", result.Errors,
+	)
+
+	return result, nil
 }
 
 // enrichBatch runs enrichment on all fragments in the batch.
@@ -460,7 +617,7 @@ func (p *Pipeline) embedAndStore(ctx context.Context, fragments []model.SourceFr
 		for i := range chunk {
 			if embeddings[i] == nil {
 				p.logger.Warn("skipping fragment with nil embedding",
-					"path", chunk[i].SourcePath, "id", chunk[i].ID)
+					"source", chunk[i].SourceName, "path", chunk[i].SourcePath, "id", chunk[i].ID)
 				continue
 			}
 			chunk[i].Embedding = embeddings[i]

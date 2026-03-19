@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -100,7 +101,7 @@ func Fields() []FieldDescriptor {
 		{"KB_MAX_FILE_SIZE", "1048576"},
 		{"KB_MAX_CHUNK_SIZE", "2000"},
 		{"KB_CHUNK_OVERLAP", "150"},
-		{"KB_WORKERS", "4"},
+		{"KB_WORKERS", strconv.Itoa(runtime.NumCPU())},
 		{"KB_DEFAULT_LIMIT", "20"},
 		{"KB_GITHUB_CLIENT_ID", ""},
 		{"KB_SKIP_SETUP", "false"},
@@ -217,7 +218,7 @@ func Load(opts LoadOptions) ResolvedConfig {
 		MaxFileSize:     int64(envOrInt("KB_MAX_FILE_SIZE", 1_048_576)),
 		MaxChunkSize:    envOrInt("KB_MAX_CHUNK_SIZE", 2000),
 		ChunkOverlap:    envOrInt("KB_CHUNK_OVERLAP", 150),
-		WorkerCount:     envOrInt("KB_WORKERS", 4),
+		WorkerCount:     envOrInt("KB_WORKERS", runtime.NumCPU()),
 		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 20),
 		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
 		SkipSetup:       envOr("KB_SKIP_SETUP", "false") == "true",

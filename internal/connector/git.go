@@ -115,8 +115,9 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	useDiff := c.lastCommit != "" && !opts.Force && !pinned
 	cloneArgs := []string{"clone"}
 	if pinned {
-		// Need full history to checkout an arbitrary commit.
-		cloneArgs = append(cloneArgs, "--no-checkout")
+		// Treeless clone: downloads commit objects but defers tree/blob fetching,
+		// which is much faster for large repos when checking out a single commit.
+		cloneArgs = append(cloneArgs, "--filter=tree:0", "--no-checkout")
 	} else if useDiff {
 		cloneArgs = append(cloneArgs, "--filter=blob:none", "--no-checkout")
 	} else {
@@ -127,17 +128,18 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	}
 	cloneArgs = append(cloneArgs, cloneURL, tmpDir)
 
+	pw := newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
 	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = pw
 	if err := cmd.Run(); err != nil {
 		return nil, nil, fmt.Errorf("git clone: %w", err)
 	}
 
 	// Checkout pinned commit if specified.
 	if pinned {
-		checkoutCmd := exec.CommandContext(ctx, "git", "checkout", c.commit)
+		checkoutCmd := exec.CommandContext(ctx, "git", "-c", "advice.detachedHead=false", "checkout", c.commit)
 		checkoutCmd.Dir = tmpDir
-		checkoutCmd.Stderr = os.Stderr
+		checkoutCmd.Stderr = pw
 		if err := checkoutCmd.Run(); err != nil {
 			return nil, nil, fmt.Errorf("git checkout %s: %w", c.commit, err)
 		}
@@ -154,7 +156,7 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		}
 		// Diff failed (e.g. last_commit unreachable after force push).
 		// Fall back to full scan.
-		fmt.Fprintf(os.Stderr, "Diff-based scan failed (%v), falling back to full scan\n", err)
+		fmt.Fprintf(os.Stderr, "%s: Diff-based scan failed (%v), falling back to full scan\n", c.SourceName(), err)
 	}
 
 	// Full checkout for full scan.
@@ -162,7 +164,7 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 		// We cloned with --no-checkout for diff; need to checkout now.
 		checkoutCmd := exec.CommandContext(ctx, "git", "checkout", "HEAD")
 		checkoutCmd.Dir = tmpDir
-		checkoutCmd.Stderr = os.Stderr
+		checkoutCmd.Stderr = newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
 		if err := checkoutCmd.Run(); err != nil {
 			return nil, nil, fmt.Errorf("git checkout: %w", err)
 		}
@@ -219,12 +221,12 @@ func (c *GitConnector) diffScan(ctx context.Context, tmpDir string, opts ScanOpt
 	}
 
 	if c.headCommit == c.lastCommit {
-		fmt.Fprintf(os.Stderr, "No changes since last ingest\n")
+		fmt.Fprintf(os.Stderr, "%s: No changes since last ingest\n", c.SourceName())
 		return nil, nil, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "Diff: %d changed, %d deleted (since %s)\n",
-		len(changedPaths), len(deleted), c.lastCommit[:8])
+	fmt.Fprintf(os.Stderr, "%s: Diff: %d changed, %d deleted (since %s)\n",
+		c.SourceName(), len(changedPaths), len(deleted), c.lastCommit[:8])
 
 	if len(changedPaths) == 0 {
 		return nil, deleted, nil
@@ -234,7 +236,7 @@ func (c *GitConnector) diffScan(ctx context.Context, tmpDir string, opts ScanOpt
 	checkoutArgs := append([]string{"checkout", "HEAD", "--"}, changedPaths...)
 	checkoutCmd := exec.CommandContext(ctx, "git", checkoutArgs...)
 	checkoutCmd.Dir = tmpDir
-	checkoutCmd.Stderr = os.Stderr
+	checkoutCmd.Stderr = newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
 	if err := checkoutCmd.Run(); err != nil {
 		return nil, nil, fmt.Errorf("git checkout changed files: %w", err)
 	}
@@ -301,6 +303,237 @@ func (c *GitConnector) fullScan(ctx context.Context, tmpDir string, opts ScanOpt
 	}
 
 	return docs, deleted, nil
+}
+
+// ScanStream returns a channel of ScanEvents for streaming ingestion.
+// For full scans, it delegates to FilesystemConnector.ScanStream and rewrites
+// metadata. For diff scans (small change sets), it wraps the existing Scan result.
+func (c *GitConnector) ScanStream(ctx context.Context, opts ScanOptions) <-chan ScanEvent {
+	ch := make(chan ScanEvent, 64)
+
+	go func() {
+		defer close(ch)
+
+		cloneURL, err := c.authenticatedURL(ctx)
+		if err != nil {
+			ch <- ScanEvent{Err: fmt.Errorf("resolve auth: %w", err)}
+			return
+		}
+
+		tmpDir, err := os.MkdirTemp("", "kb-git-*")
+		if err != nil {
+			ch <- ScanEvent{Err: fmt.Errorf("create temp dir: %w", err)}
+			return
+		}
+
+		if c.commit != "" {
+			fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", c.repoURL, c.commit)
+		} else {
+			fmt.Fprintf(os.Stderr, "Cloning %s...\n", c.repoURL)
+		}
+
+		pinned := c.commit != ""
+		useDiff := c.lastCommit != "" && !opts.Force && !pinned
+
+		cloneArgs := []string{"clone"}
+		if pinned {
+			cloneArgs = append(cloneArgs, "--filter=tree:0", "--no-checkout")
+		} else if useDiff {
+			cloneArgs = append(cloneArgs, "--filter=blob:none", "--no-checkout")
+		} else {
+			cloneArgs = append(cloneArgs, "--depth", "1")
+		}
+		if c.branch != "" {
+			cloneArgs = append(cloneArgs, "--branch", c.branch)
+		}
+		cloneArgs = append(cloneArgs, cloneURL, tmpDir)
+
+		pw := newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
+		cmd := exec.CommandContext(ctx, "git", cloneArgs...)
+		cmd.Stderr = pw
+		if err := cmd.Run(); err != nil {
+			os.RemoveAll(tmpDir)
+			ch <- ScanEvent{Err: fmt.Errorf("git clone: %w", err)}
+			return
+		}
+
+		if pinned {
+			checkoutCmd := exec.CommandContext(ctx, "git", "-c", "advice.detachedHead=false", "checkout", c.commit)
+			checkoutCmd.Dir = tmpDir
+			checkoutCmd.Stderr = pw
+			if err := checkoutCmd.Run(); err != nil {
+				os.RemoveAll(tmpDir)
+				ch <- ScanEvent{Err: fmt.Errorf("git checkout %s: %w", c.commit, err)}
+				return
+			}
+		}
+
+		c.headCommit = gitHead(ctx, tmpDir)
+
+		// Diff-based scan: small number of files, wrap into events.
+		if useDiff {
+			docs, deleted, err := c.diffScan(ctx, tmpDir, opts)
+			os.RemoveAll(tmpDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: Diff-based scan failed (%v), falling back to full scan\n", c.SourceName(), err)
+				// Fall through to full scan below by re-cloning.
+				c.scanStreamFullScan(ctx, ch, opts)
+				return
+			}
+			for i := range docs {
+				select {
+				case ch <- ScanEvent{Doc: &docs[i]}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			select {
+			case ch <- ScanEvent{Deleted: deleted}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		// Full scan: if we cloned with --no-checkout for diff attempt that failed,
+		// we need to re-clone. But if we got here directly, checkout is done.
+		// For streaming full scan, delegate to FilesystemConnector.ScanStream.
+
+		// Rewrite known keys from relative paths to absolute.
+		fsOpts := ScanOptions{Known: opts.Known, Force: opts.Force}
+		if len(opts.Known) > 0 {
+			abs := make(map[string]string, len(opts.Known))
+			for rel, checksum := range opts.Known {
+				abs[filepath.Join(tmpDir, rel)] = checksum
+			}
+			fsOpts.Known = abs
+		}
+
+		fs := NewFilesystemConnector(tmpDir)
+		fs.SkipGitMeta = true
+		fsCh := fs.ScanStream(ctx, fsOpts)
+
+		sourceURI := c.baseSourceURI()
+		sourceName := c.SourceName()
+
+		for ev := range fsCh {
+			if ev.Err != nil {
+				ch <- ev
+				os.RemoveAll(tmpDir)
+				return
+			}
+			if ev.Doc != nil {
+				relPath, _ := filepath.Rel(tmpDir, ev.Doc.Path)
+				ev.Doc.Path = relPath
+				ev.Doc.SourceType = SourceTypeGit
+				ev.Doc.SourceName = sourceName
+				ev.Doc.SourceURI = sourceURI + "/" + relPath
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+					os.RemoveAll(tmpDir)
+					return
+				}
+			}
+			if ev.Deleted != nil {
+				// Convert deleted paths back to relative.
+				for i := range ev.Deleted {
+					if rel, err := filepath.Rel(tmpDir, ev.Deleted[i]); err == nil {
+						ev.Deleted[i] = rel
+					}
+				}
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+				}
+			}
+		}
+
+		os.RemoveAll(tmpDir)
+	}()
+
+	return ch
+}
+
+// scanStreamFullScan re-clones and does a full streaming scan. Used as fallback
+// when diff scan fails during ScanStream.
+func (c *GitConnector) scanStreamFullScan(ctx context.Context, ch chan<- ScanEvent, opts ScanOptions) {
+	cloneURL, err := c.authenticatedURL(ctx)
+	if err != nil {
+		ch <- ScanEvent{Err: fmt.Errorf("resolve auth: %w", err)}
+		return
+	}
+
+	tmpDir, err := os.MkdirTemp("", "kb-git-*")
+	if err != nil {
+		ch <- ScanEvent{Err: fmt.Errorf("create temp dir: %w", err)}
+		return
+	}
+
+	cloneArgs := []string{"clone", "--depth", "1"}
+	if c.branch != "" {
+		cloneArgs = append(cloneArgs, "--branch", c.branch)
+	}
+	cloneArgs = append(cloneArgs, cloneURL, tmpDir)
+
+	cmd := exec.CommandContext(ctx, "git", cloneArgs...)
+	cmd.Stderr = newPrefixWriter(fmt.Sprintf("  [%s] ", c.SourceName()), os.Stderr)
+	if err := cmd.Run(); err != nil {
+		os.RemoveAll(tmpDir)
+		ch <- ScanEvent{Err: fmt.Errorf("git clone: %w", err)}
+		return
+	}
+
+	c.headCommit = gitHead(ctx, tmpDir)
+
+	fsOpts := ScanOptions{Known: opts.Known, Force: opts.Force}
+	if len(opts.Known) > 0 {
+		abs := make(map[string]string, len(opts.Known))
+		for rel, checksum := range opts.Known {
+			abs[filepath.Join(tmpDir, rel)] = checksum
+		}
+		fsOpts.Known = abs
+	}
+
+	fs := NewFilesystemConnector(tmpDir)
+	fs.SkipGitMeta = true
+	fsCh := fs.ScanStream(ctx, fsOpts)
+
+	sourceURI := c.baseSourceURI()
+	sourceName := c.SourceName()
+
+	for ev := range fsCh {
+		if ev.Err != nil {
+			ch <- ev
+			os.RemoveAll(tmpDir)
+			return
+		}
+		if ev.Doc != nil {
+			relPath, _ := filepath.Rel(tmpDir, ev.Doc.Path)
+			ev.Doc.Path = relPath
+			ev.Doc.SourceType = SourceTypeGit
+			ev.Doc.SourceName = sourceName
+			ev.Doc.SourceURI = sourceURI + "/" + relPath
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+				os.RemoveAll(tmpDir)
+				return
+			}
+		}
+		if ev.Deleted != nil {
+			for i := range ev.Deleted {
+				if rel, err := filepath.Rel(tmpDir, ev.Deleted[i]); err == nil {
+					ev.Deleted[i] = rel
+				}
+			}
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+			}
+		}
+	}
+
+	os.RemoveAll(tmpDir)
 }
 
 // gitHead returns the HEAD commit SHA in the given repo directory.

@@ -16,6 +16,12 @@ type Connector = connector.Connector
 // ScanOptions is the public ScanOptions type.
 type ScanOptions = connector.ScanOptions
 
+// ScanEvent is the public ScanEvent type.
+type ScanEvent = connector.ScanEvent
+
+// StreamingConnector is the public StreamingConnector interface.
+type StreamingConnector = connector.StreamingConnector
+
 // Factory creates a Connector from source config.
 type Factory func(config map[string]string) (Connector, error)
 

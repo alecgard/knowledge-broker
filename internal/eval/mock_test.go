@@ -152,6 +152,22 @@ func (m *mockStore) PruneCacheEntries(ctx context.Context, maxAge time.Duration)
 	return nil
 }
 
+func (m *mockStore) SaveQueryHistory(ctx context.Context, entry store.QueryHistoryEntry) error {
+	return nil
+}
+
+func (m *mockStore) ListQueryHistory(ctx context.Context, limit int) ([]store.QueryHistoryEntry, error) {
+	return nil, nil
+}
+
+func (m *mockStore) DeleteQueryHistory(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockStore) ClearQueryHistory(ctx context.Context) error {
+	return nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

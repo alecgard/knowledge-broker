@@ -32,6 +32,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "kb",
 		Short: "Knowledge Broker — ingest documents, query for answers with confidence signals",
+		SilenceUsage: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},

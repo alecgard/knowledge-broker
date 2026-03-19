@@ -25,6 +25,7 @@ func init() {
 			return nil, fmt.Errorf("git source missing 'url' in config")
 		}
 		c := NewGitConnector(config["url"], config["branch"], config["github_client_id"])
+		c.commit = config["commit"]
 		c.lastCommit = config["last_commit"]
 		c.token = config["token"]
 		return c, nil
@@ -36,6 +37,7 @@ func init() {
 type GitConnector struct {
 	repoURL    string
 	branch     string
+	commit     string // pin to a specific commit SHA (optional)
 	clientID   string // GitHub OAuth client ID (only used for github.com URLs)
 	lastCommit string // SHA of the last successfully ingested commit
 	headCommit string // SHA of HEAD after clone (populated by Scan)
@@ -52,6 +54,11 @@ func NewGitConnector(repoURL, branch, clientID string) *GitConnector {
 	}
 }
 
+// SetCommit pins the connector to a specific commit SHA.
+func (c *GitConnector) SetCommit(sha string) {
+	c.commit = sha
+}
+
 // Name returns the connector type identifier.
 func (c *GitConnector) Name() string {
 	return SourceTypeGit
@@ -62,6 +69,9 @@ func (c *GitConnector) Config(mode string) map[string]string {
 	cfg := map[string]string{"url": c.repoURL}
 	if c.branch != "" {
 		cfg["branch"] = c.branch
+	}
+	if c.commit != "" {
+		cfg["commit"] = c.commit
 	}
 	if c.clientID != "" {
 		cfg["github_client_id"] = c.clientID
@@ -92,13 +102,22 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	}
 	defer os.RemoveAll(tmpDir)
 
-	fmt.Fprintf(os.Stderr, "Cloning %s...\n", c.repoURL)
+	if c.commit != "" {
+		fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", c.repoURL, c.commit)
+	} else {
+		fmt.Fprintf(os.Stderr, "Cloning %s...\n", c.repoURL)
+	}
 
+	// If pinned to a specific commit, we need a full clone to reach it.
 	// If we have a previous commit, do a blobless clone so we can diff.
 	// Otherwise, shallow clone for speed.
-	useDiff := c.lastCommit != "" && !opts.Force
+	pinned := c.commit != ""
+	useDiff := c.lastCommit != "" && !opts.Force && !pinned
 	cloneArgs := []string{"clone"}
-	if useDiff {
+	if pinned {
+		// Need full history to checkout an arbitrary commit.
+		cloneArgs = append(cloneArgs, "--no-checkout")
+	} else if useDiff {
 		cloneArgs = append(cloneArgs, "--filter=blob:none", "--no-checkout")
 	} else {
 		cloneArgs = append(cloneArgs, "--depth", "1")
@@ -112,6 +131,16 @@ func (c *GitConnector) Scan(ctx context.Context, opts ScanOptions) ([]model.RawD
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, nil, fmt.Errorf("git clone: %w", err)
+	}
+
+	// Checkout pinned commit if specified.
+	if pinned {
+		checkoutCmd := exec.CommandContext(ctx, "git", "checkout", c.commit)
+		checkoutCmd.Dir = tmpDir
+		checkoutCmd.Stderr = os.Stderr
+		if err := checkoutCmd.Run(); err != nil {
+			return nil, nil, fmt.Errorf("git checkout %s: %w", c.commit, err)
+		}
 	}
 
 	// Record HEAD commit SHA for next ingest.

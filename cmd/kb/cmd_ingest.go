@@ -234,7 +234,17 @@ func ingestCmd() *cobra.Command {
 			var connectors []connector.Connector
 
 			for _, u := range gitURLs {
-				connectors = append(connectors, connector.NewGitConnector(u, "", cfg.GitHubClientID))
+				// Support url#commit syntax to pin to a specific commit.
+				var commit string
+				if idx := strings.LastIndex(u, "#"); idx > 0 {
+					commit = u[idx+1:]
+					u = u[:idx]
+				}
+				c := connector.NewGitConnector(u, "", cfg.GitHubClientID)
+				if commit != "" {
+					c.SetCommit(commit)
+				}
+				connectors = append(connectors, c)
 			}
 			for _, p := range sourcePaths {
 				connectors = append(connectors, connector.NewFilesystemConnector(p))

@@ -25,6 +25,7 @@ Clone and ingest a Git repository by URL. Supports public repos directly; privat
 kb ingest --git https://github.com/owner/repo
 kb ingest --git https://github.com/owner/private-repo   # uses gh CLI or device flow
 kb ingest --git https://gitlab.com/owner/repo            # uses KB_GITLAB_TOKEN
+kb ingest --git https://github.com/owner/repo#abc1234    # pin to a specific commit
 ```
 
 | Variable | Required | Description |

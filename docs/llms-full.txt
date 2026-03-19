@@ -1,7 +1,7 @@
 # Knowledge Broker — Complete Documentation
 
 Source: https://knowledgebroker.dev
-Generated: 2026-03-18
+Generated: 2026-03-19
 
 
 # Knowledge Broker
@@ -401,7 +401,19 @@ Restore from a backup file:
 kb restore /path/to/kb-backup-20250115-030000.db
 ```
 
-This validates that the backup is a valid SQLite database, then prompts for confirmation before overwriting. Pass `--force` to skip the prompt. Stop the server before restoring, then restart it afterward.
+This validates that the backup is a valid SQLite database, then prompts for confirmation before overwriting:
+
+```
+This will replace the current database at /home/deploy/.local/share/kb/kb.db. Continue? [y/N]
+```
+
+Pass `--force` to skip the confirmation prompt (useful in scripts):
+
+```bash
+kb restore --force /path/to/backup.db
+```
+
+Stop the server before restoring, then restart it afterward.
 
 ### Migration between machines
 
@@ -545,6 +557,53 @@ A small local LLM (`qwen2.5:0.5b` by default) runs over each chunk with a slidin
 
 Enrichment runs entirely locally, no external API calls. The enrichment model is pulled automatically on first run.
 
+#### What enrichment produces
+
+The enrichment LLM reads each chunk (plus its neighbors for context) and generates entity names, keywords, and domain terms that are relevant but may not appear verbatim in the text. These annotations are appended to the chunk before embedding. The original chunk text is preserved separately so the raw content is never modified.
+
+#### Choosing a model
+
+The enrichment model is configured via `KB_ENRICH_MODEL` or the `--enrich-model` flag.
+
+| Model | Speed | Quality | Memory |
+|-------|-------|---------|--------|
+| `qwen2.5:0.5b` (default) | Fast | Basic keyword extraction | ~500 MB |
+| `qwen2.5:3b` | Slower | Better entity recognition, more accurate keywords | ~2 GB |
+
+Smaller models are fine for most corpora. Use a larger model if you notice retrieval missing results that should match on entity names or domain-specific terminology.
+
+#### How enrichment affects retrieval
+
+Enriched terms are embedded alongside the chunk text, so they influence both **vector similarity** and **BM25 keyword search**. This is especially useful for vocabulary mismatch: if a chunk discusses "k8s pod autoscaling" but the user searches for "Kubernetes horizontal scaling," enrichment can bridge the gap by adding both phrasings.
+
+
+#### When to re-enrich
+
+Enrichment metadata is stored with each fragment. You need to re-enrich when:
+
+- **Changing the enrichment model** — different models produce different annotations.
+- **Changing the prompt version** — the annotation format changes.
+
+To re-enrich, either re-ingest with `--force` or use `--re-enrich` to update enrichment on existing fragments without re-scanning sources:
+
+```bash
+# Re-enrich all fragments with a new model
+kb ingest --re-enrich --enrich-model qwen2.5:3b
+
+# Re-enrich only a specific source
+kb ingest --re-enrich --source ./my-docs
+```
+
+#### Skipping enrichment
+
+Pass `--skip-enrichment` to `kb ingest` if you want faster ingestion and don't need the keyword boost. This is useful for quick iteration during development or when your corpus already uses consistent terminology that matches how users search.
+
+#### Troubleshooting
+
+- **Ollama OOM with larger models** — If Ollama crashes or returns errors during enrichment with `qwen2.5:3b` or larger, your machine may not have enough memory. Fall back to `qwen2.5:0.5b` or skip enrichment entirely.
+- **Slow enrichment on large corpora** — Enrichment adds an LLM call per chunk. For large corpora (thousands of files), expect enrichment to take significantly longer than embedding alone. Use `--parallel` to speed up multi-source ingestion, or `--skip-enrichment` for the initial ingest and run `--re-enrich` later.
+- **Enrichment model not found** — KB auto-pulls the enrichment model on first run via `kb setup`. If this fails (e.g., no internet), pull it manually: `ollama pull qwen2.5:0.5b`.
+
 ### Embedding and storage
 
 Each chunk is embedded locally (`nomic-embed-text` by default, 768 dimensions). Vectors are stored in **sqlite-vec** for similarity search. The raw text is also indexed in an **FTS5** table for BM25 keyword search.
@@ -666,6 +725,7 @@ Clone and ingest a Git repository by URL. Supports public repos directly; privat
 kb ingest --git https://github.com/owner/repo
 kb ingest --git https://github.com/owner/private-repo   # uses gh CLI or device flow
 kb ingest --git https://gitlab.com/owner/repo            # uses KB_GITLAB_TOKEN
+kb ingest --git https://github.com/owner/repo#abc1234    # pin to a specific commit
 ```
 
 | Variable | Required | Description |
@@ -1002,7 +1062,7 @@ kb ingest --all
 | Flag | Description |
 |------|-------------|
 | `--source` | Local directory path (repeatable) |
-| `--git` | Git repository URL (repeatable) |
+| `--git` | Git repository URL (repeatable). Append `#sha` to pin to a specific commit |
 | `--confluence` | Confluence space key (repeatable) |
 | `--slack` | Slack channel ID (repeatable) |
 | `--wiki` | GitHub Wiki repository URL (repeatable) |
@@ -1010,6 +1070,13 @@ kb ingest --all
 | `--remote` | URL of a remote KB server to push fragments to |
 | `--description` | Human-readable description of the source (shown to agents) |
 | `--db` | SQLite database path (default: `kb.db`) |
+| `--skip-enrichment` | Skip LLM chunk enrichment (faster ingestion) |
+| `--enrich-model` | Ollama model for chunk enrichment (default: `qwen2.5:0.5b` or `KB_ENRICH_MODEL`) |
+| `--prompt-version` | Enrichment prompt version: `v1` (full rewrite) or `v2` (append keywords) |
+| `--re-enrich` | Re-run enrichment on already-ingested chunks, then re-embed |
+| `--watch` | Watch for file changes and re-ingest automatically (local sources only) |
+| `--parallel` | Ingest multiple sources in parallel (default: sequential) |
+| `--force` | Force re-ingestion of all files, ignoring checksums |
 
 All connector flags can be combined in a single command. Ingestion is incremental, unchanged files are skipped based on checksums.
 
@@ -1043,6 +1110,52 @@ kb query --raw --source-type git "deployment process"
 | `--source-type` | Filter by source type (`filesystem`, `git`, `confluence`, `slack`, `github_wiki`) |
 | `--db` | SQLite database path (default: `kb.db`) |
 | `--remote` | URL of a remote KB server to query |
+
+## kb chat
+
+Start an interactive multi-turn conversation with the knowledge base. Each turn sends the full conversation history to the query engine, so follow-up questions have full context.
+
+```bash
+# Start a chat session
+kb chat
+
+# With filters
+kb chat --topics "billing,payments" --source owner/repo
+
+# Against a remote server
+kb chat --remote http://server:8080
+```
+
+Type your question at the `kb> ` prompt. The answer streams to the terminal. Type `exit`, `quit`, or press `Ctrl+C` to end the session.
+
+| Flag | Description |
+|------|-------------|
+| `--db` | SQLite database path (default: `kb.db`) |
+| `--limit` | Maximum number of fragments to retrieve |
+| `--topics` | Comma-separated topics to boost relevance |
+| `--source` | Filter results to this source name (repeatable) |
+| `--source-type` | Filter results to this source type (repeatable) |
+| `--llm` | LLM provider override: `claude`, `openai`, `ollama` |
+| `--no-expand` | Disable multi-query expansion |
+| `--remote` | URL of a remote KB server |
+
+Example session:
+
+```
+$ kb chat
+Knowledge Broker — interactive chat (type 'exit' or 'quit' to end)
+kb> how does authentication work?
+Authentication uses JWT tokens issued by the auth service...
+
+--- Confidence: 0.82 ---
+
+kb> what happens when a token expires?
+When a JWT token expires, the client must request a new one...
+
+--- Confidence: 0.79 ---
+
+kb> exit
+```
 
 ## kb serve
 
@@ -1083,6 +1196,7 @@ kb serve --no-stdio                   # HTTP + SSE (headless server deployment)
 | `/v1/export` | GET | Export fragment embeddings as JSON |
 | `/v1/version` | GET | Server version |
 | `/v1/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
 
 ### Query request format
 

@@ -20,7 +20,7 @@ kb ingest --all
 | Flag | Description |
 |------|-------------|
 | `--source` | Local directory path (repeatable) |
-| `--git` | Git repository URL (repeatable) |
+| `--git` | Git repository URL (repeatable). Append `#sha` to pin to a specific commit |
 | `--confluence` | Confluence space key (repeatable) |
 | `--slack` | Slack channel ID (repeatable) |
 | `--wiki` | GitHub Wiki repository URL (repeatable) |

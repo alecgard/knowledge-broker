@@ -64,8 +64,7 @@ func schemaReady(db *sql.DB, embeddingDim int) bool {
 // fully initialized, only a read is performed (no write lock needed).
 func initSchema(db *sql.DB, embeddingDim int) error {
 	// Fast path: if schema already exists with the correct embedding dim,
-	// skip all writes. This lets read-only callers (e.g. "kb sources list")
-	// open the store without acquiring a write lock.
+	// only run incremental table creation for newer tables, then return.
 	if schemaReady(db, embeddingDim) {
 		return nil
 	}

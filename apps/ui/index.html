@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Knowledge Broker</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%231a1a1a'/%3E%3Cline x1='10' y1='12' x2='22' y2='20' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='10' cy='12' r='4' fill='%23fff'/%3E%3Ccircle cx='22' cy='20' r='4' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #ffffff;
@@ -259,18 +260,18 @@ input:focus, textarea:focus, select:focus {
 
 .query-top-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 6px;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.example-select {
-  padding: 4px 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.mode-hint {
+  font-size: 9px;
+  color: var(--text2);
+  letter-spacing: 0.3px;
+  margin-right: auto;
 }
 
 /* Results */
@@ -573,6 +574,18 @@ input:focus, textarea:focus, select:focus {
   100% { transform: translateX(400%); }
 }
 
+.loading-timer {
+  font-size: 10px;
+  color: var(--text2);
+  letter-spacing: 0.3px;
+  display: none;
+  margin-bottom: 12px;
+}
+
+.loading-timer.active {
+  display: block;
+}
+
 /* Error display */
 .error-box {
   border: 1px solid var(--danger);
@@ -846,6 +859,102 @@ input:focus, textarea:focus, select:focus {
   transition: width 0.3s;
 }
 
+/* History sidebar */
+.content-layout {
+  display: flex;
+  gap: 16px;
+}
+
+.content-layout > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+  display: none;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.history-sidebar.visible {
+  display: block;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text2);
+}
+
+.history-item {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+}
+
+.history-item:hover {
+  background: var(--surface);
+}
+
+.history-item-query {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-meta {
+  font-size: 9px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+.history-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.history-item:hover .history-delete {
+  opacity: 1;
+}
+
+.history-delete:hover {
+  color: var(--danger);
+}
+
+.tab-btn-right {
+  margin-left: auto;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
   .meta-bar {
@@ -853,6 +962,20 @@ input:focus, textarea:focus, select:focus {
   }
   .btn-json {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .content-layout {
+    flex-direction: column;
+  }
+  .history-sidebar {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 12px;
+    max-height: none;
   }
 }
 </style>
@@ -885,24 +1008,21 @@ input:focus, textarea:focus, select:focus {
   <div class="tab-bar">
     <button class="tab-btn active" id="tabQuery" onclick="showTab('query')">Query</button>
     <button class="tab-btn" id="tabSources" onclick="showTab('sources')">Sources</button>
+    <button class="tab-btn tab-btn-right" id="tabHistory" onclick="toggleHistory()">History</button>
   </div>
 
+  <div class="content-layout">
+  <div>
   <!-- Query page -->
   <div id="queryPage">
 
   <!-- Query -->
   <div class="query-section">
     <div class="query-top-row">
-      <select class="example-select" id="exampleSelect" onchange="loadExample()">
-        <option value="">Examples</option>
-        <option value="0">Contradiction detection</option>
-        <option value="1">Freshness signal</option>
-        <option value="2">Multi-source corroboration</option>
-        <option value="3">Low confidence</option>
-      </select>
+      <span class="mode-hint" id="modeHint">Local LLM — all processing stays on your machine</span>
       <div class="mode-group">
-        <button class="btn btn-active" id="btnSynth" onclick="setMode('synthesis')">Synthesised</button>
-        <button class="btn" id="btnLocal" onclick="setMode('local')">Local</button>
+        <button class="btn btn-active" id="btnLocal" onclick="setMode('local')">Local</button>
+        <button class="btn" id="btnSynth" onclick="setMode('synthesis')">Cloud</button>
         <button class="btn" id="btnRaw" onclick="setMode('raw')">Raw</button>
       </div>
     </div>
@@ -914,6 +1034,7 @@ input:focus, textarea:focus, select:focus {
 
   <!-- Loading -->
   <div class="loading-bar" id="loadingBar"><div class="loading-bar-fill"></div></div>
+  <span class="loading-timer" id="loadingTimer"></span>
 
   <!-- Error -->
   <div class="error-box" id="errorBox"></div>
@@ -980,6 +1101,16 @@ input:focus, textarea:focus, select:focus {
       </div>
     </div>
   </div>
+  </div><!-- /content-main -->
+
+  <aside class="history-sidebar" id="historySidebar">
+    <div class="history-header">
+      <span class="history-title">History</span>
+      <button class="btn-sm" onclick="clearHistory()">Clear</button>
+    </div>
+    <div id="historyList"></div>
+  </aside>
+  </div><!-- /content-layout -->
 
 </div>
 
@@ -1000,20 +1131,14 @@ input:focus, textarea:focus, select:focus {
 <div class="toast" id="toast"></div>
 
 <script>
-const EXAMPLES = [
-  { label: 'Contradiction detection', query: 'What are the different recommended approaches to authentication?' },
-  { label: 'Freshness signal', query: 'What is the latest version of the model context protocol specification?' },
-  { label: 'Multi-source corroboration', query: 'How do different sources describe the tool use workflow?' },
-  { label: 'Low confidence', query: 'What is the pricing structure for enterprise deployments?' },
-];
-
 const SERVER_URL = 'http://localhost:8080';
 
 const state = {
-  mode: 'synthesis',
+  mode: 'local',
   loading: false,
   lastResponse: null,
   startTime: null,
+  timerInterval: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1049,21 +1174,18 @@ function highlightAllFragments() {
 
 // --- Mode ---
 
+const MODE_HINTS = {
+  local: 'Local LLM \u2014 all processing stays on your machine',
+  synthesis: 'Cloud LLM \u2014 query is sent to an external AI provider',
+  raw: 'Raw fragments \u2014 no LLM, returns matched chunks directly',
+};
+
 function setMode(mode) {
   state.mode = mode;
   $('btnSynth').className = 'btn' + (mode === 'synthesis' ? ' btn-active' : '');
   $('btnLocal').className = 'btn' + (mode === 'local' ? ' btn-active' : '');
   $('btnRaw').className = 'btn' + (mode === 'raw' ? ' btn-active' : '');
-}
-
-// --- Examples ---
-
-function loadExample() {
-  const idx = $('exampleSelect').value;
-  if (idx !== '') {
-    $('queryInput').value = EXAMPLES[parseInt(idx)].query;
-    $('exampleSelect').value = '';
-  }
+  $('modeHint').textContent = MODE_HINTS[mode] || '';
 }
 
 // --- Query ---
@@ -1078,6 +1200,13 @@ async function submitQuery() {
 
   $('btnQuery').disabled = true;
   $('loadingBar').classList.add('active');
+  $('loadingTimer').textContent = '0.0s';
+  $('loadingTimer').classList.add('active');
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(() => {
+    const elapsed = ((performance.now() - state.startTime) / 1000).toFixed(1);
+    $('loadingTimer').textContent = elapsed + 's';
+  }, 100);
   $('errorBox').classList.remove('visible');
   $('resultsSection').classList.remove('visible');
   $('resultsContent').innerHTML = '';
@@ -1102,6 +1231,7 @@ async function submitQuery() {
       const latency = Math.round(performance.now() - state.startTime);
       renderMeta(latency, (data.fragments || []).length);
       renderRawResults(data);
+      saveToHistory(query, state.mode, data, latency);
     } else {
       if (state.mode === 'local') body.mode = 'local';
       body.stream = true;
@@ -1116,6 +1246,9 @@ async function submitQuery() {
   } catch (err) {
     showError(err.message || 'Request failed');
   } finally {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    $('loadingTimer').classList.remove('active');
     state.loading = false;
     $('btnQuery').disabled = false;
     $('loadingBar').classList.remove('active');
@@ -1173,6 +1306,7 @@ async function handleStream(resp) {
           const latency = Math.round(performance.now() - state.startTime);
           renderMeta(latency, fullResponse.sources.length);
           renderSynthMeta(fullResponse);
+          saveToHistory($('queryInput').value.trim(), state.mode, fullResponse, latency);
         } else if (event.type === 'error') {
           showError(event.content);
         }
@@ -1229,9 +1363,23 @@ function renderSynthMeta(data) {
   if (!el) return;
   let html = '';
 
-  // Confidence
-  if (data.confidence) {
-    html += renderConfidenceHTML(data.confidence);
+  // Citations (sources used in the response)
+  if (data.sources && data.sources.length > 0) {
+    html += '<details class="sources-section" open><summary class="sources-toggle">Citations (' + data.sources.length + ')</summary>';
+    for (const s of data.sources) {
+      const name = esc(s.source_name || '');
+      const path = esc(s.source_path || '');
+      const label = name + (path ? ' · ' + path : '');
+      html += '<div class="source-item">';
+      if (s.source_uri) {
+        html += '<a href="' + esc(s.source_uri) + '" target="_blank" rel="noopener" class="citation-link">' + label + '</a>';
+      } else {
+        html += '<span class="source-name">' + label + '</span>';
+      }
+      if (s.relevance != null) html += '<span class="source-relevance">' + (s.relevance * 100).toFixed(0) + '%</span>';
+      html += '</div>';
+    }
+    html += '</details>';
   }
 
   // Contradictions
@@ -1239,16 +1387,10 @@ function renderSynthMeta(data) {
     html += renderContradictionsHTML(data.contradictions);
   }
 
-  // Sources
-  if (data.sources && data.sources.length > 0) {
-    html += '<details class="sources-section"><summary class="sources-toggle">Sources (' + data.sources.length + ')</summary>';
-    for (const s of data.sources) {
-      html += '<div class="source-item">' +
-        '<span class="source-name">' + esc(s.source_name || '') + '</span>' +
-        '<span class="source-path">' + esc(s.source_path || '') + '</span>' +
-        (s.relevance != null ? '<span class="source-relevance">' + (s.relevance * 100).toFixed(0) + '%</span>' : '') +
-        '</div>';
-    }
+  // Confidence (collapsed by default)
+  if (data.confidence) {
+    html += '<details class="sources-section"><summary class="sources-toggle">Confidence</summary>';
+    html += renderConfidenceHTML(data.confidence);
     html += '</details>';
   }
 
@@ -1408,6 +1550,121 @@ function formatDate(s) {
   } catch { return s; }
 }
 
+// --- History ---
+
+let historyCache = [];
+
+function saveToHistory(query, mode, response, latency) {
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    query: query,
+    mode: mode,
+    response: JSON.stringify(response),
+    latency_ms: Math.round(latency),
+    timestamp: new Date().toISOString(),
+  };
+  historyCache.unshift(entry);
+  if (historyCache.length > 50) historyCache = historyCache.slice(0, 50);
+  try { localStorage.setItem('kb_history', JSON.stringify(historyCache)); } catch {}
+  renderHistory();
+}
+
+function loadHistory() {
+  try {
+    historyCache = JSON.parse(localStorage.getItem('kb_history')) || [];
+  } catch {
+    historyCache = [];
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = $('historyList');
+  if (historyCache.length === 0) {
+    list.innerHTML = '<div class="empty-state">Run a query to build history.</div>';
+    return;
+  }
+  let html = '';
+  for (const item of historyCache) {
+    html += '<div class="history-item" data-id="' + esc(item.id) + '">' +
+      '<span class="history-delete" data-delete-id="' + esc(item.id) + '">&times;</span>' +
+      '<div class="history-item-query">' + esc(item.query) + '</div>' +
+      '<div class="history-item-meta">' + esc(item.mode) + ' · ' + timeAgo(item.timestamp) +
+      (item.latency_ms ? ' · ' + item.latency_ms + 'ms' : '') +
+      '</div></div>';
+  }
+  list.innerHTML = html;
+}
+
+// Event delegation for history clicks (avoids inline onclick XSS)
+$('historyList').addEventListener('click', function(e) {
+  // Handle delete clicks
+  const del = e.target.closest('.history-delete');
+  if (del) {
+    e.stopPropagation();
+    deleteHistoryEntry(del.getAttribute('data-delete-id'));
+    return;
+  }
+  const item = e.target.closest('.history-item');
+  if (!item) return;
+  restoreHistory(item.getAttribute('data-id'));
+});
+
+function restoreHistory(id) {
+  const item = historyCache.find(h => h.id === id);
+  if (!item) return;
+
+  // Show query tab if not visible
+  showTab('query');
+
+  // Set query input and mode
+  $('queryInput').value = item.query;
+  setMode(item.mode);
+
+  // Parse the stored response
+  let response;
+  try {
+    response = typeof item.response === 'string' ? JSON.parse(item.response) : item.response;
+  } catch { return; }
+  if (!response) return;
+
+  state.lastResponse = response;
+
+  if (item.mode === 'raw') {
+    const count = (response.fragments || []).length;
+    renderMeta(item.latency_ms || 0, count);
+    renderRawResults(response);
+  } else {
+    const content = $('resultsContent');
+    content.innerHTML = '<div class="answer-block" id="answerBlock"><span id="answerText"></span></div>' +
+      '<div id="synthMeta"></div>';
+    const answerEl = $('answerText');
+    if (answerEl && response.content) {
+      answerEl.innerHTML = linkifyCitations(response.content, response.sources);
+    }
+    renderMeta(item.latency_ms || 0, (response.sources || []).length);
+    renderSynthMeta(response);
+    $('resultsSection').classList.add('visible');
+  }
+}
+
+function toggleHistory() {
+  $('historySidebar').classList.toggle('visible');
+  $('tabHistory').classList.toggle('active');
+}
+
+function deleteHistoryEntry(id) {
+  historyCache = historyCache.filter(h => h.id !== id);
+  try { localStorage.setItem('kb_history', JSON.stringify(historyCache)); } catch {}
+  renderHistory();
+}
+
+function clearHistory() {
+  historyCache = [];
+  try { localStorage.removeItem('kb_history'); } catch {}
+  renderHistory();
+}
+
 // --- Keyboard ---
 $('queryInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -1443,6 +1700,7 @@ function loadSources() {
 }
 
 loadSources();
+loadHistory();
 
 // --- Tab navigation ---
 

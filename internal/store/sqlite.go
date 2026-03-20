@@ -66,20 +66,6 @@ func initSchema(db *sql.DB, embeddingDim int) error {
 	// Fast path: if schema already exists with the correct embedding dim,
 	// only run incremental table creation for newer tables, then return.
 	if schemaReady(db, embeddingDim) {
-		// Ensure tables added after initial release exist.
-		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS query_history (
-			id            TEXT PRIMARY KEY,
-			query         TEXT NOT NULL,
-			mode          TEXT NOT NULL DEFAULT 'local',
-			response_json TEXT NOT NULL,
-			latency_ms    INTEGER NOT NULL DEFAULT 0,
-			created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-		)`); err != nil {
-			return fmt.Errorf("create query_history table: %w", err)
-		}
-		if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_query_history_created ON query_history(created_at DESC)`); err != nil {
-			return fmt.Errorf("create query_history index: %w", err)
-		}
 		return nil
 	}
 

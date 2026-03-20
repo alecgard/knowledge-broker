@@ -64,13 +64,3 @@ CREATE TABLE IF NOT EXISTS query_cache (
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_query_cache_created ON query_cache(created_at);
-
-CREATE TABLE IF NOT EXISTS query_history (
-    id            TEXT PRIMARY KEY,
-    query         TEXT NOT NULL,
-    mode          TEXT NOT NULL DEFAULT 'local',
-    response_json TEXT NOT NULL,
-    latency_ms    INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-CREATE INDEX IF NOT EXISTS idx_query_history_created ON query_history(created_at DESC);

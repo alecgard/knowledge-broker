@@ -1561,22 +1561,21 @@ function saveToHistory(query, mode, response, latency) {
     mode: mode,
     response: JSON.stringify(response),
     latency_ms: Math.round(latency),
+    timestamp: new Date().toISOString(),
   };
-  fetch(SERVER_URL + '/v1/history', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry),
-  }).then(() => loadHistory()).catch(() => {});
+  historyCache.unshift(entry);
+  if (historyCache.length > 50) historyCache = historyCache.slice(0, 50);
+  try { localStorage.setItem('kb_history', JSON.stringify(historyCache)); } catch {}
+  renderHistory();
 }
 
 function loadHistory() {
-  fetch(SERVER_URL + '/v1/history', { signal: AbortSignal.timeout(5000) })
-    .then(r => r.json())
-    .then(entries => {
-      historyCache = entries || [];
-      renderHistory();
-    })
-    .catch(() => {});
+  try {
+    historyCache = JSON.parse(localStorage.getItem('kb_history')) || [];
+  } catch {
+    historyCache = [];
+  }
+  renderHistory();
 }
 
 function renderHistory() {
@@ -1655,16 +1654,15 @@ function toggleHistory() {
 }
 
 function deleteHistoryEntry(id) {
-  fetch(SERVER_URL + '/v1/history/' + encodeURIComponent(id), { method: 'DELETE' })
-    .then(() => loadHistory())
-    .catch(err => showToast('Delete failed: ' + err.message));
+  historyCache = historyCache.filter(h => h.id !== id);
+  try { localStorage.setItem('kb_history', JSON.stringify(historyCache)); } catch {}
+  renderHistory();
 }
 
 function clearHistory() {
-  if (!window.confirm('Clear all query history?')) return;
-  fetch(SERVER_URL + '/v1/history', { method: 'DELETE' })
-    .then(() => { historyCache = []; renderHistory(); })
-    .catch(err => showToast('Clear failed: ' + err.message));
+  historyCache = [];
+  try { localStorage.removeItem('kb_history'); } catch {}
+  renderHistory();
 }
 
 // --- Keyboard ---

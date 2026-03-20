@@ -104,8 +104,6 @@ func (s *HTTPServer) routes() {
 		s.mux.HandleFunc("/v1/sources/sync", s.handleSyncSource)
 		s.mux.HandleFunc("/v1/sources/jobs", s.handleListJobs)
 	}
-	s.mux.HandleFunc("/v1/history", s.handleHistory)
-	s.mux.HandleFunc("/v1/history/", s.handleHistoryEntry)
 	s.mux.Handle("/metrics", metricsHandler())
 }
 
@@ -793,91 +791,6 @@ func (s *HTTPServer) runIngestion(ctx context.Context, src model.Source, jobID s
 			s.logger.Error("update source last_ingest failed", "error", regErr)
 		}
 	}
-}
-
-// handleHistory routes /v1/history to GET (list), POST (save), or DELETE (clear).
-func (s *HTTPServer) handleHistory(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListHistory(w, r)
-	case http.MethodPost:
-		s.handleSaveHistory(w, r)
-	case http.MethodDelete:
-		s.handleClearHistory(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *HTTPServer) handleListHistory(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.store.ListQueryHistory(r.Context(), 50)
-	if err != nil {
-		s.logger.Error("list history failed", "error", err)
-		http.Error(w, "list history failed", http.StatusInternalServerError)
-		return
-	}
-	if entries == nil {
-		entries = []store.QueryHistoryEntry{}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
-}
-
-func (s *HTTPServer) handleSaveHistory(w http.ResponseWriter, r *http.Request) {
-	var entry store.QueryHistoryEntry
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&entry); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	if entry.Query == "" {
-		http.Error(w, "query is required", http.StatusBadRequest)
-		return
-	}
-	if len(entry.Query) > 10000 {
-		http.Error(w, "query too long", http.StatusBadRequest)
-		return
-	}
-	if len(entry.ResponseJSON) > 2<<20 {
-		http.Error(w, "response too large", http.StatusBadRequest)
-		return
-	}
-	if err := s.store.SaveQueryHistory(r.Context(), entry); err != nil {
-		s.logger.Error("save history failed", "error", err)
-		http.Error(w, "save history failed", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
-
-func (s *HTTPServer) handleClearHistory(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.ClearQueryHistory(r.Context()); err != nil {
-		s.logger.Error("clear history failed", "error", err)
-		http.Error(w, "clear history failed", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
-
-func (s *HTTPServer) handleHistoryEntry(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/v1/history/")
-	if id == "" {
-		http.Error(w, "id is required", http.StatusBadRequest)
-		return
-	}
-	if err := s.store.DeleteQueryHistory(r.Context(), id); err != nil {
-		s.logger.Error("delete history entry failed", "error", err)
-		http.Error(w, "delete failed", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // ListenAndServe starts the HTTP server.

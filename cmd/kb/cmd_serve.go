@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/knowledge-broker/knowledge-broker/apps/ui"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/server"
 	"github.com/knowledge-broker/knowledge-broker/internal/config"
@@ -24,6 +25,7 @@ func serveCmd() *cobra.Command {
 			noHTTP, _ := cmd.Flags().GetBool("no-http")
 			noSSE, _ := cmd.Flags().GetBool("no-sse")
 			noStdio, _ := cmd.Flags().GetBool("no-stdio")
+			noUI, _ := cmd.Flags().GetBool("no-ui")
 			debugMode := isDebug(cmd)
 			logger := newLogger(debugMode)
 			client := httpClient(logger, debugMode)
@@ -86,7 +88,11 @@ func serveCmd() *cobra.Command {
 			httpServer := server.NewHTTPServerWithOptions(engine, emb, s, logger, version,
 				server.WithPipeline(reg, pipelineCfg, client, jobs),
 			)
-			return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
+			if noUI {
+				return httpServer.ListenAndServe(ctx, cfg.ListenAddr)
+			}
+			uiServer := ui.NewServer(httpServer, logger)
+			return uiServer.ListenAndServe(ctx, cfg.ListenAddr)
 		},
 	}
 	cmd.Flags().String("addr", ":8080", "HTTP listen address")
@@ -95,5 +101,6 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().Bool("no-http", false, "Disable HTTP API server")
 	cmd.Flags().Bool("no-sse", false, "Disable MCP SSE transport")
 	cmd.Flags().Bool("no-stdio", false, "Disable MCP stdio transport")
+	cmd.Flags().Bool("no-ui", false, "Disable embedded UI (API only)")
 	return cmd
 }

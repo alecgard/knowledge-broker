@@ -14,16 +14,6 @@ type CachedAnswer struct {
 	CreatedAt    time.Time
 }
 
-// QueryHistoryEntry is a saved query with its response.
-type QueryHistoryEntry struct {
-	ID           string    `json:"id"`
-	Query        string    `json:"query"`
-	Mode         string    `json:"mode"`
-	ResponseJSON string    `json:"response"`
-	LatencyMS    int64     `json:"latency_ms"`
-	CreatedAt    time.Time `json:"timestamp"`
-}
-
 // Store persists and retrieves source fragments.
 type Store interface {
 	// UpsertFragments inserts or updates fragments (matched by ID).
@@ -105,18 +95,6 @@ type Store interface {
 
 	// PruneCacheEntries deletes entries older than maxAge. Called opportunistically.
 	PruneCacheEntries(ctx context.Context, maxAge time.Duration) error
-
-	// SaveQueryHistory stores a query and its response in history.
-	SaveQueryHistory(ctx context.Context, entry QueryHistoryEntry) error
-
-	// ListQueryHistory returns the most recent history entries.
-	ListQueryHistory(ctx context.Context, limit int) ([]QueryHistoryEntry, error)
-
-	// DeleteQueryHistory deletes a single history entry by ID.
-	DeleteQueryHistory(ctx context.Context, id string) error
-
-	// ClearQueryHistory deletes all history entries.
-	ClearQueryHistory(ctx context.Context) error
 
 	// Close releases resources.
 	Close() error

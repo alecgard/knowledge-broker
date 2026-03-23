@@ -230,6 +230,8 @@ func ingestCmd() *cobra.Command {
 			confluenceSpaces, _ := cmd.Flags().GetStringArray("confluence")
 			slackChannels, _ := cmd.Flags().GetStringArray("slack")
 			wikiURLs, _ := cmd.Flags().GetStringArray("wiki")
+			jiraProjects, _ := cmd.Flags().GetStringArray("jira")
+			jiraJQLs, _ := cmd.Flags().GetStringArray("jira-jql")
 
 			var connectors []connector.Connector
 
@@ -268,6 +270,60 @@ func ingestCmd() *cobra.Command {
 			}
 			for _, u := range wikiURLs {
 				connectors = append(connectors, connector.NewGitHubWikiConnector(u, "", cfg.GitHubClientID))
+			}
+			for _, proj := range jiraProjects {
+				baseURL := os.Getenv("KB_JIRA_BASE_URL")
+				email := os.Getenv("KB_JIRA_EMAIL")
+				token := os.Getenv("KB_JIRA_TOKEN")
+				if baseURL == "" || email == "" || token == "" {
+					return fmt.Errorf("--jira requires KB_JIRA_BASE_URL, KB_JIRA_EMAIL, and KB_JIRA_TOKEN (set in environment or .env file)")
+				}
+				concurrency := 2
+				if v := os.Getenv("KB_JIRA_CONCURRENCY"); v != "" {
+					if n, err := fmt.Sscanf(v, "%d", &concurrency); n != 1 || err != nil {
+						concurrency = 2
+					}
+				}
+				pageSize := 50
+				if v := os.Getenv("KB_JIRA_PAGE_SIZE"); v != "" {
+					if n, err := fmt.Sscanf(v, "%d", &pageSize); n != 1 || err != nil {
+						pageSize = 50
+					}
+				}
+				var fields []string
+				if v := os.Getenv("KB_JIRA_FIELDS"); v != "" {
+					fields = strings.Split(v, ",")
+				} else {
+					fields = []string{"assignee", "status", "labels", "created", "updated"}
+				}
+				connectors = append(connectors, connector.NewJiraConnector(baseURL, email, token, proj, "", concurrency, pageSize, fields))
+			}
+			for _, jql := range jiraJQLs {
+				baseURL := os.Getenv("KB_JIRA_BASE_URL")
+				email := os.Getenv("KB_JIRA_EMAIL")
+				token := os.Getenv("KB_JIRA_TOKEN")
+				if baseURL == "" || email == "" || token == "" {
+					return fmt.Errorf("--jira-jql requires KB_JIRA_BASE_URL, KB_JIRA_EMAIL, and KB_JIRA_TOKEN (set in environment or .env file)")
+				}
+				concurrency := 2
+				if v := os.Getenv("KB_JIRA_CONCURRENCY"); v != "" {
+					if n, err := fmt.Sscanf(v, "%d", &concurrency); n != 1 || err != nil {
+						concurrency = 2
+					}
+				}
+				pageSize := 50
+				if v := os.Getenv("KB_JIRA_PAGE_SIZE"); v != "" {
+					if n, err := fmt.Sscanf(v, "%d", &pageSize); n != 1 || err != nil {
+						pageSize = 50
+					}
+				}
+				var fields []string
+				if v := os.Getenv("KB_JIRA_FIELDS"); v != "" {
+					fields = strings.Split(v, ",")
+				} else {
+					fields = []string{"assignee", "status", "labels", "created", "updated"}
+				}
+				connectors = append(connectors, connector.NewJiraConnector(baseURL, email, token, "", jql, concurrency, pageSize, fields))
 			}
 
 			// Default: ingest current directory if no explicit flags.
@@ -491,6 +547,8 @@ func ingestCmd() *cobra.Command {
 	cmd.Flags().StringArray("confluence", nil, "Confluence space key to ingest (repeatable, requires KB_CONFLUENCE_* env vars)")
 	cmd.Flags().StringArray("slack", nil, "Slack channel ID to ingest (repeatable, requires KB_SLACK_TOKEN)")
 	cmd.Flags().StringArray("wiki", nil, "GitHub repo URL whose wiki to ingest (repeatable)")
+	cmd.Flags().StringArray("jira", nil, "Jira project key to ingest (repeatable, requires KB_JIRA_* env vars)")
+	cmd.Flags().StringArray("jira-jql", nil, "JQL query to select Jira issues (repeatable, requires KB_JIRA_* env vars)")
 	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")

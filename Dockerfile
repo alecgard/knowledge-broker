@@ -20,23 +20,17 @@ RUN CGO_ENABLED=1 CGO_CFLAGS="-Wno-deprecated-declarations" \
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates curl zstd && \
+    apt-get install -y --no-install-recommends ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
-
-# Install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
 
 COPY --from=builder /kb /usr/local/bin/kb
 
-# Entrypoint script to start Ollama and then run kb
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Data volume for the KB database
 VOLUME /data
-ENV KB_DB_PATH=/data/kb.db
+ENV KB_DB=/data/kb.db \
+    KB_OLLAMA_URL=http://ollama:11434 \
+    KB_SKIP_SETUP=true
 
 EXPOSE 8080
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["kb"]
 CMD ["serve"]

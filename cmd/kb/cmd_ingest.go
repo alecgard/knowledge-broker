@@ -227,10 +227,6 @@ func ingestCmd() *cobra.Command {
 			// Build list of sources from flags.
 			gitURLs, _ := cmd.Flags().GetStringArray("git")
 			sourcePaths, _ := cmd.Flags().GetStringArray("source")
-			confluenceSpaces, _ := cmd.Flags().GetStringArray("confluence")
-			slackChannels, _ := cmd.Flags().GetStringArray("slack")
-			wikiURLs, _ := cmd.Flags().GetStringArray("wiki")
-
 			var connectors []connector.Connector
 
 			for _, u := range gitURLs {
@@ -240,7 +236,7 @@ func ingestCmd() *cobra.Command {
 					commit = u[idx+1:]
 					u = u[:idx]
 				}
-				c := connector.NewGitConnector(u, "", cfg.GitHubClientID)
+				c := connector.NewGitConnector(u, "")
 				if commit != "" {
 					c.SetCommit(commit)
 				}
@@ -248,26 +244,6 @@ func ingestCmd() *cobra.Command {
 			}
 			for _, p := range sourcePaths {
 				connectors = append(connectors, connector.NewFilesystemConnector(p))
-			}
-			for _, space := range confluenceSpaces {
-				baseURL := os.Getenv("KB_CONFLUENCE_BASE_URL")
-				email := os.Getenv("KB_CONFLUENCE_EMAIL")
-				token := os.Getenv("KB_CONFLUENCE_TOKEN")
-				if baseURL == "" || email == "" || token == "" {
-					return fmt.Errorf("--confluence requires KB_CONFLUENCE_BASE_URL, KB_CONFLUENCE_EMAIL, and KB_CONFLUENCE_TOKEN (set in environment or .env file)")
-				}
-				connectors = append(connectors, connector.NewConfluenceConnector(baseURL, space, email, token))
-			}
-			if len(slackChannels) > 0 {
-				token := os.Getenv("KB_SLACK_TOKEN")
-				if token == "" {
-					return fmt.Errorf("--slack requires KB_SLACK_TOKEN (set in environment or .env file)")
-				}
-				workspace := os.Getenv("KB_SLACK_WORKSPACE")
-				connectors = append(connectors, connector.NewSlackConnector(token, slackChannels, workspace))
-			}
-			for _, u := range wikiURLs {
-				connectors = append(connectors, connector.NewGitHubWikiConnector(u, "", cfg.GitHubClientID))
 			}
 
 			// Default: ingest current directory if no explicit flags.
@@ -488,9 +464,6 @@ func ingestCmd() *cobra.Command {
 	}
 	cmd.Flags().StringArray("source", nil, "Local directory to ingest (repeatable)")
 	cmd.Flags().StringArray("git", nil, "Git repo URL to ingest (repeatable)")
-	cmd.Flags().StringArray("confluence", nil, "Confluence space key to ingest (repeatable, requires KB_CONFLUENCE_* env vars)")
-	cmd.Flags().StringArray("slack", nil, "Slack channel ID to ingest (repeatable, requires KB_SLACK_TOKEN)")
-	cmd.Flags().StringArray("wiki", nil, "GitHub repo URL whose wiki to ingest (repeatable)")
 	cmd.Flags().String("db", "", config.DBFlagUsage)
 	cmd.Flags().String("remote", "", "URL of a remote KB server to push fragments to")
 	cmd.Flags().Bool("all", false, "Re-ingest all registered local sources")

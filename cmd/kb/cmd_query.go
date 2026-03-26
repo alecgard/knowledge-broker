@@ -114,8 +114,8 @@ func queryCmd() *cobra.Command {
 	cmd.Flags().Bool("raw", false, "Raw retrieval mode: return fragments as JSON without LLM synthesis (no API key needed)")
 	cmd.Flags().String("topics", "", "Comma-separated topics to boost relevance (e.g., 'authentication,deployment')")
 	cmd.Flags().StringArray("source", nil, "Filter results to this source name (repeatable, e.g., --source owner/repo)")
-	cmd.Flags().StringArray("source-type", nil, "Filter results to this source type (repeatable: filesystem, git, confluence, slack, github_wiki)")
-	cmd.Flags().String("llm", "", "LLM provider override: claude, openai, ollama (default from KB_LLM_PROVIDER or claude)")
+	cmd.Flags().StringArray("source-type", nil, "Filter results to this source type (repeatable: filesystem, git)")
+	cmd.Flags().String("llm", "", "LLM provider override (default: ollama)")
 	cmd.Flags().Bool("no-expand", false, "Disable multi-query expansion (useful for precise queries)")
 	cmd.Flags().String("remote", "", "URL of a remote KB server")
 	return cmd

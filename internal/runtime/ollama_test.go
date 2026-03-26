@@ -110,13 +110,9 @@ func TestEnsureReady_BinaryNotFound(t *testing.T) {
 	// Simulate Ollama not reachable.
 	isReachableFn = func(url string) bool { return false }
 
-	// Binary never found (simulates install failure to find binary after).
+	// Binary not found — should return install instructions.
 	lookPathFn = func(name string) (string, error) {
 		return "", exec.ErrNotFound
-	}
-	// Mock install to succeed (but binary still won't be on PATH due to lookPathFn).
-	execCommandFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "true")
 	}
 
 	cfg := Config{
@@ -126,9 +122,9 @@ func TestEnsureReady_BinaryNotFound(t *testing.T) {
 
 	err := EnsureReady(context.Background(), cfg)
 	if err == nil {
-		t.Fatal("expected error when binary not found after install")
+		t.Fatal("expected error when binary not found")
 	}
-	if got := err.Error(); !contains(got, "not found on PATH after installation") {
+	if got := err.Error(); !contains(got, "not installed") {
 		t.Errorf("unexpected error message: %s", got)
 	}
 }

@@ -66,7 +66,7 @@ func NewMCPServer(engine *query.Engine, st store.Store, logger *slog.Logger, ver
 			mcp.Description("Optional comma-separated source names to filter results (e.g., 'owner/repo,other/repo')"),
 		),
 		mcp.WithString("source_types",
-			mcp.Description("Optional comma-separated source types to filter results. Valid types: filesystem, git, confluence, slack, github_wiki"),
+			mcp.Description("Optional comma-separated source types to filter results. Valid types: filesystem, git"),
 		),
 		mcp.WithBoolean("no_expand",
 			mcp.Description("If true, disable multi-query expansion. Useful for precise queries where you know the exact terms."),
@@ -348,12 +348,6 @@ func deriveSourceLabel(sourceType, sourceName string) string {
 		return "Git repository: " + sourceName
 	case "filesystem":
 		return "Local directory: " + sourceName
-	case "confluence":
-		return "Confluence space: " + sourceName
-	case "slack":
-		return "Slack channels: " + sourceName
-	case "github_wiki":
-		return "GitHub wiki: " + sourceName
 	default:
 		return sourceType + ": " + sourceName
 	}

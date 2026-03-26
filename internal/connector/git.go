@@ -2,16 +2,12 @@ package connector
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/knowledge-broker/knowledge-broker/pkg/model"
 )
@@ -24,7 +20,7 @@ func init() {
 		if config["url"] == "" {
 			return nil, fmt.Errorf("git source missing 'url' in config")
 		}
-		c := NewGitConnector(config["url"], config["branch"], config["github_client_id"])
+		c := NewGitConnector(config["url"], config["branch"])
 		c.commit = config["commit"]
 		c.lastCommit = config["last_commit"]
 		c.token = config["token"]
@@ -38,19 +34,16 @@ type GitConnector struct {
 	repoURL    string
 	branch     string
 	commit     string // pin to a specific commit SHA (optional)
-	clientID   string // GitHub OAuth client ID (only used for github.com URLs)
 	lastCommit string // SHA of the last successfully ingested commit
 	headCommit string // SHA of HEAD after clone (populated by Scan)
 	token      string // explicit token (e.g. from UI paste flow)
 }
 
 // NewGitConnector creates a connector for the given git remote URL.
-// clientID is optional and only used for GitHub device flow auth.
-func NewGitConnector(repoURL, branch, clientID string) *GitConnector {
+func NewGitConnector(repoURL, branch string) *GitConnector {
 	return &GitConnector{
-		repoURL:  repoURL,
-		branch:   branch,
-		clientID: clientID,
+		repoURL: repoURL,
+		branch:  branch,
 	}
 }
 
@@ -72,9 +65,6 @@ func (c *GitConnector) Config(mode string) map[string]string {
 	}
 	if c.commit != "" {
 		cfg["commit"] = c.commit
-	}
-	if c.clientID != "" {
-		cfg["github_client_id"] = c.clientID
 	}
 	// Store HEAD commit SHA so next ingest can use diff-based scan.
 	if c.headCommit != "" {
@@ -587,31 +577,11 @@ func (c *GitConnector) resolveToken(ctx context.Context) string {
 		return token
 	}
 
-	// Check cached GitHub token.
-	if c.isGitHub() {
-		if cached := loadCachedToken(); cached != "" {
-			return cached
-		}
-	}
-
 	// Try gh CLI for GitHub repos.
 	if c.isGitHub() {
 		if token := ghCLIToken(); token != "" {
 			return token
 		}
-	}
-
-	// Try GitHub device flow.
-	if c.isGitHub() && c.clientID != "" {
-		token, err := deviceFlowAuth(ctx, c.clientID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: device flow auth failed: %v\n", err)
-			return ""
-		}
-		if err := saveCachedToken(token); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to cache token: %v\n", err)
-		}
-		return token
 	}
 
 	return ""
@@ -686,147 +656,3 @@ func ghCLIToken() string {
 	return strings.TrimSpace(string(out))
 }
 
-// tokenCachePath returns the path to the cached GitHub token file.
-func tokenCachePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "kb", "connectors", "github", "token")
-}
-
-// loadCachedToken reads the cached GitHub token, if any.
-func loadCachedToken() string {
-	path := tokenCachePath()
-	if path == "" {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
-}
-
-// saveCachedToken writes the GitHub token to the cache file.
-func saveCachedToken(token string) error {
-	path := tokenCachePath()
-	if path == "" {
-		return fmt.Errorf("cannot determine home directory")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create cache dir: %w", err)
-	}
-	return os.WriteFile(path, []byte(token+"\n"), 0600)
-}
-
-// --- GitHub Device Flow ---
-
-type deviceFlowResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
-}
-
-type deviceFlowTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
-	Error       string `json:"error"`
-}
-
-func deviceFlowAuth(ctx context.Context, clientID string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/device/code", strings.NewReader(url.Values{
-		"client_id": {clientID},
-		"scope":     {"repo"},
-	}.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("create device code request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request device code: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read device code response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("device code request failed (%d): %s", resp.StatusCode, string(body))
-	}
-
-	var deviceResp deviceFlowResponse
-	if err := json.Unmarshal(body, &deviceResp); err != nil {
-		return "", fmt.Errorf("parse device code response: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "To authenticate with GitHub, visit: %s\nEnter code: %s\n",
-		deviceResp.VerificationURI, deviceResp.UserCode)
-
-	interval := deviceResp.Interval
-	if interval < 5 {
-		interval = 5
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(time.Duration(interval) * time.Second):
-		}
-
-		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/oauth/access_token", strings.NewReader(url.Values{
-			"client_id":   {clientID},
-			"device_code": {deviceResp.DeviceCode},
-			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
-		}.Encode()))
-		if err != nil {
-			return "", fmt.Errorf("create token request: %w", err)
-		}
-		tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		tokenReq.Header.Set("Accept", "application/json")
-
-		tokenResp, err := http.DefaultClient.Do(tokenReq)
-		if err != nil {
-			return "", fmt.Errorf("poll for token: %w", err)
-		}
-
-		tokenBody, err := io.ReadAll(tokenResp.Body)
-		tokenResp.Body.Close()
-		if err != nil {
-			return "", fmt.Errorf("read token response: %w", err)
-		}
-
-		var tokenResult deviceFlowTokenResponse
-		if err := json.Unmarshal(tokenBody, &tokenResult); err != nil {
-			return "", fmt.Errorf("parse token response: %w", err)
-		}
-
-		switch tokenResult.Error {
-		case "":
-			if tokenResult.AccessToken != "" {
-				return tokenResult.AccessToken, nil
-			}
-			return "", fmt.Errorf("received empty access token")
-		case "authorization_pending":
-			continue
-		case "slow_down":
-			interval += 5
-			continue
-		case "expired_token":
-			return "", fmt.Errorf("device code expired; please try again")
-		case "access_denied":
-			return "", fmt.Errorf("access denied by user")
-		default:
-			return "", fmt.Errorf("unexpected error: %s", tokenResult.Error)
-		}
-	}
-}

@@ -169,31 +169,9 @@ func configureEnrichment(pipeline *ingest.Pipeline, cfg config.Config, client *h
 	})
 }
 
-// newLLMClient creates the appropriate LLM client based on the configured provider.
-// If provider is empty, it defaults to "claude". Returns nil if the provider
-// requires an API key that is not set (allowing raw mode to work without one).
+// newLLMClient creates the Ollama LLM client.
 func newLLMClient(cfg config.Config, provider string, client *http.Client, logger ...*slog.Logger) query.LLM {
-	var lg *slog.Logger
-	if len(logger) > 0 {
-		lg = logger[0]
-	}
-	if provider == "" {
-		provider = cfg.LLMProvider
-	}
-	switch provider {
-	case "openai":
-		if cfg.OpenAIAPIKey == "" {
-			return nil
-		}
-		return llm.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel, client)
-	case "ollama":
-		return llm.NewOllamaLLMClient(cfg.OllamaURL, cfg.OllamaLLMModel, client)
-	default: // "claude"
-		if cfg.AnthropicAPIKey == "" {
-			return nil
-		}
-		return llm.NewClaudeClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, client, lg)
-	}
+	return llm.NewOllamaLLMClient(cfg.OllamaURL, cfg.OllamaLLMModel, client)
 }
 
 func newExtractorRegistry(cfg config.Config) *extractor.Registry {

@@ -16,7 +16,6 @@ import (
 	"github.com/knowledge-broker/knowledge-broker/internal/enrich"
 	"github.com/knowledge-broker/knowledge-broker/internal/eval"
 	"github.com/knowledge-broker/knowledge-broker/internal/ingest"
-	"github.com/knowledge-broker/knowledge-broker/internal/llm"
 	"github.com/knowledge-broker/knowledge-broker/internal/query"
 	"github.com/knowledge-broker/knowledge-broker/internal/config"
 )
@@ -122,11 +121,7 @@ func evalCmd() *cobra.Command {
 			// Always create the engine so evals use the same retrieval pipeline
 			// (expansion + hybrid search + RRF) as real queries. LLM is optional
 			// — without it, expansion is skipped but BM25 hybrid still runs.
-			var llmClient query.LLM
-			apiKey := os.Getenv("ANTHROPIC_API_KEY")
-			if apiKey != "" {
-				llmClient = llm.NewClaudeClient(apiKey, cfg.ClaudeModel, client, logger)
-			}
+			llmClient := newLLMClient(cfg, "", client, logger)
 			engine := query.NewEngine(s, emb, llmClient, limit, logger)
 			runner.SetQueryEngine(engine)
 			summary, err := runner.Run(ctx, cases, limit)

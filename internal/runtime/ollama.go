@@ -64,14 +64,7 @@ func EnsureReady(ctx context.Context, cfg Config) error {
 	// Check if ollama binary exists.
 	_, err := lookPathFn("ollama")
 	if err != nil {
-		// Binary not found, install it.
-		if installErr := installOllama(ctx); installErr != nil {
-			return installErr
-		}
-		// Verify it's now on PATH.
-		if _, err := lookPathFn("ollama"); err != nil {
-			return fmt.Errorf("ollama binary not found on PATH after installation; please add it to your PATH and retry")
-		}
+		return fmt.Errorf("Ollama is not installed; please install it from https://ollama.com and retry")
 	}
 
 	// Start the server.
@@ -115,19 +108,6 @@ func IsReachable(baseURL string) bool {
 	}
 	resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
-}
-
-// installOllama downloads and runs the Ollama install script.
-func installOllama(ctx context.Context) error {
-	fmt.Fprintf(os.Stderr, "KB requires Ollama for local AI model inference. Installing now...\n")
-
-	cmd := execCommandFn(ctx, "sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("install Ollama: %w", err)
-	}
-	return nil
 }
 
 // startServer starts ollama serve as a detached background process.

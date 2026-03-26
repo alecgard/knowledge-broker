@@ -21,15 +21,7 @@ type Config struct {
 	EnrichModel    string
 
 	// LLM Provider
-	LLMProvider string // "claude" (default), "openai", "ollama"
-
-	// Claude
-	AnthropicAPIKey string
-	ClaudeModel     string
-
-	// OpenAI
-	OpenAIAPIKey string
-	OpenAIModel  string
+	LLMProvider string // "ollama" (default)
 
 	// Ollama LLM (separate from embedding model)
 	OllamaLLMModel string
@@ -45,9 +37,6 @@ type Config struct {
 
 	// Query
 	DefaultLimit int
-
-	// GitHub OAuth
-	GitHubClientID string
 
 	// Runtime
 	SkipSetup bool // from KB_SKIP_SETUP
@@ -91,11 +80,7 @@ func Fields() []FieldDescriptor {
 		{"KB_EMBEDDING_MODEL", "nomic-embed-text"},
 		{"KB_EMBEDDING_DIM", "768"},
 		{"KB_ENRICH_MODEL", "qwen2.5:0.5b"},
-		{"KB_LLM_PROVIDER", "claude"},
-		{"ANTHROPIC_API_KEY", ""},
-		{"KB_CLAUDE_MODEL", "claude-sonnet-4-20250514"},
-		{"OPENAI_API_KEY", ""},
-		{"KB_OPENAI_MODEL", ""},
+		{"KB_LLM_PROVIDER", "ollama"},
 		{"KB_OLLAMA_LLM_MODEL", ""},
 		{"KB_LISTEN_ADDR", ":8080"},
 		{"KB_MAX_FILE_SIZE", "1048576"},
@@ -103,7 +88,6 @@ func Fields() []FieldDescriptor {
 		{"KB_CHUNK_OVERLAP", "150"},
 		{"KB_WORKERS", strconv.Itoa(runtime.NumCPU())},
 		{"KB_DEFAULT_LIMIT", "20"},
-		{"KB_GITHUB_CLIENT_ID", ""},
 		{"KB_SKIP_SETUP", "false"},
 	}
 }
@@ -208,11 +192,7 @@ func Load(opts LoadOptions) ResolvedConfig {
 		EmbeddingModel:  envOr("KB_EMBEDDING_MODEL", "nomic-embed-text"),
 		EnrichModel:     envOr("KB_ENRICH_MODEL", "qwen2.5:0.5b"),
 		EmbeddingDim:    envOrInt("KB_EMBEDDING_DIM", 768),
-		LLMProvider:     envOr("KB_LLM_PROVIDER", "claude"),
-		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		ClaudeModel:     envOr("KB_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-		OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
-		OpenAIModel:     envOr("KB_OPENAI_MODEL", ""),
+		LLMProvider:     envOr("KB_LLM_PROVIDER", "ollama"),
 		OllamaLLMModel:  envOr("KB_OLLAMA_LLM_MODEL", ""),
 		ListenAddr:      envOr("KB_LISTEN_ADDR", ":8080"),
 		MaxFileSize:     int64(envOrInt("KB_MAX_FILE_SIZE", 1_048_576)),
@@ -220,7 +200,6 @@ func Load(opts LoadOptions) ResolvedConfig {
 		ChunkOverlap:    envOrInt("KB_CHUNK_OVERLAP", 150),
 		WorkerCount:     envOrInt("KB_WORKERS", runtime.NumCPU()),
 		DefaultLimit:    envOrInt("KB_DEFAULT_LIMIT", 20),
-		GitHubClientID:  os.Getenv("KB_GITHUB_CLIENT_ID"),
 		SkipSetup:       envOr("KB_SKIP_SETUP", "false") == "true",
 	}
 
